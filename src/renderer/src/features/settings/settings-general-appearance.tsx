@@ -102,6 +102,8 @@ export function GeneralSettings() {
     setCompletionNotificationDelivery,
     setMaxSessionWorkers,
     setSessionWorkerIdleTimeoutMinutes,
+    setStartOnLogin,
+    setStartHiddenInTray,
   } = useSettingsDraft()
   const [recentProjects, setRecentProjects] = useState<string[]>([])
   const [fixedOrder, setFixedOrder] = useState(false)
@@ -112,10 +114,8 @@ export function GeneralSettings() {
   const [alertTestFeedback, setAlertTestFeedback] = useState<'sent' | 'failed' | null>(null)
   const isWindows =
     typeof navigator !== 'undefined' && /Win/i.test(navigator.platform)
-  const [startOnLogin, setStartOnLogin] = useState<boolean | null>(null)
-  const [startHiddenInTray, setStartHiddenInTray] = useState<boolean | null>(null)
-  const startOnLoginEffective = startOnLogin ?? draft.startOnLogin
-  const startHiddenEffective = startHiddenInTray ?? draft.startHiddenInTray
+  const startOnLoginEffective = draft.startOnLogin
+  const startHiddenEffective = draft.startHiddenInTray
   const updateCheckAttemptRef = useRef(0)
   const mountedRef = useRef(true)
 
@@ -141,6 +141,8 @@ export function GeneralSettings() {
         .invoke('app.getLoginItemState', {})
         .then((res) => {
           const state = res?.state
+          // The Windows registry is the source of truth for the login item; re-sync the draft
+          // if it drifted (e.g. the entry was removed outside the app).
           if (state && typeof state.registered === 'boolean') setStartOnLogin(state.registered)
           if (state && typeof state.hidden === 'boolean') setStartHiddenInTray(state.hidden)
         })
@@ -149,25 +151,22 @@ export function GeneralSettings() {
   }, [])
 
   const toggleStartOnLogin = async (next: boolean) => {
-    const previous = startOnLoginEffective
-    setStartOnLogin(next)
     try {
       await ipcClient.invoke('settings.set', { key: 'startOnLogin', value: next })
+      // Applied immediately; keep the draft in sync so a later unrelated Save re-sends it.
+      setStartOnLogin(next)
     } catch {
-      // Native login-item API failed: revert the switch and explain how to retry.
-      setStartOnLogin(previous)
+      // Native login-item API failed: draft (and the switch) keep the previous value.
       toast.error(t('settings:general.startOnLoginError'))
     }
   }
 
   const toggleStartHiddenInTray = async (next: boolean) => {
-    const previous = startHiddenEffective
-    setStartHiddenInTray(next)
     try {
       await ipcClient.invoke('settings.set', { key: 'startHiddenInTray', value: next })
+      setStartHiddenInTray(next)
     } catch {
-      setStartHiddenInTray(previous)
-      toast.error(t('settings:general.startOnLoginError'))
+      toast.error(t('settings:general.startHiddenInTrayError'))
     }
   }
 

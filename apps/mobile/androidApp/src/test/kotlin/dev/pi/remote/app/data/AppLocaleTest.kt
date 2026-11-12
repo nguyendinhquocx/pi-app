@@ -67,6 +67,29 @@ class AppLocaleTest {
     }
 
     @Test
+    fun upgradeWithSavedChoiceIsNeverOverriddenByInitializer() {
+        // Same-signature upgrade: an older build saved an explicit choice (INIT_KEY not yet set).
+        context.getSharedPreferences(AppLocale.PREFS, Context.MODE_PRIVATE).edit()
+            .putString(AppLocale.KEY, "en").commit()
+
+        AppLocale.ensureInitialized(context)
+        if (Build.VERSION.SDK_INT >= 33) {
+            // 13+: the system per-app locale is the source of truth; an empty list means the
+            // user's effective choice is System — the initializer must NOT force vi on top.
+            val locales = context.getSystemService(LocaleManager::class.java).applicationLocales
+            assertTrue(locales.isEmpty)
+            assertEquals("system", AppLocale.read(context))
+        } else {
+            // Android 12 and below: the saved preference wins — no forced vi.
+            assertEquals("en", AppLocale.read(context))
+        }
+        simulateRestart()
+        if (Build.VERSION.SDK_INT < 33) {
+            assertEquals("en", AppLocale.read(context))
+        }
+    }
+
+    @Test
     fun savedSystemChoiceSurvivesRestartAndIsNotOverridden() {
         AppLocale.ensureInitialized(context)
         AppLocale.apply(context, "system")

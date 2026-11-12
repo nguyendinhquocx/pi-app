@@ -17,9 +17,12 @@ function itemOptions(args: string[]): { path: string; args: string[] } {
 /**
  * (Re)register the login item. On Windows, entries are keyed by path+args: clear both
  * variants first so switching hidden on/off never leaves a stale entry behind.
+ * Dev runs are excluded: process.execPath is electron.exe there, and registering it as a
+ * login item would launch a bare Electron window at sign-in.
  */
 export function applyLoginItemSettings(enabled: boolean, hidden: boolean): void {
   if (process.platform !== 'win32') return
+  if (!app.isPackaged) return
   app.setLoginItemSettings({ openAtLogin: false, ...itemOptions([HIDDEN_LAUNCH_ARG]) })
   app.setLoginItemSettings({ openAtLogin: false, ...itemOptions([]) })
   if (enabled) {

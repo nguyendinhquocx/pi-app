@@ -65,6 +65,7 @@ export function registerSettingsHandlers(): void {
       }
       return { key: req.key, value: next }
     }
+    const previousValue = configStore.get(key)
     configStore.set(key, req.value as StoreSchema[typeof key])
     if (key === 'sessionCapabilities') remoteTap.settingsChanged('capabilities')
     if (key === 'startOnLogin') {
@@ -73,8 +74,9 @@ export function registerSettingsHandlers(): void {
       try {
         applyLoginItemSettings(req.value === true, configStore.get('startHiddenInTray'))
       } catch (error) {
-        // Roll the persisted key back so the switch state matches the actual login item.
-        configStore.set(key, !req.value)
+        // Roll the persisted key back to its EXACT previous value so the switch state matches
+        // the actual login item (restoring !value would be wrong for repeated same-value saves).
+        configStore.set(key, previousValue as StoreSchema[typeof key])
         throw error
       }
     }
@@ -85,7 +87,7 @@ export function registerSettingsHandlers(): void {
           applyLoginItemSettings(true, req.value === true)
         }
       } catch (error) {
-        configStore.set(key, !req.value)
+        configStore.set(key, previousValue as StoreSchema[typeof key])
         throw error
       }
     }

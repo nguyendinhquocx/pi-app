@@ -57,6 +57,8 @@ type SettingsDraftContextValue = {
   setCustomCssOverride: (override: CustomCssOverride) => void
   setBackground: (background: BackgroundSettings) => void
   setLanguage: (l: LanguageChoice) => void
+  setStartOnLogin: (v: boolean) => void
+  setStartHiddenInTray: (v: boolean) => void
   setAutoOpenLastProject: (v: boolean) => void
   setAutoCheckRegistryUpdates: (v: boolean) => void
   setIncludePrereleaseUpdates: (v: boolean) => void
@@ -265,6 +267,11 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
       setCustomCssOverride: (override) => patch((d) => ({ ...d, customCssOverride: override })),
       setBackground: (background) => patch((d) => ({ ...d, background })),
       setLanguage: (l) => patch((d) => ({ ...d, language: l })),
+      // Windows startup toggles are applied immediately by the settings page (registry write),
+      // but the draft must still track them so a later unrelated Save re-sends the same values
+      // instead of clobbering the login item with a stale draft value.
+      setStartOnLogin: (v) => patch((d) => ({ ...d, startOnLogin: v })),
+      setStartHiddenInTray: (v) => patch((d) => ({ ...d, startHiddenInTray: v })),
       setAutoOpenLastProject: (v) => patch((d) => ({ ...d, autoOpenLastProject: v })),
       setAutoCheckRegistryUpdates: (v) => patch((d) => ({ ...d, autoCheckRegistryUpdates: v })),
       setIncludePrereleaseUpdates: (v) => patch((d) => ({ ...d, includePrereleaseUpdates: v })),

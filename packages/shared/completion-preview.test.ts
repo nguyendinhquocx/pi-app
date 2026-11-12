@@ -67,4 +67,48 @@ describe('completion notification copy', () => {
     expect(copy.body).toBe('Task finished. You can return to the session.')
     expect(copy.meta).toContain('12s')
   })
+
+  it('renders Vietnamese copy for test and completion notifications', () => {
+    const testCopy = buildCompletionNotificationCopy({
+      language: 'vi',
+      outcome: 'success',
+      promptPreview: 'Chạy bộ test',
+      responsePreview: 'Đã vá xong luồng nền',
+      previewMode: 'response',
+      isTest: true,
+    })
+    expect(testCopy.title).toBe('Thông báo thử')
+    expect(testCopy.body).toBe('Việc đã xong, có thể quay lại xem')
+    expect(testCopy.openLabel).toBe('Về ứng dụng')
+    expect(testCopy.muteLabel).toBe('Im 30 phút')
+
+    const copy = buildCompletionNotificationCopy({
+      language: 'vi',
+      outcome: 'success',
+      promptPreview: 'Ship the patch',
+      responsePreview: '',
+      previewMode: 'fixed',
+      durationMs: 12_400,
+    })
+    expect(copy.title).toBe('Ship the patch')
+    expect(copy.body).toBe('Việc đã xong, có thể quay lại xem')
+    expect(copy.meta).toContain('Hoàn thành')
+    expect(copy.meta).toContain('12 giây')
+    expect(copy.openLabel).toBe('Mở phiên')
+  })
+
+  it('renders Vietnamese failure and cancelled outcomes', () => {
+    const failed = buildCompletionNotificationCopy({
+      language: 'vi',
+      outcome: 'failed',
+      previewMode: 'fixed',
+    })
+    expect(failed.meta).toContain('Thất bại')
+    const cancelled = buildCompletionNotificationCopy({
+      language: 'vi',
+      outcome: 'cancelled',
+      previewMode: 'fixed',
+    })
+    expect(cancelled.meta).toContain('Đã hủy')
+  })
 })

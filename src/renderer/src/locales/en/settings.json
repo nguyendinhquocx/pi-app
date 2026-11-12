@@ -39,6 +39,7 @@
     "startHiddenInTray": "Start hidden in tray",
     "startHiddenInTrayDesc": "At Windows sign-in, keep the window hidden; reopen it from the tray. Manual launches always show the window.",
     "startOnLoginError": "Could not update the Windows startup entry. Try turning the switch off and on again.",
+    "startHiddenInTrayError": "Could not update the tray-hidden preference. Try turning the switch off and on again.",
     "appVersion": "App version",
     "appVersionDesc": "",
     "checkUpdate": "Check for updates",

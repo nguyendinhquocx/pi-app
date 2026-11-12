@@ -5,6 +5,7 @@ const electron = vi.hoisted(() => {
   let entries: Map<string, boolean>
   const keyOf = (path: string, args: string[]) => `${path}|${args.join(' ')}`
   const app = {
+    isPackaged: true,
     setLoginItemSettings(settings: { path: string; args: string[]; openAtLogin: boolean }) {
       calls.push({ path: settings.path, args: settings.args, openAtLogin: settings.openAtLogin })
       const key = keyOf(settings.path, settings.args)
@@ -40,6 +41,14 @@ describe('login-item-settings', () => {
   beforeEach(() => {
     electron.reset()
     vi.stubGlobal('process', { ...process, platform: 'win32', execPath: EXEC_PATH, argv: [EXEC_PATH] })
+  })
+
+  it('does not touch the registry in unpackaged (dev) runs', () => {
+    electron.app.isPackaged = false
+    applyLoginItemSettings(true, true)
+    expect(electron.calls).toHaveLength(0)
+    expect(readLoginItemSettings()).toEqual({ registered: false, hidden: false })
+    electron.app.isPackaged = true
   })
 
   it('registers with hidden arg only when both startup and hidden are enabled', () => {

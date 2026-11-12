@@ -6,10 +6,10 @@ import {
 } from '@shared/completion-preview'
 import { configStore } from './config-store'
 import type { CompletionNotificationSettings } from './completion-notification-controller'
+import { uiLanguage } from './ui-language'
 
 export function readCompletionNotificationSettings(now = Date.now()): CompletionNotificationSettings {
-  const savedLanguage = configStore.get('language')
-  const language: 'zh' | 'en' | 'vi' = savedLanguage === 'en' || savedLanguage === 'zh' ? savedLanguage : 'vi'
+  const language = uiLanguage()
   return {
     soundEnabled: configStore.get('alertSoundEnabled') !== false,
     notificationEnabled: configStore.get('alertNotificationEnabled') !== false,

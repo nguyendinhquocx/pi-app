@@ -3,6 +3,7 @@ import { configStore } from './config-store'
 import { traceAudio } from './audio-trace'
 import { presentCompletionCard } from './completion-notification-delivery'
 import { buildCompletionNotificationCopy } from '@shared/completion-preview'
+import { uiLanguage } from './ui-language'
 
 export type DesktopAlertKind = 'extension_ui' | 'run_idle'
 
@@ -61,8 +62,7 @@ export function deliverDesktopAlert(win: BrowserWindow | null, payload: DesktopA
   if (!scenario || (!doNotify && !doSound)) return
 
   ensureNotificationIdentity()
-  const savedLanguage = configStore.get('language')
-  const language: 'zh' | 'en' | 'vi' = savedLanguage === 'en' || savedLanguage === 'zh' ? savedLanguage : 'vi'
+  const language = uiLanguage()
   const copy = buildCompletionNotificationCopy({
     language,
     outcome: 'success',

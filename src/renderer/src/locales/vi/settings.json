@@ -39,6 +39,7 @@
     "startHiddenInTray": "Khởi động ẩn trong khay",
     "startHiddenInTrayDesc": "Khi đăng nhập Windows, cửa sổ giữ ẩn; mở lại từ khay hệ thống. Mở app thủ công vẫn hiện cửa sổ.",
     "startOnLoginError": "Không thể cập nhật mục khởi động Windows. Hãy thử tắt rồi bật lại công tắc.",
+    "startHiddenInTrayError": "Không thể cập nhật tùy chọn ẩn trong khay. Hãy thử tắt rồi bật lại công tắc.",
     "appVersion": "Phiên bản ứng dụng",
     "appVersionDesc": "",
     "checkUpdate": "Kiểm tra các bản cập nhật",

@@ -41,20 +41,23 @@ object AppLocale {
     private fun isInitialized(context: Context): Boolean = prefs(context).getBoolean(INIT_KEY, false)
 
     /**
-     * One-time fresh-install default: writes `vi` (per-app locale on 13+, preference below) the
-     * first time the app ever runs. A system-chosen app locale (13+) wins if it exists already,
-     * and an explicitly saved choice keeps [INIT_KEY] set so this never runs again.
+     * One-time fresh-install default: writes `vi` the first time the app ever runs — detected
+     * as “no explicit choice anywhere” (no `KEY` preference AND, on 13+, no system app locale).
+     * An existing preference from an earlier version (same-signature upgrade) is preserved:
+     * this never overrides a language the user already picked, System included.
      */
     fun ensureInitialized(context: Context) {
-        if (isInitialized(context)) return
-        prefs(context).edit().putBoolean(INIT_KEY, true).apply()
+        val prefs = prefs(context)
+        if (prefs.getBoolean(INIT_KEY, false)) return
+        prefs.edit().putBoolean(INIT_KEY, true).apply()
+        val savedChoice = prefs.getString(KEY, null)
         if (Build.VERSION.SDK_INT >= 33) {
             val manager = context.getSystemService(LocaleManager::class.java)
-            if (manager.applicationLocales.isEmpty) {
+            if (savedChoice == null && manager.applicationLocales.isEmpty) {
                 manager.applicationLocales = LocaleList.forLanguageTags("vi")
             }
-        } else {
-            prefs(context).edit().putString(KEY, "vi").apply()
+        } else if (savedChoice == null) {
+            prefs.edit().putString(KEY, "vi").apply()
         }
     }
 
