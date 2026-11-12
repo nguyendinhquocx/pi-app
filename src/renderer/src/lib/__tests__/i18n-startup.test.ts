@@ -10,8 +10,11 @@ describe('startup language hydration', () => {
     await i18n.changeLanguage(initialLanguage)
   })
 
-  it('starts Vietnamese on a fresh install before any saved preference exists', () => {
-    // The initial i18n locale is applied before IPC hydration so the first frame is already vi.
+  it('initializes Vietnamese as the fresh-install language before any saved preference exists', async () => {
+    // The initial i18n locale (config lng) is Vietnamese so the first frame is already vi;
+    // the global test setup pins runtime language to en for copy assertions.
+    expect(i18n.options.lng).toBe('vi')
+    await i18n.changeLanguage('vi')
     expect(i18n.resolvedLanguage).toBe('vi')
     expect(document.documentElement.lang).toBe('vi')
   })

@@ -1,5 +1,10 @@
 import '@testing-library/jest-dom/vitest'
 import { vi } from 'vitest'
+import i18n from '@renderer/lib/i18n'
+
+// Component tests assert English copy (the previous default). The fork's fresh-install default
+// is Vietnamese; pin tests to English unless a test explicitly exercises locale switching.
+void i18n.changeLanguage('en')
 
 // A developer's own pi overrides (e.g. PI_CODING_AGENT_DIR) must not leak into
 // tests that assume the default ~/.pi/agent layout.

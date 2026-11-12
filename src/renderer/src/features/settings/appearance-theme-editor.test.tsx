@@ -41,6 +41,8 @@ function baseDraft(): SettingsDraft {
     customCssOverride: { enabled: false, css: '' },
     background: { shared: true },
     language: 'en',
+    startOnLogin: false,
+    startHiddenInTray: true,
     autoOpenLastProject: true,
     autoCheckRegistryUpdates: true,
     includePrereleaseUpdates: false,

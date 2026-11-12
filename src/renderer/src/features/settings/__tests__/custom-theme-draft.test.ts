@@ -32,6 +32,8 @@ function draft(): SettingsDraft {
     customCssOverride: { enabled: true, css: ':root { --brand: #ff0000; }' },
     background: { shared: true },
     language: 'en',
+    startOnLogin: false,
+    startHiddenInTray: true,
     autoOpenLastProject: true,
     autoCheckRegistryUpdates: true,
     includePrereleaseUpdates: false,
