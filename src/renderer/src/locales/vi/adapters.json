@@ -1,0 +1,27 @@
+{
+  "title": "Adapter",
+  "panel": {
+    "openProject": "Trước tiên hãy mở một dự án",
+    "unavailable": "Không có khai báo bảng điều khiển",
+    "refresh": "Làm mới",
+    "empty": "Chưa có dữ liệu",
+    "readFailed": "Không thể đọc dữ liệu bảng điều khiển",
+    "errors": {
+      "outside_workspace": "Bảng điều khiển chỉ có thể đọc tệp trong dự án hiện tại",
+      "not_found": "Tệp dữ liệu được khai báo chưa tồn tại",
+      "too_large": "Tệp dữ liệu vượt quá 1 MB. Hãy giảm kích thước rồi thử lại",
+      "invalid_json": "Tệp dữ liệu không phải JSON hợp lệ",
+      "items_not_array": "Đường dẫn danh sách không trỏ đến một mảng"
+    }
+  },
+  "openConfig": "Mở cấu hình",
+  "tier": {
+    "native": "Đầy đủ",
+    "partial": "Một phần",
+    "headless": "Chỉ thực thi",
+    "none": "Không có"
+  },
+  "desktop": "Máy tính",
+  "probe": "probe",
+  "version": "phiên bản"
+}

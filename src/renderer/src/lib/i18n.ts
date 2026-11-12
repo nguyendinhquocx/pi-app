@@ -24,24 +24,41 @@ import enExtension from '../locales/en/extension.json'
 import enFiles from '../locales/en/files.json'
 import enUpdate from '../locales/en/update.json'
 import enBrowser from '../locales/en/browser.json'
+import viCommon from '../locales/vi/common.json'
+import viTimeline from '../locales/vi/timeline.json'
+import viReview from '../locales/vi/review.json'
+import viSettings from '../locales/vi/settings.json'
+import viComposer from '../locales/vi/composer.json'
+import viContext from '../locales/vi/context.json'
+import viAdapters from '../locales/vi/adapters.json'
+import viRun from '../locales/vi/run.json'
+import viExtension from '../locales/vi/extension.json'
+import viFiles from '../locales/vi/files.json'
+import viUpdate from '../locales/vi/update.json'
+import viBrowser from '../locales/vi/browser.json'
 import { ipcClient } from './ipc-client'
 
-type AppLanguage = 'zh' | 'en'
+type AppLanguage = 'zh' | 'en' | 'vi'
 
+/**
+ * Fresh install: Vietnamese for everyone (fork customization); zh/en only after the user
+ * explicitly saves that choice. The initial locale is applied before the first paint so the
+ * app never flashes English before the settings hydrate over IPC.
+ */
 function detectInitialLanguage(): AppLanguage {
-  const systemLanguage = (navigator.language || 'en').toLowerCase()
-  return systemLanguage.startsWith('zh') ? 'zh' : 'en'
+  return 'vi'
 }
 
 function normalizeAppLanguage(language: unknown, fallbackLanguage: AppLanguage): AppLanguage {
   const normalizedLanguage = String(language ?? '').toLowerCase()
   if (normalizedLanguage.startsWith('zh')) return 'zh'
+  if (normalizedLanguage.startsWith('vi')) return 'vi'
   if (normalizedLanguage.startsWith('en')) return 'en'
   return fallbackLanguage
 }
 
 function applyDocumentLanguage(language: AppLanguage): void {
-  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'
+  document.documentElement.lang = language === 'zh' ? 'zh-CN' : language
 }
 
 const i18nInitialization = i18n.use(initReactI18next).init({
@@ -74,6 +91,20 @@ const i18nInitialization = i18n.use(initReactI18next).init({
       update: enUpdate,
       browser: enBrowser,
     },
+    vi: {
+      common: viCommon,
+      timeline: viTimeline,
+      review: viReview,
+      settings: viSettings,
+      composer: viComposer,
+      context: viContext,
+      adapters: viAdapters,
+      run: viRun,
+      extension: viExtension,
+      files: viFiles,
+      update: viUpdate,
+      browser: viBrowser,
+    },
   },
   lng: detectInitialLanguage(),
   fallbackLng: 'en',
@@ -86,6 +117,10 @@ const i18nInitialization = i18n.use(initReactI18next).init({
 i18n.on('languageChanged', (language) => {
   applyDocumentLanguage(normalizeAppLanguage(language, detectInitialLanguage()))
 })
+
+// init() with an explicit lng does not fire languageChanged; set the document lang for the
+// very first frame so assistive tech and font selection already see Vietnamese.
+applyDocumentLanguage(detectInitialLanguage())
 
 export async function hydrateLanguageFromSettings(): Promise<AppLanguage> {
   const settingsResponsePromise = ipcClient

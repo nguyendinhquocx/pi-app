@@ -45,7 +45,7 @@ const electron = vi.hoisted(() => {
   return { FakeTray, FakeWindow, menuTemplates, popup, quit, trays, windows, mainWindow: null as FakeWindow | null }
 })
 
-const config = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }))
+const config = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' | 'vi' }))
 const icon = { isEmpty: () => false }
 
 vi.mock('electron', () => ({
@@ -180,6 +180,20 @@ describe('Windows app tray lifecycle', () => {
 
     expect(notification.show).not.toHaveBeenCalled()
     expect(notification.focus).not.toHaveBeenCalled()
+  })
+
+  it('builds a Vietnamese menu matching the saved vi language', () => {
+    config.language = 'vi'
+    const win = new electron.FakeWindow()
+    win.visible = true
+    electron.mainWindow = win
+    electron.windows.push(win)
+    ensureAppTray('win32')
+
+    electron.trays[0].listeners.get('right-click')?.()
+
+    const menu = electron.menuTemplates[0]
+    expect(menu.map((item) => item.label ?? item.type)).toEqual(['Ẩn cửa sổ', 'separator', 'Thoát'])
   })
 
   it('does not create a tray on unsupported platforms and destroys its owned instance on quit', () => {

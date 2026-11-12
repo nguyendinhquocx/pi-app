@@ -15,7 +15,7 @@ class UiPrefs(private val context: Context) {
     fun setTheme(v: String) { _theme.value = v; sp.edit().putString("theme", v).apply() }
 
     private val _language = MutableStateFlow(AppLocale.read(context))
-    /** `system` | `en` | `zh` */
+    /** `system` | `en` | `zh` | `vi` */
     val language: StateFlow<String> = _language
     /** Returns true when the caller must recreate the activity itself (Android 12 and older). */
     fun setLanguage(v: String): Boolean {

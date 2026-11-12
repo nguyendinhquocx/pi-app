@@ -10,6 +10,12 @@ describe('startup language hydration', () => {
     await i18n.changeLanguage(initialLanguage)
   })
 
+  it('starts Vietnamese on a fresh install before any saved preference exists', () => {
+    // The initial i18n locale is applied before IPC hydration so the first frame is already vi.
+    expect(i18n.resolvedLanguage).toBe('vi')
+    expect(document.documentElement.lang).toBe('vi')
+  })
+
   it('should_use_saved_chinese_when_current_language_is_english', async () => {
     await i18n.changeLanguage('en')
     const invokeMock = vi.spyOn(ipcClient, 'invoke').mockResolvedValue({
@@ -38,11 +44,25 @@ describe('startup language hydration', () => {
     expect(document.documentElement.lang).toBe('en')
   })
 
+  it('should_keep_a_saved_vietnamese_choice', async () => {
+    await i18n.changeLanguage('en')
+    const invokeMock = vi.spyOn(ipcClient, 'invoke').mockResolvedValue({
+      settings: { language: 'vi' },
+    })
+
+    const resolvedLanguage = await hydrateLanguageFromSettings()
+
+    expect(invokeMock).toHaveBeenCalledWith('settings.get', { key: 'language' })
+    expect(resolvedLanguage).toBe('vi')
+    expect(i18n.resolvedLanguage).toBe('vi')
+    expect(document.documentElement.lang).toBe('vi')
+  })
+
   it('should_fall_back_without_blocking_when_settings_read_fails', async () => {
     const originalLanguage = i18n.resolvedLanguage
     vi.spyOn(ipcClient, 'invoke').mockRejectedValue(new Error('settings unavailable'))
 
-    await expect(hydrateLanguageFromSettings()).resolves.toMatch(/^(zh|en)$/)
+    await expect(hydrateLanguageFromSettings()).resolves.toMatch(/^(zh|en|vi)$/)
     expect(i18n.resolvedLanguage).toBe(originalLanguage)
   })
 })

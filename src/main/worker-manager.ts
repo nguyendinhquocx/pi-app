@@ -47,6 +47,7 @@ import {
 } from './session-leaf-override'
 import { observeAppEventForCompletion, observeWorkerExitForCompletion } from './completion-notification-events'
 import { remoteTap } from './remote/tap'
+import { uiText } from './ui-language'
 
 interface InitResult extends WorkerInitResult {}
 
@@ -375,7 +376,11 @@ export class WorkerManager {
         code,
         cwd: slot.cwd,
         sessionFile: slot.sessionFile,
-        message: 'Worker 已退出。请重新打开工作区；若界面空白请先结束任务管理器里多余的 pi Desktop 进程。',
+        message: uiText({
+          vi: 'Worker đã thoát. Vui lòng mở lại workspace; nếu giao diện trắng, hãy tắt các tiến trình pi Desktop dư thừa trong Task Manager trước.',
+          en: 'Worker exited. Reopen the workspace; if the UI is blank, close extra pi Desktop processes in Task Manager first.',
+          zh: 'Worker 已退出。请重新打开工作区；若界面空白请先结束任务管理器里多余的 pi Desktop 进程。',
+        }),
       })
     }
   }

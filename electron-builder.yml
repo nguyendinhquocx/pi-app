@@ -4,11 +4,12 @@ directories:
   buildResources: build
   output: dist
 
-# Chromium UI 语言包：只保留中英（约从 42MB 降到 ~1–2MB）
+# Chromium UI 语言包：中/英/越（fork 新增越南语 UI）
 # 匹配逻辑为 locale 文件 basename 精确匹配（不区分大小写），见 app-builder-lib ElectronFramework
 electronLanguages:
   - en-US
   - zh-CN
+  - vi
 
 files:
   - out/**/*

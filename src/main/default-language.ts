@@ -1,12 +1,11 @@
 /**
- * Language for a fresh install: Chinese in a Chinese locale, English everywhere else.
- * POSIX locale variables win (LC_ALL > LC_MESSAGES > LANG); without them (Windows, macOS GUI
- * launches) the system locale reported by ICU decides.
+ * Language for a fresh install. This fork ships a built-in Vietnamese UI, so a fresh install
+ * (no saved preference) starts Vietnamese regardless of the system locale; zh/en only apply
+ * after the user explicitly saves that choice.
  */
 export function defaultAppLanguage(
-  env: NodeJS.ProcessEnv = process.env,
-  systemLocale: string = Intl.DateTimeFormat().resolvedOptions().locale,
-): 'zh' | 'en' {
-  const locale = env.LC_ALL || env.LC_MESSAGES || env.LANG || systemLocale
-  return locale.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  _env: NodeJS.ProcessEnv = process.env,
+  _systemLocale: string = Intl.DateTimeFormat().resolvedOptions().locale,
+): 'zh' | 'en' | 'vi' {
+  return 'vi'
 }

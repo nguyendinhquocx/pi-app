@@ -8,7 +8,8 @@ import { configStore } from './config-store'
 import type { CompletionNotificationSettings } from './completion-notification-controller'
 
 export function readCompletionNotificationSettings(now = Date.now()): CompletionNotificationSettings {
-  const language = configStore.get('language') === 'en' ? 'en' : 'zh'
+  const savedLanguage = configStore.get('language')
+  const language: 'zh' | 'en' | 'vi' = savedLanguage === 'en' || savedLanguage === 'zh' ? savedLanguage : 'vi'
   return {
     soundEnabled: configStore.get('alertSoundEnabled') !== false,
     notificationEnabled: configStore.get('alertNotificationEnabled') !== false,

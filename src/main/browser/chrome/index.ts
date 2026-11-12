@@ -10,6 +10,7 @@ import { getMainWindow } from '../../window'
 import { respondHelp } from '../agent/help'
 import { ChromeBridge } from './bridge'
 import { ChromeHost } from './chrome-host'
+import { uiLanguage } from '../../ui-language'
 
 export interface ChromeBridgeStatus {
   enabled: boolean
@@ -35,15 +36,42 @@ const send = (event: BrowserEvent) => {
   toRenderer(event)
   if (!bridge?.connected()) return
   if (event.type === 'help-request' && event.request.where === 'chrome') {
-    const zh = configStore.get('language') !== 'en'
+    const lang = uiLanguage()
+    const zh = lang === 'zh'
+    const vi = lang === 'vi'
     const r = event.request
     void bridge
       .call('help.show', {
         id: r.id,
-        title: zh ? 'pi 需要你操作一下' : 'pi needs you',
-        message: [r.prompt, r.target ? (zh ? `位置：${r.target}` : `At: ${r.target}`) : ''].filter(Boolean).join('\n'),
-        yes: r.confirm ? (zh ? '允许' : 'Allow') : zh ? '完成' : 'Done',
-        no: r.confirm ? (zh ? '拒绝' : 'Deny') : zh ? '放弃' : 'Give up',
+        title: zh ? 'pi 需要你操作一下' : vi ? 'pi cần bạn thao tác' : 'pi needs you',
+        message: [
+          r.prompt,
+          r.target ? (zh ? `位置：${r.target}` : vi ? `Vị trí: ${r.target}` : `At: ${r.target}`) : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        yes: r.confirm
+          ? zh
+            ? '允许'
+            : vi
+              ? 'Cho phép'
+              : 'Allow'
+          : zh
+            ? '完成'
+            : vi
+              ? 'Xong'
+              : 'Done',
+        no: r.confirm
+          ? zh
+            ? '拒绝'
+            : vi
+              ? 'Từ chối'
+              : 'Deny'
+          : zh
+            ? '放弃'
+            : vi
+              ? 'Bỏ qua'
+              : 'Give up',
       })
       .catch(() => undefined)
   } else if (event.type === 'help-ended') void bridge.call('help.clear', { id: event.id }).catch(() => undefined)

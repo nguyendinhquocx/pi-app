@@ -12,6 +12,8 @@ import { scheduleStartupWarmupFallback } from './startup-warmup'
 import { bindWslPersistence } from './wsl/wsl-env'
 import { is } from '@electron-toolkit/utils'
 import { destroyAppTray, ensureAppTray, focusMainWindow } from './tray'
+import { isHiddenStartupLaunch } from './login-item-settings'
+import { uiText } from './ui-language'
 import {
   disposeCompletionNotifications,
   initializeCompletionNotifications,
@@ -32,7 +34,11 @@ process.on('uncaughtException', (err) => {
     const opts = {
       type: 'error' as const,
       title: 'pi Desktop',
-      message: 'A critical error occurred. Please restart the app.',
+      message: uiText({
+        vi: 'Đã xảy ra lỗi nghiêm trọng. Vui lòng khởi động lại ứng dụng.',
+        en: 'A critical error occurred. Please restart the app.',
+        zh: '发生严重错误，请重启应用。',
+      }),
       detail: msg.slice(0, 500),
     }
     if (win && !win.isDestroyed()) void dialog.showMessageBox(win, opts)
@@ -53,12 +59,15 @@ function attachCompletionNotificationShortcut(win: BrowserWindow): void {
 function createMenu(): void {
   // macOS keeps a minimal app menu (system convention); Windows/Linux remove the menu bar entirely.
   if (process.platform === 'darwin') {
+    const language = configStore.get('language')
+    const editLabel = language === 'vi' ? 'Chỉnh sửa' : language === 'en' ? 'Edit' : '编辑'
+    const docLabel = language === 'vi' ? 'Tài liệu' : language === 'en' ? 'Documentation' : '文档'
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
         { role: 'appMenu' },
-        { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
+        { label: editLabel, submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
         { role: 'window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }] },
-        { role: 'help', submenu: [{ label: 'Documentation', click: () => shell.openExternal('https://pi.dev') }] },
+        { role: 'help', submenu: [{ label: docLabel, click: () => shell.openExternal('https://pi.dev') }] },
       ] as Electron.MenuItemConstructorOptions[]),
     )
     return
@@ -87,6 +96,9 @@ app.whenReady().then(() => {
   createMenu()
   const closeToTray = ensureAppTray() !== null
   initializeCompletionNotifications()
+
+  // Login-item hidden launch: keep the window hidden, gateway/tray still run.
+  const hiddenStartup = isHiddenStartupLaunch()
 
   // CSP: inject Content-Security-Policy header in production (skip dev for Vite HMR)
   if (!is.dev) {
@@ -128,7 +140,7 @@ app.whenReady().then(() => {
       console.warn('[clipboard-images] prune failed:', e)
     }
   })
-  const win = createWindow(closeToTray)
+  const win = createWindow(closeToTray, hiddenStartup)
   workerManager.setMainWindow(win)
   // Mobile gateway: only listens when the user left it on (Settings → 手机连接).
   void import('./remote-gateway-service').then((m) => m.startRemoteGatewayIfEnabled())

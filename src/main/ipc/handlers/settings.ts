@@ -2,6 +2,7 @@ import { shell, BrowserWindow } from 'electron'
 import type { AppUpdateAvailableInfo } from '@shared/app-update'
 import { configStore, type StoreSchema } from '../../config-store'
 import { asrConfigForSettingsResponse, loadAsrConfig, saveAsrConfig } from '../../asr-config-store'
+import { applyLoginItemSettings, readLoginItemSettings } from '../../login-item-settings'
 import { getMainWindow } from '../../window'
 import { invalidateAdapterCatalog } from '../../../extension-compat/adapter-loader'
 import { workerManager } from '../../worker-manager'
@@ -66,6 +67,28 @@ export function registerSettingsHandlers(): void {
     }
     configStore.set(key, req.value as StoreSchema[typeof key])
     if (key === 'sessionCapabilities') remoteTap.settingsChanged('capabilities')
+    if (key === 'startOnLogin') {
+      // Register/unregister the login item to match the switch; hidden state follows the saved
+      // startHiddenInTray preference (applied on the next login launch).
+      try {
+        applyLoginItemSettings(req.value === true, configStore.get('startHiddenInTray'))
+      } catch (error) {
+        // Roll the persisted key back so the switch state matches the actual login item.
+        configStore.set(key, !req.value)
+        throw error
+      }
+    }
+    if (key === 'startHiddenInTray') {
+      // Re-register so the login item argv gains/loses --hidden immediately.
+      try {
+        if (configStore.get('startOnLogin')) {
+          applyLoginItemSettings(true, req.value === true)
+        }
+      } catch (error) {
+        configStore.set(key, !req.value)
+        throw error
+      }
+    }
     return { key: req.key, value: req.value }
   })
 
@@ -109,8 +132,12 @@ export function registerSettingsHandlers(): void {
     return { ok: true }
   })
 
+  registerHandler('ipc:app.getLoginItemState', async () => {
+    return { state: readLoginItemSettings() }
+  })
+
   registerHandler('ipc:app.openRelease', async (req) => {
-    const slug = (process.env.PI_DESKTOP_GITHUB_REPO || 'justhil/pi-app').trim()
+    const slug = (process.env.PI_DESKTOP_GITHUB_REPO || 'nguyendinhquocx/pi-app').trim()
     const url = (req.url && String(req.url).trim()) || `https://github.com/${slug}/releases`
     await shell.openExternal(url)
     return { ok: true }

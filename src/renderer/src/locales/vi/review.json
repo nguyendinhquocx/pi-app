@@ -1,0 +1,53 @@
+{
+  "scope": {
+    "turn": "Lượt này",
+    "session": "Tổng phiên",
+    "git": "Workspace Git"
+  },
+  "empty": "Chưa có thay đổi",
+  "staged": "Đã đưa vào staging",
+  "unstaged": "Chưa đưa vào staging",
+  "cleanTouched": "Không còn trong working tree",
+  "copyPath": "Sao chép đường dẫn",
+  "openFile": "Mở tệp",
+  "title": "Thay đổi mã",
+  "collaboration": "Gửi đến cuộc trò chuyện này",
+  "sendFailed": "Không thể gửi. Nhận xét của bạn vẫn được lưu; hãy thử lại.",
+  "commentsPrompt": "Vui lòng xử lý các nhận xét đánh giá này:\n{{comments}}",
+  "conflictsPrompt": "Vui lòng giải quyết các xung đột git này:\n{{files}}",
+  "scopeHintTurn": "Lượt chạy này {{id}}…",
+  "scopeHintNoTurn": "Chưa có lượt chạy (hãy gửi tin nhắn trước)",
+  "scopeHintSession": "{{count}} tệp đã thay đổi",
+  "scopeHintNotRepo": "Không phải kho Git",
+  "scopeHintBranch": "Nhánh {{branch}}",
+  "scopeHintGit": "Workspace Git",
+  "toggleSplit": "Chuyển sang chế độ cạnh nhau",
+  "toggleInline": "Chuyển sang chế độ nội tuyến",
+  "refresh": "Làm mới",
+  "notGitRepo": "Thư mục hiện tại không phải kho Git",
+  "notGitHint": "Trò chuyện tạm thời hoặc thư mục chưa khởi tạo thường không có Git",
+  "sendComments": "Gửi nhận xét",
+  "conflicts": "Xung đột",
+  "sendConflicts": "Gửi xung đột cho Pi",
+  "emptyHint": {
+    "turn": "Các tệp thay đổi trong lượt hiện tại sẽ xuất hiện ở đây",
+    "session": "Các tệp agent đã sửa trong cuộc trò chuyện này sẽ được liệt kê ở đây",
+    "git": "Working tree trùng với HEAD — không có thay đổi chưa commit"
+  },
+  "stageHunk": "Đưa đoạn này vào staging",
+  "unstageHunk": "Bỏ đoạn này khỏi staging",
+  "openInEditor": "Mở trong trình soạn thảo",
+  "revealInFolder": "Hiện trong thư mục",
+  "largeChange": "Thay đổi lớn ({{count}} dòng)",
+  "generatedFile": "Tệp được tạo tự động",
+  "binaryFile": "Tệp nhị phân — không có diff để hiển thị",
+  "renamedFrom": "Đổi tên từ {{path}}",
+  "noTextDiff": "Không có khác biệt văn bản để hiển thị",
+  "expandAll": "Mở rộng tất cả",
+  "collapseAll": "Thu gọn tất cả",
+  "scopeShort": {
+    "turn": "Lượt",
+    "session": "Phiên",
+    "git": "Git"
+  }
+}

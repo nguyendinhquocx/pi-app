@@ -49,6 +49,8 @@ vi.mock('@renderer/features/settings/settings-draft-context', () => ({
       maxSessionWorkers: 2,
       sessionWorkerIdleTimeoutMinutes: 10,
       language: 'en',
+      startOnLogin: false,
+      startHiddenInTray: true,
     },
     setAutoOpenLastProject: vi.fn(),
     setAutoCheckRegistryUpdates: vi.fn(),

@@ -44,7 +44,11 @@ describe('git-workspace host mode', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pi-desktop-notrepo-'))
     tempDirs.push(dir)
     const r = runGit(dir, ['status'], { timeout: 3000 })
-    expect(r).toEqual({ ok: false, notRepo: true, message: '当前目录不是 Git 仓库' })
+    expect(r).toEqual({
+      ok: false,
+      notRepo: true,
+      message: 'Thư mục hiện tại không phải là Git repository',
+    })
   })
 
   it('stageHunks stages a working-tree diff and unstageHunks reverses it', async () => {

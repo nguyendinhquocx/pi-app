@@ -34,8 +34,12 @@ export interface StoreSchema {
   rightPanelPrefs: Record<string, boolean>
   /** 右侧栏 Tab 顺序（panel id 列表） */
   rightPanelOrder: string[]
-  /** 界面语言（设置保存后写入） */
-  language: 'zh' | 'en'
+  /** 界面语言（设置保存后写入）；fork 默认 vi（越南语） */
+  language: 'zh' | 'en' | 'vi'
+  /** Windows: auto-start with user login (registered login item) */
+  startOnLogin: boolean
+  /** Windows: when true AND startOnLogin, the login launch hides the window (tray-only) */
+  startHiddenInTray: boolean
   /** 启动时打开上次项目 */
   autoOpenLastProject: boolean
   /** 启动时检查 GitHub Releases 是否有新版本 */
@@ -126,6 +130,8 @@ const store = new Store<StoreSchema>({
     },
     rightPanelOrder: [],
     language: defaultAppLanguage(),
+    startOnLogin: false,
+    startHiddenInTray: true,
     autoOpenLastProject: true,
     autoCheckRegistryUpdates: true,
     includePrereleaseUpdates: false,

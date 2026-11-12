@@ -5,6 +5,7 @@ import { join } from 'path'
 import { isWslWindowsPath } from '@shared/wsl-path'
 import { getAgentRuntimeConfig } from './wsl/runtime-config'
 import { runGitInWsl, runGitInWslAsync } from './wsl/git-delegate'
+import { uiText } from './ui-language'
 
 /**
  * Distro whose git should serve `cwd`, or null for the host git. Only workspaces that live on the
@@ -57,6 +58,15 @@ function isNotGitRepo(stderr: string, message: string): boolean {
 }
 
 /** 工作区是否为 git 仓库（含 .git 目录或文件） */
+
+/** User-facing git error copy, localized to the saved UI language (fork adds Vietnamese). */
+function notRepoMessage(): string {
+  return uiText({ vi: 'Thư mục hiện tại không phải là Git repository', en: 'The current directory is not a Git repository', zh: '当前目录不是 Git 仓库' })
+}
+function gitFailedMessage(): string {
+  return uiText({ vi: 'Lệnh git thất bại', en: 'git command failed', zh: 'git 命令失败' })
+}
+
 export function isGitRepository(cwd: string): boolean {
   if (!cwd) return false
   return existsSync(join(cwd, '.git'))
@@ -68,15 +78,15 @@ export function runGit(
   options?: { timeout?: number; maxBuffer?: number; input?: string },
 ): { ok: true; stdout: string } | { ok: false; notRepo: boolean; message: string } {
   if (!isGitRepository(cwd)) {
-    return { ok: false, notRepo: true, message: '当前目录不是 Git 仓库' }
+    return { ok: false, notRepo: true, message: notRepoMessage() }
   }
   const r = gitExecSync(cwd, args, options)
   if (r.status !== 0) {
-    const message = (r.stderr || r.stdout || '').trim() || 'git 命令失败'
+    const message = (r.stderr || r.stdout || '').trim() || gitFailedMessage()
     if (isNotGitRepo(r.stderr, message)) {
-      return { ok: false, notRepo: true, message: '当前目录不是 Git 仓库' }
+      return { ok: false, notRepo: true, message: notRepoMessage() }
     }
-    const short = r.stderr.split('\n').find((l: string) => l.trim()) || message.split('\n')[0] || 'git 命令失败'
+    const short = r.stderr.split('\n').find((l: string) => l.trim()) || message.split('\n')[0] || gitFailedMessage()
     return { ok: false, notRepo: false, message: short.slice(0, 500) }
   }
   return { ok: true, stdout: r.stdout ?? '' }
@@ -157,15 +167,15 @@ export async function runGitReadOnly(
   options?: { timeout?: number; maxBuffer?: number },
 ): Promise<{ ok: true; stdout: string } | { ok: false; notRepo: boolean; message: string }> {
   if (!isGitRepository(cwd)) {
-    return { ok: false, notRepo: true, message: '当前目录不是 Git 仓库' }
+    return { ok: false, notRepo: true, message: notRepoMessage() }
   }
   const r = await gitExec(cwd, ['--no-optional-locks', ...args], options)
   if (r.status !== 0) {
-    const message = (r.stderr || r.stdout || '').trim() || 'git 命令失败'
+    const message = (r.stderr || r.stdout || '').trim() || gitFailedMessage()
     if (isNotGitRepo(r.stderr, message)) {
-      return { ok: false, notRepo: true, message: '当前目录不是 Git 仓库' }
+      return { ok: false, notRepo: true, message: notRepoMessage() }
     }
-    const short = r.stderr.split('\n').find((line) => line.trim()) || message.split('\n')[0] || 'git 命令失败'
+    const short = r.stderr.split('\n').find((line) => line.trim()) || message.split('\n')[0] || gitFailedMessage()
     return { ok: false, notRepo: false, message: short.slice(0, 500) }
   }
   return { ok: true, stdout: r.stdout ?? '' }
@@ -222,7 +232,7 @@ export async function readGitWorkspaceSnapshot(cwd: string): Promise<GitWorkspac
       stagedRaw: '',
       status: '',
       log: '',
-      message: '当前目录不是 Git 仓库',
+      message: notRepoMessage(),
     }
   }
 
@@ -253,7 +263,7 @@ export async function readGitWorkspaceSnapshot(cwd: string): Promise<GitWorkspac
 
 /** Working tree (staged + unstaged + untracked text files) against HEAD, for the phone's review view. */
 export async function readGitDiffVsHead(cwd: string): Promise<{ isRepo: boolean; branch: string; raw: string; message?: string }> {
-  if (!isGitRepository(cwd)) return { isRepo: false, branch: '', raw: '', message: '当前目录不是 Git 仓库' }
+  if (!isGitRepository(cwd)) return { isRepo: false, branch: '', raw: '', message: notRepoMessage() }
   const [branchR, headR, statusR] = await Promise.all([
     runGitReadOnly(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 3000 }),
     runGitReadOnly(cwd, ['diff', 'HEAD', '--no-color', '--no-ext-diff'], { timeout: 10000, maxBuffer: 32 * 1024 * 1024 }),

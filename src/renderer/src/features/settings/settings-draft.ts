@@ -31,7 +31,7 @@ import {
 } from '@shared/right-panels'
 
 export type ThemeChoice = 'light' | 'dark' | 'system'
-export type LanguageChoice = 'zh' | 'en'
+export type LanguageChoice = 'zh' | 'en' | 'vi'
 
 export type AgentRuntimeChoice = { mode: 'host' | 'wsl'; distro: string | null }
 
@@ -42,6 +42,8 @@ export type SettingsDraft = {
   customCssOverride: CustomCssOverride
   background: BackgroundSettings
   language: LanguageChoice
+  startOnLogin: boolean
+  startHiddenInTray: boolean
   autoOpenLastProject: boolean
   autoCheckRegistryUpdates: boolean
   includePrereleaseUpdates: boolean
@@ -71,6 +73,7 @@ export type SettingsDraft = {
 function normalizeLanguage(raw: unknown, fallback: LanguageChoice): LanguageChoice {
   const s = String(raw || '').toLowerCase()
   if (s.startsWith('zh')) return 'zh'
+  if (s.startsWith('vi')) return 'vi'
   if (s.startsWith('en')) return 'en'
   return fallback
 }
@@ -116,6 +119,8 @@ export function draftSignature(d: SettingsDraft): string {
     customCssOverride: d.customCssOverride,
     background: d.background,
     language: d.language,
+    startOnLogin: d.startOnLogin,
+    startHiddenInTray: d.startHiddenInTray,
     autoOpenLastProject: d.autoOpenLastProject,
     autoCheckRegistryUpdates: d.autoCheckRegistryUpdates,
     includePrereleaseUpdates: d.includePrereleaseUpdates,
@@ -158,7 +163,9 @@ export async function loadSettingsDraftFromDisk(i18nLanguage: string): Promise<S
     customTheme: normalizeCustomTheme(s.customTheme),
     customCssOverride: normalizeCustomCssOverride(s.customCssOverride),
     background: normalizeBackground(s.background),
-    language: normalizeLanguage(s.language, normalizeLanguage(i18nLanguage, 'zh')),
+    language: normalizeLanguage(s.language, normalizeLanguage(i18nLanguage, 'vi')),
+    startOnLogin: s.startOnLogin === true,
+    startHiddenInTray: s.startHiddenInTray !== false,
     autoOpenLastProject: s.autoOpenLastProject !== false,
     autoCheckRegistryUpdates: s.autoCheckRegistryUpdates !== false,
     includePrereleaseUpdates: s.includePrereleaseUpdates === true,
@@ -278,6 +285,8 @@ export async function commitSettingsDraft(draft: SettingsDraft, i18n: I18n): Pro
   await ipcClient.invoke('settings.set', { key: 'customCssOverride', value: draft.customCssOverride })
   await ipcClient.invoke('settings.set', { key: 'background', value: draft.background })
   await ipcClient.invoke('settings.set', { key: 'language', value: draft.language })
+  await ipcClient.invoke('settings.set', { key: 'startOnLogin', value: draft.startOnLogin })
+  await ipcClient.invoke('settings.set', { key: 'startHiddenInTray', value: draft.startHiddenInTray })
   await ipcClient.invoke('settings.set', { key: 'autoOpenLastProject', value: draft.autoOpenLastProject })
   await ipcClient.invoke('settings.set', { key: 'autoCheckRegistryUpdates', value: draft.autoCheckRegistryUpdates })
   await ipcClient.invoke('settings.set', { key: 'includePrereleaseUpdates', value: draft.includePrereleaseUpdates })

@@ -108,7 +108,7 @@ describe('checkGitHubReleaseUpdate network wiring', () => {
 
     expect(electron.fetch).toHaveBeenCalledTimes(1)
     expect(electron.fetch.mock.calls[0][0]).toBe(
-      'https://api.github.com/repos/justhil/pi-app/releases/latest',
+      'https://api.github.com/repos/nguyendinhquocx/pi-app/releases/latest',
     )
     expect(electron.fetch.mock.calls[0][1]).toMatchObject({
       headers: {
@@ -134,5 +134,35 @@ describe('checkGitHubReleaseUpdate network wiring', () => {
         },
       ],
     })
+  })
+
+  it('should_honor_PI_DESKTOP_GITHUB_REPO_override_for_release_requests', async () => {
+    const previousOverride = process.env.PI_DESKTOP_GITHUB_REPO
+    process.env.PI_DESKTOP_GITHUB_REPO = 'someone/override-repo'
+    electron.fetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          tag_name: 'v0.4.21',
+          html_url: 'https://github.com/someone/override-repo/releases/tag/v0.4.21',
+          body: '## Fixes',
+          assets: [],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      await checkGitHubReleaseUpdate()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform })
+      if (previousOverride === undefined) delete process.env.PI_DESKTOP_GITHUB_REPO
+      else process.env.PI_DESKTOP_GITHUB_REPO = previousOverride
+    }
+
+    expect(electron.fetch.mock.calls[0][0]).toBe(
+      'https://api.github.com/repos/someone/override-repo/releases/latest',
+    )
   })
 })

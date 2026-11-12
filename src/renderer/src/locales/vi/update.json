@@ -1,0 +1,15 @@
+{
+  "title": "Có bản cập nhật",
+  "versionLine": "Đã có v{{latest}} (hiện tại v{{current}})",
+  "notesHeading": "Ghi chú phát hành",
+  "noNotes": "Bản phát hành này không có ghi chú chi tiết. Mở trang phát hành để xem thêm.",
+  "remindLater": "Để sau",
+  "ignoreVersion": "Bỏ qua phiên bản này",
+  "updateNow": "Cập nhật",
+  "openRelease": "Mở trang phát hành",
+  "updating": "Đang cập nhật…",
+  "downloading": "Đang tải xuống…",
+  "downloadingPercent": "Đang tải xuống {{percent}}%",
+  "launchingInstaller": "Đang khởi chạy trình cài đặt…",
+  "downloadFailed": "Tải xuống không thành công: {{error}}"
+}

@@ -43,7 +43,7 @@ export const COMPLETION_TITLE_MAX = 40
 export const COMPLETION_BODY_MAX = 140
 
 export type CompletionCopyInput = {
-  language: 'zh' | 'en'
+  language: 'zh' | 'en' | 'vi'
   outcome: CompletionOutcome
   promptPreview?: string
   responsePreview?: string
@@ -63,18 +63,24 @@ export type CompletionCopy = {
   muteLabel: string
 }
 
-function formatDuration(language: 'zh' | 'en', durationMs?: number): string {
+function formatDuration(language: 'zh' | 'en' | 'vi', durationMs?: number): string {
   if (durationMs == null || !Number.isFinite(durationMs) || durationMs < 0) return ''
   const sec = Math.max(0, Math.round(durationMs / 1000))
   if (language === 'zh') return sec > 0 ? `${sec} 秒` : '不到 1 秒'
+  if (language === 'vi') return sec > 0 ? `${sec} giây` : 'dưới 1 giây'
   return sec > 0 ? `${sec}s` : '<1s'
 }
 
-function outcomeLabel(language: 'zh' | 'en', outcome: CompletionOutcome): string {
+function outcomeLabel(language: 'zh' | 'en' | 'vi', outcome: CompletionOutcome): string {
   if (language === 'zh') {
     if (outcome === 'failed') return '失败'
     if (outcome === 'cancelled') return '已取消'
     return '完成'
+  }
+  if (language === 'vi') {
+    if (outcome === 'failed') return 'Thất bại'
+    if (outcome === 'cancelled') return 'Đã hủy'
+    return 'Hoàn thành'
   }
   if (outcome === 'failed') return 'Failed'
   if (outcome === 'cancelled') return 'Cancelled'
@@ -83,25 +89,31 @@ function outcomeLabel(language: 'zh' | 'en', outcome: CompletionOutcome): string
 
 export function buildCompletionNotificationCopy(input: CompletionCopyInput): CompletionCopy {
   const zh = input.language === 'zh'
+  const vi = input.language === 'vi'
+  const copy = (viText: string, enText: string) => (vi ? viText : enText)
   if (input.isTest) {
     return {
       projectLabel: 'pi Desktop',
-      title: zh ? '测试提醒' : 'Test notification',
-      body: zh ? '任务完成，可以返回查看' : 'Task finished. You can return to the session.',
-      meta: zh ? '测试' : 'Test',
-      openLabel: zh ? '返回应用' : 'Back to app',
-      dismissLabel: zh ? '关闭' : 'Dismiss',
-      muteLabel: zh ? '勿扰 30 分钟' : 'Mute 30 min',
+      title: zh ? '测试提醒' : copy('Thông báo thử', 'Test notification'),
+      body: zh
+        ? '任务完成，可以返回查看'
+        : copy('Việc đã xong, có thể quay lại xem', 'Task finished. You can return to the session.'),
+      meta: zh ? '测试' : copy('Thử', 'Test'),
+      openLabel: zh ? '返回应用' : copy('Về ứng dụng', 'Back to app'),
+      dismissLabel: zh ? '关闭' : copy('Đóng', 'Dismiss'),
+      muteLabel: zh ? '勿扰 30 分钟' : copy('Im 30 phút', 'Mute 30 min'),
     }
   }
 
   const title =
     sanitizeCompletionPreview(input.promptPreview, COMPLETION_TITLE_MAX) ||
-    (zh ? '任务已完成' : 'Task finished')
+    (zh ? '任务已完成' : copy('Việc đã xong', 'Task finished'))
   const rawBody = input.previewMode === 'response' ? input.responsePreview : ''
   const body =
     sanitizeCompletionPreview(rawBody, COMPLETION_BODY_MAX) ||
-    (zh ? '任务完成，可以返回查看' : 'Task finished. You can return to the session.')
+    (zh
+      ? '任务完成，可以返回查看'
+      : copy('Việc đã xong, có thể quay lại xem', 'Task finished. You can return to the session.'))
   const duration = formatDuration(input.language, input.durationMs)
   const meta = [outcomeLabel(input.language, input.outcome), duration].filter(Boolean).join(' · ')
 
@@ -110,9 +122,9 @@ export function buildCompletionNotificationCopy(input: CompletionCopyInput): Com
     title,
     body,
     meta,
-    openLabel: zh ? '返回会话' : 'Open session',
-    dismissLabel: zh ? '关闭' : 'Dismiss',
-    muteLabel: zh ? '勿扰 30 分钟' : 'Mute 30 min',
+    openLabel: zh ? '返回会话' : copy('Mở phiên', 'Open session'),
+    dismissLabel: zh ? '关闭' : copy('Đóng', 'Dismiss'),
+    muteLabel: zh ? '勿扰 30 分钟' : copy('Im 30 phút', 'Mute 30 min'),
   }
 }
 

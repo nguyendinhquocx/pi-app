@@ -160,7 +160,7 @@ private fun InboxMenu(prefs: UiPrefs, onHosts: () -> Unit, onDismiss: () -> Unit
             Segmented(listOf("system" to stringResource(R.string.theme_system), "light" to stringResource(R.string.theme_light), "dark" to stringResource(R.string.theme_dark)), theme, prefs::setTheme)
             Text(stringResource(R.string.menu_language), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(top = 10.dp))
             // Language names stay in their own language.
-            Segmented(listOf("system" to stringResource(R.string.theme_system), "en" to "English", "zh" to "简体中文"), language, onSelect = { if (prefs.setLanguage(it)) activity?.recreate() })
+            Segmented(listOf("system" to stringResource(R.string.theme_system), "vi" to "Tiếng Việt", "en" to "English", "zh" to "简体中文"), language, onSelect = { if (prefs.setLanguage(it)) activity?.recreate() })
             Text(stringResource(R.string.menu_grouping), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(top = 10.dp))
             Segmented(listOf("status" to stringResource(R.string.group_status), "project" to stringResource(R.string.group_project)), grouping, prefs::setGrouping)
             Hairline(Modifier.padding(top = 10.dp))

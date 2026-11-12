@@ -1,0 +1,67 @@
+{
+  "empty": {
+    "noWorkspace": "Mở một dự án để duyệt tệp"
+  },
+  "chrome": {
+    "noFile": "Chưa chọn tệp",
+    "collapseExplorer": "Thu gọn cây tệp",
+    "expandExplorer": "Mở rộng cây tệp",
+    "expandPreview": "Mở rộng phần xem trước vào cột trò chuyện",
+    "collapsePreview": "Thu gọn phần xem trước"
+  },
+  "tabs": {
+    "close": "Đóng thẻ"
+  },
+  "search": {
+    "placeholder": "Lọc trong cây tệp…"
+  },
+  "tree": {
+    "folder": "Thư mục",
+    "loading": "Đang tải…",
+    "loadMore": "Hiển thị thêm {{count}}…",
+    "dirTruncated": "Thư mục lớn — đang hiển thị {{shown}} trên {{total}} mục",
+    "searchCapped": "Quá nhiều kết quả — đang hiển thị {{shown}} trên {{total}}",
+    "dotfiles": "Hiện tệp ẩn",
+    "git": { "modified": "Đã sửa đổi", "added": "Đã thêm", "deleted": "Đã xóa" },
+    "collapseAll": "Thu gọn tất cả"
+  },
+  "preview": {
+    "pickFile": "Chọn một tệp trong cây để xem trước",
+    "loading": "Đang tải bản xem trước…",
+    "tooLarge": "Tệp quá lớn để xem trước tại đây",
+    "binary": "Mở loại tệp này bằng ứng dụng hệ thống",
+    "pdf": "Mở PDF bằng trình xem của hệ thống",
+    "openInSystem": "Mở bằng hệ thống",
+    "error": "Không thể đọc tệp",
+    "truncated": "Chỉ hiển thị một phần nội dung",
+    "previewLimit": "Đang hiển thị 8 MB đầu tiên. Mở bằng ứng dụng hệ thống để xem phần còn lại.",
+    "truncatedNoHighlight": "Tệp lớn — văn bản thuần, không tô sáng cú pháp",
+    "expandAll": "Hiển thị tất cả ({{count}} dòng)",
+    "collapse": "Thu gọn",
+    "tryExpandRead": "Tải thêm (tối đa 8 MB)",
+    "deleted": "Tệp đã bị xóa hoặc di chuyển"
+  },
+  "menu": {
+    "preview": "Xem trước",
+    "attach": "Thêm vào trò chuyện",
+    "copyPath": "Sao chép đường dẫn",
+    "copyRel": "Sao chép đường dẫn tương đối",
+    "newFile": "Tệp mới",
+    "newFolder": "Thư mục mới",
+    "reveal": "Hiện trong thư mục",
+    "rename": "Đổi tên",
+    "openInNewTab": "Mở trong thẻ mới",
+    "searchInFolder": "Tìm trong thư mục này"
+  },
+  "rename": {
+    "title": "Đổi tên",
+    "confirm": "OK",
+    "cancel": "Hủy"
+  },
+  "toast": {
+    "attached": "Đã thêm vào ô soạn thảo",
+    "copied": "Đã sao chép đường dẫn",
+    "renamed": "Đã đổi tên",
+    "renameFailed": "Đổi tên không thành công"
+  }
+}

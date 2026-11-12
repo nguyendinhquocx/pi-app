@@ -13,17 +13,25 @@ export function focusMainWindow(): void {
   window.focus()
 }
 
+function trayCopy(language: 'zh' | 'en' | 'vi') {
+  return {
+    hide: language === 'vi' ? 'Ẩn cửa sổ' : language === 'en' ? 'Hide Window' : '隐藏窗口',
+    show: language === 'vi' ? 'Hiện cửa sổ' : language === 'en' ? 'Show Window' : '显示窗口',
+    quit: language === 'vi' ? 'Thoát' : language === 'en' ? 'Quit' : '退出',
+  }
+}
+
 function openTrayMenu(): void {
   const window = getMainWindow()
   const visible = window?.isVisible() ?? false
-  const zh = configStore.get('language') === 'zh'
+  const copy = trayCopy(configStore.get('language'))
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: visible ? (zh ? '隐藏窗口' : 'Hide Window') : (zh ? '显示窗口' : 'Show Window'),
+      label: visible ? copy.hide : copy.show,
       click: visible ? () => getMainWindow()?.hide() : focusMainWindow,
     },
     { type: 'separator' },
-    { label: zh ? '退出' : 'Quit', click: () => app.quit() },
+    { label: copy.quit, click: () => app.quit() },
   ]
   Menu.buildFromTemplate(template).popup()
 }

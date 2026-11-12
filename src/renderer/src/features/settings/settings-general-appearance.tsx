@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
 import { ipcClient } from '@renderer/lib/ipc-client'
 import { showAppUpdateDialog } from '@renderer/lib/app-update-notify'
@@ -109,6 +110,12 @@ export function GeneralSettings() {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [testingAlert, setTestingAlert] = useState(false)
   const [alertTestFeedback, setAlertTestFeedback] = useState<'sent' | 'failed' | null>(null)
+  const isWindows =
+    typeof navigator !== 'undefined' && /Win/i.test(navigator.platform)
+  const [startOnLogin, setStartOnLogin] = useState<boolean | null>(null)
+  const [startHiddenInTray, setStartHiddenInTray] = useState<boolean | null>(null)
+  const startOnLoginEffective = startOnLogin ?? draft.startOnLogin
+  const startHiddenEffective = startHiddenInTray ?? draft.startHiddenInTray
   const updateCheckAttemptRef = useRef(0)
   const mountedRef = useRef(true)
 
@@ -129,7 +136,40 @@ export function GeneralSettings() {
         setFixedOrder(res.settings.recentProjectsFixedOrder)
       }
     })
+    if (isWindows) {
+      void ipcClient
+        .invoke('app.getLoginItemState', {})
+        .then((res) => {
+          const state = res?.state
+          if (state && typeof state.registered === 'boolean') setStartOnLogin(state.registered)
+          if (state && typeof state.hidden === 'boolean') setStartHiddenInTray(state.hidden)
+        })
+        .catch(() => {})
+    }
   }, [])
+
+  const toggleStartOnLogin = async (next: boolean) => {
+    const previous = startOnLoginEffective
+    setStartOnLogin(next)
+    try {
+      await ipcClient.invoke('settings.set', { key: 'startOnLogin', value: next })
+    } catch {
+      // Native login-item API failed: revert the switch and explain how to retry.
+      setStartOnLogin(previous)
+      toast.error(t('settings:general.startOnLoginError'))
+    }
+  }
+
+  const toggleStartHiddenInTray = async (next: boolean) => {
+    const previous = startHiddenEffective
+    setStartHiddenInTray(next)
+    try {
+      await ipcClient.invoke('settings.set', { key: 'startHiddenInTray', value: next })
+    } catch {
+      setStartHiddenInTray(previous)
+      toast.error(t('settings:general.startOnLoginError'))
+    }
+  }
 
   const toggleFixedOrder = (next: boolean) => {
     setFixedOrder(next)
@@ -202,6 +242,29 @@ export function GeneralSettings() {
         >
           <Switch checked={draft.includePrereleaseUpdates} onCheckedChange={setIncludePrereleaseUpdates} />
         </SettingRow>
+        {isWindows && (
+          <>
+            <SettingRow
+              label={t('settings:general.startOnLogin')}
+              description={t('settings:general.startOnLoginDesc')}
+            >
+              <Switch
+                checked={startOnLoginEffective}
+                onCheckedChange={(next) => void toggleStartOnLogin(next)}
+              />
+            </SettingRow>
+            <SettingRow
+              label={t('settings:general.startHiddenInTray')}
+              description={t('settings:general.startHiddenInTrayDesc')}
+            >
+              <Switch
+                checked={startOnLoginEffective && startHiddenEffective}
+                disabled={!startOnLoginEffective}
+                onCheckedChange={(next) => void toggleStartHiddenInTray(next)}
+              />
+            </SettingRow>
+          </>
+        )}
         <SettingRow label={t('settings:general.appVersion')} description={t('settings:general.appVersionDesc')}>
           <div className="flex flex-col items-start gap-1 sm:items-end">
             <div className="flex items-center gap-2">
@@ -215,9 +278,7 @@ export function GeneralSettings() {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  void ipcClient.invoke('app.openRelease', { url: 'https://github.com/justhil/pi-app' })
-                }
+                onClick={() => void ipcClient.invoke('app.openRelease', {})}
                 className={btnOutline}
                 title={t('settings:general.openGitHub')}
               >
@@ -450,6 +511,7 @@ export function GeneralSettings() {
         <SettingRow label={t('settings:general.language')} description={t('settings:general.languageDesc')}>
           <div className="flex gap-1.5">
             {[
+              { key: 'vi' as const, label: t('settings:general.langVi') },
               { key: 'zh' as const, label: t('settings:general.langZh') },
               { key: 'en' as const, label: t('settings:general.langEn') },
             ].map((l) => (

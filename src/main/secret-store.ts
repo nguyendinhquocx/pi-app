@@ -1,4 +1,5 @@
 import { safeStorage, BrowserWindow } from 'electron'
+import { uiText } from './ui-language'
 
 const STORE_KEY = 'codexAccessTokenEnc'
 
@@ -35,7 +36,11 @@ export function setCodexAccessToken(token: string | null | undefined): void {
     if (win && !win.isDestroyed()) {
       win.webContents.send('ipc:events', {
         type: 'warning',
-        message: '系统加密不可用，Codex Token 未持久化。重启后需重新输入。',
+        message: uiText({
+          vi: 'Mã hóa hệ thống không khả dụng nên Codex Token chưa được lưu. Sau khi khởi động lại bạn cần nhập lại.',
+          en: 'System encryption is unavailable, so the Codex token was not persisted. You will need to re-enter it after restarting.',
+          zh: '系统加密不可用，Codex Token 未持久化。重启后需重新输入。',
+        }),
       })
     }
     return

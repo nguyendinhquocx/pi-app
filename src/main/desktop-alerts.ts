@@ -61,7 +61,8 @@ export function deliverDesktopAlert(win: BrowserWindow | null, payload: DesktopA
   if (!scenario || (!doNotify && !doSound)) return
 
   ensureNotificationIdentity()
-  const language = configStore.get('language') === 'en' ? 'en' : 'zh'
+  const savedLanguage = configStore.get('language')
+  const language: 'zh' | 'en' | 'vi' = savedLanguage === 'en' || savedLanguage === 'zh' ? savedLanguage : 'vi'
   const copy = buildCompletionNotificationCopy({
     language,
     outcome: 'success',
@@ -81,7 +82,8 @@ export function deliverDesktopAlert(win: BrowserWindow | null, payload: DesktopA
         title: payload.title || copy.title,
         body: payload.body || copy.body,
         projectLabel: 'pi Desktop',
-        openLabel: language === 'zh' ? '返回应用' : 'Back to app',
+        openLabel:
+          language === 'zh' ? '返回应用' : language === 'vi' ? 'Về ứng dụng' : 'Back to app',
       },
     },
     doNotify ? 'auto' : 'custom',

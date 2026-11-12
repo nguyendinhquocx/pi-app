@@ -10,7 +10,10 @@ class PiRemoteApp : Application() {
         private set
 
     // Android 12 and older: notifications and other app-context strings follow the in-app language too.
+    // ensureInitialized runs before the first wrap so a fresh install starts Vietnamese on frame one;
+    // an explicitly saved choice (incl. System) keeps its marker and is never overwritten.
     override fun attachBaseContext(base: android.content.Context) {
+        dev.pi.remote.app.data.AppLocale.ensureInitialized(base)
         super.attachBaseContext(dev.pi.remote.app.data.AppLocale.wrap(base))
     }
 

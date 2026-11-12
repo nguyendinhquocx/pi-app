@@ -74,7 +74,7 @@ export function isE2eTestMode(): boolean {
   return v === '1' || v === 'true' || v === 'yes'
 }
 
-export function createWindow(closeToTray = false): BrowserWindow {
+export function createWindow(closeToTray = false, startHidden = false): BrowserWindow {
   const saved = readSavedWindowBounds()
   mainWindow = new BrowserWindow({
     width: saved?.width ?? DEFAULT_W,
@@ -104,6 +104,9 @@ export function createWindow(closeToTray = false): BrowserWindow {
   mainWindow.on('ready-to-show', () => {
     if (isE2eTestMode()) {
       mainWindow?.show()
+    } else if (startHidden) {
+      // Login-item hidden launch: keep the window invisible (no flash). The tray icon and the
+      // mobile gateway stay alive; the user restores the window from the tray or a second launch.
     } else if (is.dev) {
       mainWindow?.showInactive()
     } else {

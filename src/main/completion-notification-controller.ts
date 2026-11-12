@@ -20,7 +20,7 @@ export type CompletionNotificationSettings = {
   onlyWhenUnfocused: boolean
   dndUntil: number | null
   delivery: CompletionDeliveryMode
-  language: 'zh' | 'en'
+  language: 'zh' | 'en' | 'vi'
 }
 
 export type CompletionCard = {
