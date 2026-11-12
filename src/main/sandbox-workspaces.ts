@@ -5,6 +5,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'crypto'
 import { resolveActiveDesktopDir } from './agent-dir'
 import { isWslRuntimeActive } from './wsl/runtime-config'
+import { uiText } from './ui-language'
 
 const META_FILE = '.pi-desktop-sandbox.json'
 
@@ -77,7 +78,7 @@ export function createSandboxWorkspace(label?: string): {
   mkdirSync(dir, { recursive: true })
   const meta: SandboxMeta = {
     id,
-    label: label?.trim() || `临时对话 ${id}`,
+    label: label?.trim() || uiText({ vi: `Chat tạm ${id}`, en: `Sandbox chat ${id}`, zh: `临时对话 ${id}` }),
     createdAt: Date.now(),
     kind: 'sandbox',
   }

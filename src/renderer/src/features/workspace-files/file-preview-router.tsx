@@ -149,7 +149,7 @@ export function FilePreviewRouter({
   if (mode === 'pdf' || mode === 'binary' || mode === 'sheet') return wrap(<div className="space-y-2 px-3 py-6 text-[12px] text-foreground-secondary"><p>{t(mode === 'pdf' ? 'preview.pdf' : 'preview.binary')}</p><button type="button" className="text-accent hover:underline" onClick={openExternal}>{t('preview.openInSystem')}</button></div>)
   if (content == null) return wrap(null)
   if (sourceLocation) return wrap(<FileSourcePreview code={content} lang={guessLangFromPath(relativePath)} path={relativePath} fill={fill} sourceLocation={sourceLocation} />)
-  if (mode === 'html' && !truncated) return wrap(<iframe ref={frameRef} title="html-preview" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={htmlDocument} className="min-h-0 w-full flex-1 border-0 bg-[var(--bg-base)]" />)
+  if (mode === 'html' && !truncated) return wrap(<iframe ref={frameRef} title={t('common:builtin.files.htmlPreviewTitle')} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={htmlDocument} className="min-h-0 w-full flex-1 border-0 bg-[var(--bg-base)]" />)
   if (mode === 'markdown' && !truncated && content.length <= PREVIEW_MD_MAX_CHARS && content.split('\n').length <= PREVIEW_MD_MAX_LINES) return wrap(<FilePreviewScroll scrollClassName="px-4 py-3"><MarkdownView baseDirectory={joinWorkspacePath(workspaceRoot, relativePath.split('/').slice(0, -1).join('/'))}>{content}</MarkdownView></FilePreviewScroll>)
   if (mode === 'code') return wrap(<FileSourcePreview code={content} lang={guessLangFromPath(relativePath)} path={relativePath} fill={fill} />)
   return wrap(<PlainTextFill content={content} />)

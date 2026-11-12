@@ -1,4 +1,5 @@
 import { type MouseEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 
 /** 列分界拖拽：无悬停高亮，右栏手柄对齐 grid 接缝（主对话区右缘） */
@@ -11,11 +12,14 @@ export function PanelResizeEdge({
   dragging: boolean
   onMouseDown: (e: MouseEvent<HTMLDivElement>) => void
 }) {
+  const { t } = useTranslation()
+  const resizeLabel = t('common:builtin.panelResize.dragWidth')
   return (
     <div
       role="separator"
       aria-orientation="vertical"
-      title="拖动调整宽度"
+      title={resizeLabel}
+      aria-label={resizeLabel}
       onMouseDown={(e) => {
         e.preventDefault()
         onMouseDown(e)

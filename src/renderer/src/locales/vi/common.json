@@ -335,5 +335,76 @@
     "ago": { "now": "vừa xong", "minutes_one": "{{count}} phút trước", "minutes_other": "{{count}} phút trước", "hours_one": "{{count}} giờ trước", "hours_other": "{{count}} giờ trước", "days_one": "{{count}} ngày trước", "days_other": "{{count}} ngày trước" },
     "card": { "usingTools_one": "Đang dùng công cụ · {{count}} lần gọi trong lượt này", "usingTools_other": "Đang dùng công cụ · {{count}} lần gọi trong lượt này", "turns_one": "{{count}} lượt", "turns_other": "{{count}} lượt" },
     "focusHint": "Không đủ rộng để hiển thị mọi ngăn; đang hiển thị dưới dạng thẻ. Đổi bố cục tại đây"
+  },
+  "builtin": {
+    "common": {
+      "retry": "Thử lại",
+      "save": "Lưu",
+      "delete": "Xóa",
+      "close": "Đóng",
+      "empty": "(trống)",
+      "lineCount_one": "{{count}} dòng",
+      "lineCount_other": "{{count}} dòng"
+    },
+    "tasks": {
+      "unboundAdapter": "Chưa gắn adapterId ({{panelId}})",
+      "openProject": "Vui lòng mở dự án trước",
+      "loadPanelStateFailed": "Không thể tải trạng thái bảng điều khiển",
+      "noTaskLayout": "Dự án hiện tại chưa có bố cục workspace cho tác vụ",
+      "trellisRequired": "Cần có thư mục `.trellis/` ở thư mục gốc dự án (stateProvider: workspace-trellis)",
+      "activeCount_one": "{{count}} tác vụ đang hoạt động",
+      "activeCount_other": "{{count}} tác vụ đang hoạt động",
+      "currentTask": "Tác vụ hiện tại",
+      "subtaskCount_one": "{{count}} tác vụ con",
+      "subtaskCount_other": "{{count}} tác vụ con",
+      "subtasks": "Tác vụ con",
+      "acceptanceCriteria": "Tiêu chí nghiệm thu",
+      "noActiveTasks": "Chưa có tác vụ đang hoạt động",
+      "recentLogs": "Nhật ký gần đây",
+      "status": {
+        "inProgress": "Đang chạy",
+        "planning": "Đang lập kế hoạch",
+        "review": "Đang rà soát",
+        "completed": "Hoàn thành"
+      }
+    },
+    "toolPreview": {
+      "written": "Đã ghi",
+      "failed": "Thất bại",
+      "saved": "Đã lưu",
+      "noDiffDetails": "Không có chi tiết diff",
+      "resultCount_one": "{{count}} kết quả",
+      "resultCount_other": "{{count}} kết quả",
+      "noResults": "Không có kết quả",
+      "collapseResults": "Thu gọn",
+      "expandAllResults": "Hiện tất cả {{count}} kết quả",
+      "completed": "Hoàn tất",
+      "noOutput": "(Không có đầu ra)",
+      "status": {
+        "running": "Đang chạy",
+        "ok": "Thành công",
+        "error": "Lỗi",
+        "cancelled": "Đã hủy"
+      }
+    },
+    "reviewComments": {
+      "draftTitle": "Bản nháp nhận xét nội tuyến",
+      "placeholder": "Bản nháp nhận xét…"
+    },
+    "context": {
+      "noMessageSegments": "Chưa có đoạn tin nhắn"
+    },
+    "files": {
+      "htmlPreviewTitle": "Bản xem trước HTML"
+    },
+    "panelResize": {
+      "dragWidth": "Kéo để điều chỉnh chiều rộng"
+    },
+    "composer": {
+      "removeAttachment": "Gỡ bỏ"
+    },
+    "markdown": {
+      "filesReview": "Tệp"
+    }
   }
 }

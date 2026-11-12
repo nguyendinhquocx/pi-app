@@ -1,7 +1,7 @@
 /** Sandboxed notification host. No nodeIntegration; talks only via preload action ids. */
-export function notificationHostPageHtml(): string {
+export function notificationHostPageHtml(lang = 'vi'): string {
   return `<!doctype html>
-<html lang="zh">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; media-src 'none'" />

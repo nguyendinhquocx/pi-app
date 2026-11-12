@@ -10,6 +10,7 @@ import {
   type AppIconComponent,
 } from '@renderer/components/icons'
 import { createElement } from 'react'
+import i18n from '@renderer/lib/i18n'
 import { wireDelayedTooltip } from './delayed-tooltip'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { segmentsToPromptPayload } from './attachment-text'
@@ -191,7 +192,7 @@ export function createAttachmentChip(meta: AttachmentMeta): HTMLSpanElement {
     '<span class="rich-attachment-name">' +
     displayName +
     '</span>' +
-    '<button type="button" class="rich-attachment-remove" aria-label="\u79fb\u9664"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>'
+    `<button type="button" class="rich-attachment-remove" aria-label="${escapeHtml(i18n.t('common:builtin.composer.removeAttachment'))}"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>`
   return span
 }
 

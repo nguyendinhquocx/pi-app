@@ -20,31 +20,9 @@ const localeDir = join(__dirname, '..', '..', 'locales')
 /** Pre-existing en↔zh key drift in upstream catalogs (common/settings). Do not let it grow. */
 const ZH_KNOWN_KEY_GAPS: Record<string, { missing: string[]; extra: string[] }> = {
   common: {
-    missing: [
-      'split.ago.days_one',
-      'split.ago.days_other',
-      'split.ago.hours_one',
-      'split.ago.hours_other',
-      'split.ago.minutes_one',
-      'split.ago.minutes_other',
-      'split.card.turns_one',
-      'split.card.turns_other',
-      'split.card.usingTools_one',
-      'split.card.usingTools_other',
-      'window.terminalsAlso_one',
-      'window.terminalsAlso_other',
-      'window.terminalsMessage_one',
-      'window.terminalsMessage_other',
-    ],
-    extra: [
-      'split.ago.days',
-      'split.ago.hours',
-      'split.ago.minutes',
-      'split.card.turns',
-      'split.card.usingTools',
-      'window.terminalsAlso',
-      'window.terminalsMessage',
-    ],
+    // Filled during the fork's Vietnamese UI work (renderer built-in strings localization).
+    missing: [],
+    extra: [],
   },
   settings: {
     missing: [

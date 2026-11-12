@@ -14,7 +14,7 @@ class StringsParityTest {
     private val untranslated = setOf("app_name")
 
     /** Parsed strings.xml: plain strings plus plurals as quantity -> item text. */
-    private class Resources {
+    private class Resources(private val untranslated: Set<String>) {
         val strings = mutableMapOf<String, String>()
         val plurals = mutableMapOf<String, Map<String, String>>()
         val keys: Set<String> get() = (strings.keys + plurals.keys) - untranslated
@@ -23,7 +23,7 @@ class StringsParityTest {
     private fun resources(dir: String): Resources {
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(File(res, "$dir/strings.xml"))
         val nodes = doc.documentElement.childNodes
-        val out = Resources()
+        val out = Resources(untranslated)
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? Element ?: continue
             when (el.tagName) {
@@ -59,7 +59,7 @@ class StringsParityTest {
             for ((k, items) in en.plurals) {
                 if (k in untranslated) continue
                 val translated = other.plurals.getValue(k)
-                assertTrue("unknown quantities in $k ($dir)", translated.keys - items.keys.isEmpty())
+                assertTrue("unknown quantities in $k ($dir)", (translated.keys - items.keys).isEmpty())
                 for ((quantity, text) in items) {
                     // Locales may omit CLDR-unused quantities (zh drops "one"); compare the ones present in both.
                     val otherText = translated[quantity] ?: continue

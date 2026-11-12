@@ -5,6 +5,8 @@ import android.content.Context
 import android.os.Build
 import android.os.LocaleList
 import androidx.test.core.app.ApplicationProvider
+import java.util.Locale
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -12,16 +14,21 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.Locale
 
 /**
  * Locale persistence: fresh-install default vi (exactly once), explicit System/en/zh/vi choices
  * survive restarts, and tag round-trips accept vi / vi-*.
+ *
+ * Note: Robolectric's shadow for createConfigurationContext does not surface overridden app
+ * locales through `resources.configuration` on SDK < 33, so the wrap() tests assert the JVM
+ * default locale (what SimpleDateFormat etc. consume) and the base-vs-wrapped context choice —
+ * the behaviors that matter at runtime — instead of the shadowed configuration.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [32, 33])
 class AppLocaleTest {
     private lateinit var context: Context
+    private val originalDefaultLocale: Locale = Locale.getDefault()
 
     @Before
     fun setUp() {
@@ -31,6 +38,11 @@ class AppLocaleTest {
             context.getSystemService(LocaleManager::class.java).applicationLocales =
                 LocaleList.getEmptyLocaleList()
         }
+    }
+
+    @After
+    fun tearDown() {
+        Locale.setDefault(originalDefaultLocale)
     }
 
     private fun simulateRestart() {
@@ -67,8 +79,9 @@ class AppLocaleTest {
                 context.getSystemService(LocaleManager::class.java).applicationLocales.isEmpty,
             )
         } else {
-            // Android 12 and below: an empty per-app concept means wrap() uses the system locale.
-            assertEquals(context.resources.configuration.locales[0], Locale.getDefault())
+            // Android 12 and below: a saved System choice means wrap() returns the base context
+            // untouched (no locale override), so resources follow the system locale.
+            assertTrue(AppLocale.wrap(context) === context)
         }
     }
 
@@ -103,9 +116,12 @@ class AppLocaleTest {
         Locale.setDefault(Locale.forLanguageTag("en-US"))
 
         val wrapped = AppLocale.wrap(context)
-        assertEquals("vi", wrapped.resources.configuration.locales[0].language)
+        // wrap() must override the JVM default locale (consumed by SimpleDateFormat and friends)
+        assertEquals("vi", Locale.getDefault().language)
+        // ...and return a distinct wrapped context; a System choice must not wrap at all.
+        assertTrue(wrapped !== context)
 
         AppLocale.apply(context, "system")
-        assertEquals(context.resources.configuration.locales[0], AppLocale.wrap(context).resources.configuration.locales[0])
+        assertTrue(AppLocale.wrap(context) === context)
     }
 }

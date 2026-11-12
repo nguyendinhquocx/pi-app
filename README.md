@@ -108,7 +108,7 @@ Light and dark each take a preset — **Claude**, VS Code Light+, Codex Dark —
 
 <img src="doc/assets/readme/en/phone.png" alt="pi Remote on Android: the inbox of sessions, a session with its tool steps and changed files, a diff with a line comment, and the session panel with context, changes, branches and cost" width="100%" />
 
-**pi Remote** (Android) connects to the desktop app: turn on **Settings → Mobile**, scan the QR code, and every session is on the phone — read along while a turn runs, answer its questions, send prompts with images, pick the model and thinking level. Review a turn's changes or the working tree file by file, long-press lines to leave comments that go into your next message, switch the session's branch or fork from any message. The connection is end-to-end encrypted and stays on your network; away from home, put both devices in the same Tailscale / ZeroTier / WireGuard network (the app finds the overlay address, or add one by hand). English and Chinese follow the phone's language, with an in-app override.
+**pi Remote** (Android) connects to the desktop app: turn on **Settings → Mobile**, scan the QR code, and every session is on the phone — read along while a turn runs, answer its questions, send prompts with images, pick the model and thinking level. Review a turn's changes or the working tree file by file, long-press lines to leave comments that go into your next message, switch the session's branch or fork from any message. The connection is end-to-end encrypted and stays on your network; away from home, put both devices in the same Tailscale / ZeroTier / WireGuard network (the app finds the overlay address, or add one by hand). Vietnamese, English and Chinese are built in — fresh installs start Vietnamese, with an in-app override.
 
 ## How it fits together
 
@@ -126,7 +126,8 @@ The renderer never talks to the SDK directly: the main process routes each reque
 | **Extensions, unchanged** | Extensions you installed for terminal pi load here. Their dialogs, tool cards, panels and `/commands` are mapped to native UI by declarative adapters — 36 ship built in. [List](./doc/guide/adapters.en.md) |
 | **Notifications** | A system notification and an in-app inbox when a turn finishes or needs input; the status bar shows what is running. |
 | **WSL runtime** (Windows) | Run the worker inside a chosen WSL distribution, with sessions, Git and previews resolved on the Linux side. |
-| **Chinese / English UI** | Switch in Settings; the phone app follows the system language. |
+| **Vietnamese / Chinese / English UI** | Switch in Settings; a fresh install starts Vietnamese, a saved choice is kept. The phone app ships the same three languages. |
+| **Start with Windows** (Windows) | Optional launch at sign-in, with a “start hidden in tray” mode; a manual launch always shows the window. |
 | **Updates** | Checks GitHub Releases in the background and can download and launch the installer. |
 
 ## Install

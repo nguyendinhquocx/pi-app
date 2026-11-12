@@ -11,7 +11,7 @@ function openPreview() {
   useUIStore.setState({ currentWorkspace: '/fixture', activePanel: 'files', filesPreviewChatExpand: false })
   render(<WorkspaceFilesPanel />)
   act(() => { openWorkspaceRelativePath('中文.html') })
-  fireEvent.click(screen.getByTitle(/Expand preview|展开预览/))
+  fireEvent.click(screen.getByTitle(/Expand preview|展开预览|Mở rộng phần xem trước/))
   expect(useUIStore.getState().filesPreviewChatExpand).toBe(true)
 }
 it('restores chat after closing the last expanded preview tab', () => {

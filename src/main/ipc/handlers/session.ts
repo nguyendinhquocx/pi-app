@@ -38,6 +38,7 @@ import {
 import { authorizeTrustedSessionFile } from '../../trusted-workspace'
 import { errorMessage } from '@shared/error-message'
 import { workspacePathsEqual } from '@shared/workspace-path'
+import { uiText } from '../../ui-language'
 import { wslPathToWindows } from '@shared/wsl-path'
 import { getAgentRuntimeConfig } from '../../wsl/runtime-config'
 
@@ -332,7 +333,7 @@ export function registerSessionHandlers(): void {
         sessionId: result.sessionId,
         sessionFile,
         workspaceId,
-        title: '新会话',
+        title: uiText({ vi: 'Phiên mới', en: 'New session', zh: '新会话' }),
         createdAt: Date.now(),
         updatedAt: Date.now(),
         modelId: '',

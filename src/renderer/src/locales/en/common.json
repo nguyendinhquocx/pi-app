@@ -382,5 +382,76 @@
       "turns_other": "{{count}} turns"
     },
     "focusHint": "Too narrow for all panes; shown as tabs. Change the layout here"
+  },
+  "builtin": {
+    "common": {
+      "retry": "Retry",
+      "save": "Save",
+      "delete": "Delete",
+      "close": "Close",
+      "empty": "(empty)",
+      "lineCount_one": "{{count}} line",
+      "lineCount_other": "{{count}} lines"
+    },
+    "tasks": {
+      "unboundAdapter": "No adapter is bound ({{panelId}})",
+      "openProject": "Please open a project first",
+      "loadPanelStateFailed": "Could not load panel state",
+      "noTaskLayout": "This project has no task workspace layout",
+      "trellisRequired": "A `.trellis/` directory must exist at the project root (stateProvider: workspace-trellis)",
+      "activeCount_one": "{{count}} active task",
+      "activeCount_other": "{{count}} active tasks",
+      "currentTask": "Current task",
+      "subtaskCount_one": "{{count}} subtask",
+      "subtaskCount_other": "{{count}} subtasks",
+      "subtasks": "Subtasks",
+      "acceptanceCriteria": "Acceptance criteria",
+      "noActiveTasks": "No active tasks",
+      "recentLogs": "Recent logs",
+      "status": {
+        "inProgress": "In progress",
+        "planning": "Planning",
+        "review": "In review",
+        "completed": "Completed"
+      }
+    },
+    "toolPreview": {
+      "written": "Written",
+      "failed": "Failed",
+      "saved": "Saved",
+      "noDiffDetails": "No diff details",
+      "resultCount_one": "{{count}} result",
+      "resultCount_other": "{{count}} results",
+      "noResults": "No results",
+      "collapseResults": "Collapse",
+      "expandAllResults": "Show all {{count}} results",
+      "completed": "Completed",
+      "noOutput": "(No output)",
+      "status": {
+        "running": "Running",
+        "ok": "OK",
+        "error": "Error",
+        "cancelled": "Cancelled"
+      }
+    },
+    "reviewComments": {
+      "draftTitle": "Inline comment draft",
+      "placeholder": "Comment draft…"
+    },
+    "context": {
+      "noMessageSegments": "No message segments"
+    },
+    "files": {
+      "htmlPreviewTitle": "HTML preview"
+    },
+    "panelResize": {
+      "dragWidth": "Drag to resize width"
+    },
+    "composer": {
+      "removeAttachment": "Remove"
+    },
+    "markdown": {
+      "filesReview": "Files"
+    }
   }
 }

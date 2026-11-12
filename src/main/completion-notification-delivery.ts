@@ -20,6 +20,7 @@ import { notificationHostPageHtml } from './notification-host-page'
 import { completionNotificationWindowOptions } from './completion-notification-window-options'
 import { systemNotificationSilent } from './completion-system-notification'
 import { traceAudio } from './audio-trace'
+import { uiLanguage } from './ui-language'
 
 type DeliveryMode = 'auto' | 'custom' | 'system'
 
@@ -160,7 +161,7 @@ async function createHost(): Promise<boolean> {
       host = null
       hostReady = false
     })
-    await host.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(notificationHostPageHtml())}`)
+    await host.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(notificationHostPageHtml(uiLanguage()))}`)
     return placeHost()
   } catch (error) {
     traceAudio('notification.host.fail', { error: String(error) })

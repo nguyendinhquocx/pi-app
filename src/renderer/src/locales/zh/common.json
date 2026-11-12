@@ -246,8 +246,10 @@
     "waitingMessage": "对话（含上下文压缩）完成后窗口将自动关闭。",
     "cancelWait": "取消等待",
     "terminalsTitle": "终端还在运行",
-    "terminalsMessage": "关闭窗口会结束 {{count}} 个终端里正在运行的进程。",
-    "terminalsAlso": "同时会结束 {{count}} 个终端里的进程。",
+    "terminalsMessage_one": "关闭窗口会结束 {{count}} 个终端里正在运行的进程。",
+    "terminalsMessage_other": "关闭窗口会结束 {{count}} 个终端里正在运行的进程。",
+    "terminalsAlso_one": "同时会结束 {{count}} 个终端里的进程。",
+    "terminalsAlso_other": "同时会结束 {{count}} 个终端里的进程。",
     "closeTerminals": "关闭"
   },
   "notification": {
@@ -366,14 +368,90 @@
     },
     "ago": {
       "now": "刚刚",
-      "minutes": "{{count}} 分钟前",
-      "hours": "{{count}} 小时前",
-      "days": "{{count}} 天前"
+      "minutes_one": "{{count}} 分钟前",
+      "minutes_other": "{{count}} 分钟前",
+      "hours_one": "{{count}} 小时前",
+      "hours_other": "{{count}} 小时前",
+      "days_one": "{{count}} 天前",
+      "days_other": "{{count}} 天前"
     },
     "card": {
-      "usingTools": "正在调用工具 · 本轮 {{count}} 次",
-      "turns": "{{count}} 轮"
+      "usingTools_one": "正在调用工具 · 本轮 {{count}} 次",
+      "usingTools_other": "正在调用工具 · 本轮 {{count}} 次",
+      "turns_one": "{{count}} 轮",
+      "turns_other": "{{count}} 轮"
     },
     "focusHint": "窗口太窄，暂以标签显示；可在此切换布局"
+  },
+  "builtin": {
+    "common": {
+      "retry": "重试",
+      "save": "保存",
+      "delete": "删除",
+      "close": "关闭",
+      "empty": "(空)",
+      "lineCount_one": "{{count}} 行",
+      "lineCount_other": "{{count}} 行"
+    },
+    "tasks": {
+      "unboundAdapter": "未绑定 adapterId（{{panelId}}）",
+      "openProject": "请先打开项目",
+      "loadPanelStateFailed": "无法加载面板状态",
+      "noTaskLayout": "当前项目无任务工作区布局",
+      "trellisRequired": "需在项目根存在 `.trellis/`（stateProvider: workspace-trellis）",
+      "activeCount_one": "活跃任务 ({{count}})",
+      "activeCount_other": "活跃任务 ({{count}})",
+      "currentTask": "当前任务",
+      "subtaskCount_one": "{{count}} 子任务",
+      "subtaskCount_other": "{{count}} 子任务",
+      "subtasks": "子任务",
+      "acceptanceCriteria": "验收条件",
+      "noActiveTasks": "暂无活跃任务",
+      "recentLogs": "最近日志",
+      "status": {
+        "inProgress": "进行中",
+        "planning": "规划中",
+        "review": "审查中",
+        "completed": "已完成"
+      }
+    },
+    "toolPreview": {
+      "written": "写入",
+      "failed": "失败",
+      "saved": "已保存",
+      "noDiffDetails": "无 diff 详情",
+      "resultCount_one": "{{count}} 条",
+      "resultCount_other": "{{count}} 条",
+      "noResults": "无结果",
+      "collapseResults": "收起",
+      "expandAllResults": "展开全部 {{count}} 条",
+      "completed": "完成",
+      "noOutput": "（无输出）",
+      "status": {
+        "running": "运行中",
+        "ok": "正常",
+        "error": "错误",
+        "cancelled": "已取消"
+      }
+    },
+    "reviewComments": {
+      "draftTitle": "行内评论草稿",
+      "placeholder": "评论草稿…"
+    },
+    "context": {
+      "noMessageSegments": "暂无消息片段"
+    },
+    "files": {
+      "htmlPreviewTitle": "HTML 预览"
+    },
+    "panelResize": {
+      "dragWidth": "拖动调整宽度"
+    },
+    "composer": {
+      "removeAttachment": "移除"
+    },
+    "markdown": {
+      "filesReview": "文件"
+    }
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckSquare, ListTree, BookOpen, RefreshCw, ChevronRight } from '@renderer/components/icons'
 import { ipcClient } from '@renderer/lib/ipc-client'
 import { useUIStore } from '@renderer/stores/ui-store'
@@ -24,11 +25,11 @@ interface TasksPanelState {
   recentJournals?: { title: string; date: string; lines: number; preview: string }[]
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  in_progress: '进行中',
-  planning: '规划中',
-  review: '审查中',
-  completed: '已完成',
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  in_progress: 'common:builtin.tasks.status.inProgress',
+  planning: 'common:builtin.tasks.status.planning',
+  review: 'common:builtin.tasks.status.review',
+  completed: 'common:builtin.tasks.status.completed',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,6 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelComponentProps) {
+  const { t } = useTranslation()
   const [data, setData] = useState<TasksPanelState>({ ready: false, tasks: [] })
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -80,13 +82,13 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
   }, [workspace, adapterId])
 
   if (!adapterId) {
-    return <div className="p-4 text-[12px] text-muted-foreground">未绑定 adapterId（{panelId}）</div>
+    return <div className="p-4 text-[12px] text-muted-foreground">{t('common:builtin.tasks.unboundAdapter', { panelId })}</div>
   }
 
   if (!workspace) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-        <span className="text-[12px] text-muted-foreground/50">请先打开项目</span>
+        <span className="text-[12px] text-muted-foreground/50">{t('common:builtin.tasks.openProject')}</span>
       </div>
     )
   }
@@ -94,9 +96,9 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
   if (loadError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-        <span className="text-[12px] text-muted-foreground/50">无法加载面板状态</span>
+        <span className="text-[12px] text-muted-foreground/50">{t('common:builtin.tasks.loadPanelStateFailed')}</span>
         <span className="text-[10px] font-mono text-muted-foreground/40">{loadError}</span>
-        <button type="button" onClick={fetchData} className="text-[11px] text-primary hover:underline">重试</button>
+        <button type="button" onClick={fetchData} className="text-[11px] text-primary hover:underline">{t('common:builtin.common.retry')}</button>
       </div>
     )
   }
@@ -104,8 +106,8 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
   if (!data.ready) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-        <span className="text-[12px] text-muted-foreground/50">当前项目无任务工作区布局</span>
-        <span className="text-[10px] text-muted-foreground/40">需在项目根存在 `.trellis/`（stateProvider: workspace-trellis）</span>
+        <span className="text-[12px] text-muted-foreground/50">{t('common:builtin.tasks.noTaskLayout')}</span>
+        <span className="text-[10px] text-muted-foreground/40">{t('common:builtin.tasks.trellisRequired')}</span>
       </div>
     )
   }
@@ -127,7 +129,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
       {data.tasks.length > 0 && (
         <div className="px-2 py-1.5 space-y-1">
           <div className="px-1 pb-1 text-[12px] text-foreground-secondary">
-            活跃任务 ({data.tasks.length})
+            {t('common:builtin.tasks.activeCount', { count: data.tasks.length })}
           </div>
           {data.tasks.map((task) => {
             const isExpanded = expandedTask === task.name
@@ -144,19 +146,19 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       {task.isCurrent && (
-                        <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-green-500" title="当前任务" />
+                        <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-green-500" title={t('common:builtin.tasks.currentTask')} />
                       )}
                       <span className="truncate text-[12px] font-medium leading-tight">{task.title}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1.5">
                       <span className={cn('rounded px-1.5 py-0.5 text-[9px] font-medium', STATUS_COLORS[task.status] || 'bg-muted text-muted-foreground')}>
-                        {STATUS_LABELS[task.status] || task.status}
+                        {STATUS_LABEL_KEYS[task.status] ? t(STATUS_LABEL_KEYS[task.status]) : task.status}
                       </span>
                       {task.priority && (
                         <span className="text-[9px] font-mono text-muted-foreground/50">{task.priority}</span>
                       )}
                       {task.subtasks && task.subtasks.length > 0 && (
-                        <span className="text-[9px] text-muted-foreground/50">{task.subtasks.length} 子任务</span>
+                        <span className="text-[9px] text-muted-foreground/50">{t('common:builtin.tasks.subtaskCount', { count: task.subtasks.length })}</span>
                       )}
                     </div>
                   </div>
@@ -174,7 +176,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
                       <div>
                         <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50 mb-1">
                           <ListTree className="h-3 w-3" />
-                          子任务
+                          {t('common:builtin.tasks.subtasks')}
                         </div>
                         {task.subtasks.map((st, i) => (
                           <div key={i} className="flex items-center gap-1.5 py-0.5 text-[11px] text-muted-foreground/70">
@@ -190,7 +192,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
                       <div>
                         <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50 mb-1">
                           <CheckSquare className="h-3 w-3" />
-                          验收条件
+                          {t('common:builtin.tasks.acceptanceCriteria')}
                         </div>
                         {task.acceptanceCriteria.map((ac, i) => (
                           <div key={i} className="flex items-start gap-1.5 py-0.5 text-[11px] text-muted-foreground/80">
@@ -217,7 +219,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
       {/* Empty tasks */}
       {data.tasks.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
-          <span className="text-[12px] text-foreground-secondary/70">暂无活跃任务</span>
+          <span className="text-[12px] text-foreground-secondary/70">{t('common:builtin.tasks.noActiveTasks')}</span>
         </div>
       )}
 
@@ -225,7 +227,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
       {data.recentJournals && data.recentJournals.length > 0 && (
         <div className="px-2 py-1.5 space-y-1 border-t border-border/40 mt-1">
           <div className="px-1 pb-1 text-[12px] text-foreground-secondary">
-            最近日志
+            {t('common:builtin.tasks.recentLogs')}
           </div>
           {data.recentJournals.map((j, i) => (
             <div key={i} className="rounded-lg border border-border/30 bg-card/20 px-2.5 py-1.5">
@@ -235,7 +237,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
               </div>
               <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/40">
                 <span className="font-mono">{j.date}</span>
-                <span>{j.lines} 行</span>
+                <span>{t('common:builtin.common.lineCount', { count: j.lines })}</span>
               </div>
               {j.preview && (
                 <p className="mt-0.5 truncate text-[10px] text-muted-foreground/40">{j.preview}</p>
