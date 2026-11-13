@@ -114,7 +114,7 @@ export class RemoteRpc {
           port.setSessionCapabilities(sessionFile, p.capabilities.filter((c) => known.has(c)))
         }
         hub.announceSession(sessionFile, project)
-        return { sessionKey: sessionFile }
+        return { sessionKey: normalizeSessionFileKey(sessionFile) }
       },
       'model.list': async (_c, p) => {
         const { entry } = await hub.authorize(p.sessionKey)

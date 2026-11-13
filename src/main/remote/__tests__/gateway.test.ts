@@ -141,6 +141,28 @@ describe('sessions', () => {
     await expect(c.call('session.watchList', { projectId: '/work/secret' })).rejects.toBeInstanceOf(RemoteRpcError)
   })
 
+  it('uses one canonical session key across Windows inbox, open, and live patches', async () => {
+    const existing = host.sessions.get(session)!
+    host.sessions.delete(session)
+    const windowsFile = 'C:\\Users\\quocn\\.pi\\agent\\sessions\\win-session.jsonl'
+    existing.row = { ...existing.row, sessionFile: windowsFile }
+    host.sessions.set(windowsFile, existing)
+    session = windowsFile
+
+    const c = await pairNew()
+    const { sessions } = await c.call('session.watchList', {})
+    const summary = sessions.find((row) => row.sessionKey.includes('win-session'))!
+    const opened = (await c.call('session.open', { sessionKey: windowsFile })) as OpenResult
+    const expected = 'C:/Users/quocn/.pi/agent/sessions/win-session.jsonl'
+
+    expect(summary.sessionKey).toBe(expected)
+    expect(opened.sessionKey).toBe(expected)
+
+    await host.playRun(windowsFile, 'live Windows run')
+    const evt = await c.waitFor((event) => event.m === 'turn.patch')
+    expect((evt.p as { sessionKey: string }).sessionKey).toBe(expected)
+  })
+
   it('opens a snapshot, streams a run, and replays from a cursor after reconnect', async () => {
     const c = await pairNew()
     const open = (await c.call('session.open', { sessionKey: session })) as OpenResult

@@ -233,7 +233,8 @@ export class SessionHub {
     const running = !!state?.running
     const status: SessionSummary['status'] = ask ? 'needsInput' : running ? 'running' : e?.lastFailure ? 'failed' : 'idle'
     const out: SessionSummary = {
-      sessionKey: row.sessionFile,
+      // Session identity crosses the wire; keep it canonical even though host I/O uses the raw path.
+      sessionKey: key,
       projectId: row.projectId,
       title: row.title,
       status,
@@ -378,7 +379,8 @@ export class SessionHub {
       entry.projector.seedState(st)
     }
     const title = this.rows.get(entry.key)?.title ?? ''
-    const base = { sessionKey: entry.sessionFile, title, epoch: this.epoch }
+    // The raw sessionFile stays private to host I/O; every wire-facing session key is canonical.
+    const base = { sessionKey: entry.key, title, epoch: this.epoch }
 
     if (cursor && cursor.epoch === this.epoch) {
       const oldest = entry.ring[0]?.seq
@@ -462,7 +464,7 @@ export class SessionHub {
     if (anchor.startsWith('live:')) throw new RpcFail('conflict', 'message is not saved yet')
     const r = await this.port.fork(entry.sessionFile, anchor, projectId)
     this.announceSession(r.sessionFile, projectId)
-    return { sessionKey: r.sessionFile, ...(r.editorText ? { editorText: r.editorText } : {}) }
+    return { sessionKey: normalizeSessionFileKey(r.sessionFile), ...(r.editorText ? { editorText: r.editorText } : {}) }
   }
 
   async page(sessionKey: string, before: string, limit: number): Promise<{ turns: Turn[]; hasOlder: boolean }> {
