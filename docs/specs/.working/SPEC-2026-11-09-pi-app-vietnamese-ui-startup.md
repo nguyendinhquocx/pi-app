@@ -217,6 +217,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 - Skills: `implement`, `test`.
 
 ## Checkpoints
+- Task 5 source gates (candidate 0.7.9): Windows-path gateway + session-key tests 40/40 PASS; KMP shared + Android unit tests 99/99 PASS; `npm run typecheck` PASS. Release APK verifies `dev.pi.remote`, versionCode 709/versionName 0.7.9, debug signer SHA-256 `15aeec9a1d483f614ccc0da28d4bdc355e2578dffb15b7bbd3c582a41bd6ad6b`; Windows Setup/Portable 0.7.9 built with `vi.pak`. Manual A55 live-stream smoke is still pending; do not archive yet.
 - Sau Task 1–2: desktop recursive locale parity + Android placeholder-multiset parity pass; first-run `vi` và saved System/en/zh/vi tests pass.
 - Sau Task 3: login-item state/args/rollback tests pass; Windows package mở bình thường, hidden startup không flash, manual/second-instance launch restore window.
 - Trước hoàn tất: Windows installer + Android APK build pass; signer/package metadata verify; desktop screenshots và Android API 32/33 QA đủ; giữ working spec tới khi owner UAT pass.
