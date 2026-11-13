@@ -213,6 +213,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
   - Parent-owned server wire contract/tests: `src/main/remote/session-hub.ts`, `src/main/remote/rpc.ts`, `src/main/remote/__tests__/gateway.test.ts`.
   - GLM worker isolated slice: create KMP helper `apps/mobile/shared/src/commonMain/kotlin/dev/pi/remote/protocol/SessionKey.kt` and its normalization test only; do not touch Repository/TurnStore/server paths.
   - Parent-owned Android integration/core: `apps/mobile/androidApp/src/main/kotlin/dev/pi/remote/app/data/RemoteRepository.kt`, `data/Storage.kt`, `ui/session/SessionScreen.kt`, `ui/session/TurnItem.kt`; `apps/mobile/shared/src/commonMain/kotlin/dev/pi/remote/sync/TurnStore.kt` and related tests.
+  - Create `apps/mobile/shared/src/commonMain/kotlin/dev/pi/remote/sync/SessionTimelineSync.kt` + `shared/src/jvmTest/.../SessionTimelineSyncTest.kt`; create `apps/mobile/androidApp/src/main/kotlin/dev/pi/remote/app/data/PendingSend.kt` + `androidApp/src/test/.../PendingSendReconcilerTest.kt`.
 - Skills: `implement`, `test`.
 
 ## Checkpoints
