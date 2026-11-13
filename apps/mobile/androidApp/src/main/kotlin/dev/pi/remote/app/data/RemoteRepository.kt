@@ -108,13 +108,15 @@ class RemoteRepository(
     private val timelineSync = HashMap<String, SessionTimelineSync>()
     private val _settingsVersion = MutableStateFlow(0)
     val settingsVersion: StateFlow<Int> = _settingsVersion
+    private val _syncVersion = MutableStateFlow(0)
+    val syncVersion: StateFlow<Int> = _syncVersion
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val notices: SharedFlow<String> = _notices
 
     private var conn: HostConnection? = null
     private var api: RemoteApi? = null
     private var jobs = mutableListOf<Job>()
-    private var openKey: String? = null
+    private val activeSessionGate = ActiveSessionGate()
     private var stopJob: Job? = null
     private var hello: HelloResult? = null
     private var foreground = false
@@ -122,6 +124,32 @@ class RemoteRepository(
     private val helloParams get() = HelloParams(AppInfo("pi-remote", appVersion, platform), CLIENT_CAPS)
 
     private fun sessionKey(raw: String): String = canonicalSessionKey(raw)
+
+    private fun activateOpenKey(key: String): Long = activeSessionGate.activate(key)
+    private fun deactivateOpenKey(key: String): Long = activeSessionGate.deactivate(key)
+    private fun clearActiveOpenKey() { activeSessionGate.clear() }
+    private fun activeOpenSnapshot(): Pair<String?, Long> = activeSessionGate.snapshot()
+    private fun isActiveOpen(key: String, generation: Long): Boolean = activeSessionGate.isCurrent(key, generation)
+    private fun isActiveOpen(key: String): Boolean = activeSessionGate.isActive(key)
+
+    private fun abandonStaleOpen(key: String, openId: Long, apiAtStart: RemoteApi) {
+        withTimelineSync(key) { sync ->
+            val result = sync.failOpen(openId)
+            if (result is SessionSyncResult.Applied || result is SessionSyncResult.NeedsResync) {
+                publishTimelineLocked(key, sync)
+            }
+        }
+        val (activeKey, activeGeneration) = activeOpenSnapshot()
+        if (activeKey != key) {
+            // session.open subscribes the gateway client before its RPC response arrives. If a
+            // late inactive open completed last, close only that old subscription then restore
+            // the currently visible session's stream.
+            scope.launch { runCatching { apiAtStart.close(key) } }
+            if (activeKey != null && isActiveOpen(activeKey, activeGeneration)) {
+                requestResync(activeKey, fresh = false)
+            }
+        }
+    }
 
     private fun normalizeSummary(summary: SessionSummary): SessionSummary =
         summary.copy(sessionKey = sessionKey(summary.sessionKey))
@@ -176,7 +204,7 @@ class RemoteRepository(
         hostStore.setActive(hostId)
         if (_active.value?.hostId != hostId) {
             disconnect()
-            openKey = null
+            clearActiveOpenKey()
             _timelines.value = emptyMap()
             synchronized(timelineSyncLock) { timelineSync.clear() }
             _pendingSends.value = emptyMap()
@@ -204,7 +232,7 @@ class RemoteRepository(
     fun forget(hostId: String) {
         if (_active.value?.hostId == hostId) {
             disconnect()
-            openKey = null
+            clearActiveOpenKey()
             _active.value = null
             _inbox.value = InboxState()
             _timelines.value = emptyMap()
@@ -222,7 +250,7 @@ class RemoteRepository(
 
     fun onForeground() {
         foreground = true
-        openKey?.let { notifier?.clear(it) }
+        activeOpenSnapshot().first?.let { notifier?.clear(it) }
         updateKeepAlive()
         stopJob?.cancel()
         stopJob = null
@@ -298,7 +326,9 @@ class RemoteRepository(
             _inbox.value = InboxState(sessions, projects, loaded = true)
             persistInbox()
         }.onFailure { _notices.tryEmit(it.message ?: "list failed") }
-        openKey?.let { reopen(it) }
+        activeOpenSnapshot().let { (key, generation) ->
+            if (key != null) reopen(key, expectedOpenGeneration = generation)
+        }
     }
 
     private fun persistInbox() {
@@ -332,16 +362,12 @@ class RemoteRepository(
             "ui.request" -> {
                 val req = RemoteJson.decodeFromJsonElement(UiRequest.serializer(), e.payload)
                 val key = sessionKey(req.sessionKey)
-                val current = withTimelineSync(key) { it.current() }
-                if (current == null) requestResync(key, fresh = true)
-                else putTimeline(TurnStore.addUi(current, req))
+                handleSyncResult(key, withTimelineSync(key) { it.onUiRequest(req) })
             }
             "ui.dismiss" -> {
                 val wire = RemoteJson.decodeFromJsonElement(UiDismiss.serializer(), e.payload)
                 val key = sessionKey(wire.sessionKey)
-                val current = withTimelineSync(key) { it.current() }
-                if (current == null) requestResync(key, fresh = true)
-                else putTimeline(TurnStore.removeUi(current, wire.id))
+                handleSyncResult(key, withTimelineSync(key) { it.onUiDismiss(wire) })
             }
             "settings.changed" -> {
                 RemoteJson.decodeFromJsonElement(SettingsChanged.serializer(), e.payload)
@@ -387,11 +413,18 @@ class RemoteRepository(
         }
     }
 
+    private fun updateTimeline(rawKey: String, transform: (SessionTimeline) -> SessionTimeline): SessionTimeline? {
+        val key = sessionKey(rawKey)
+        return withTimelineSync(key) { sync ->
+            val current = sync.current() ?: return@withTimelineSync null
+            sync.seed(transform(current).copy(sessionKey = key))
+            publishTimelineLocked(key, sync)
+        }
+    }
+
     private fun reconcilePendingSends(key: String, timeline: SessionTimeline) {
-        val pending = _pendingSends.value[key].orEmpty()
-        if (pending.isEmpty()) return
-        val unmatched = PendingSendReconciler.reconcile(pending, timeline)
         _pendingSends.update { current ->
+            val unmatched = PendingSendReconciler.reconcile(current[key].orEmpty(), timeline)
             if (unmatched.isEmpty()) current - key else current + (key to unmatched)
         }
     }
@@ -408,10 +441,13 @@ class RemoteRepository(
 
     private fun requestResync(rawKey: String, fresh: Boolean = true) {
         val key = sessionKey(rawKey)
+        val openGeneration = activeOpenSnapshot().takeIf { it.first == key }?.second ?: return
         if (!resyncing.add(key)) return
         scope.launch {
             try {
-                reopen(key, fresh = fresh, maxResyncs = 1)
+                if (isActiveOpen(key, openGeneration)) {
+                    reopen(key, fresh = fresh, maxResyncs = 1, expectedOpenGeneration = openGeneration)
+                }
             } finally {
                 resyncing.remove(key)
             }
@@ -434,7 +470,7 @@ class RemoteRepository(
     /** Show cache immediately, then sync (replay from the current cursor when possible). */
     suspend fun openSession(rawKey: String) {
         val key = sessionKey(rawKey)
-        openKey = key
+        val openToken = activateOpenKey(key)
         if (foreground) notifier?.clear(key)
         val host = _active.value
         if (_timelines.value[key] == null && host != null) {
@@ -444,26 +480,47 @@ class RemoteRepository(
             }
             cached?.let { putTimeline(it) }
         }
-        reopen(key)
+        reopen(key, expectedOpenGeneration = openToken)
     }
 
-    private suspend fun reopen(rawKey: String, fresh: Boolean = false, maxResyncs: Int = 1) {
+    private suspend fun reopen(
+        rawKey: String,
+        fresh: Boolean = false,
+        maxResyncs: Int = 1,
+        expectedOpenGeneration: Long? = null,
+    ) {
         val key = sessionKey(rawKey)
+        val generation = expectedOpenGeneration ?: activeOpenSnapshot().takeIf { it.first == key }?.second ?: return
+        if (!isActiveOpen(key, generation)) return
         val a = api ?: return
         if (conn?.isReady != true) return
         var requestFresh = fresh
         repeat(maxResyncs + 1) { attempt ->
+            if (!isActiveOpen(key, generation)) return
             val (openId, cursor) = withTimelineSync(key) { sync ->
                 val id = sync.beginOpen(hello?.epoch, fresh = requestFresh)
+                _syncVersion.update { it + 1 }
                 val current = sync.current()
                 val nextCursor = if (requestFresh) null else current?.cursor?.takeIf { it.epoch == hello?.epoch }
                 id to nextCursor
             }
-            val response = runCatching { a.open(key, cursor) }
+            val response = try {
+                Result.success(a.open(key, cursor))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                abandonStaleOpen(key, openId, a)
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            if (!isActiveOpen(key, generation)) {
+                abandonStaleOpen(key, openId, a)
+                return
+            }
             if (response.isFailure) {
                 val failure = response.exceptionOrNull()!!
                 val syncResult = withTimelineSync(key) { sync ->
                     val result = sync.failOpen(openId)
+                    _syncVersion.update { it + 1 }
                     if (result is SessionSyncResult.Applied || result is SessionSyncResult.NeedsResync) {
                         publishTimelineLocked(key, sync)
                     }
@@ -499,6 +556,7 @@ class RemoteRepository(
 
             when (val result = withTimelineSync(key) { sync ->
                 val outcome = sync.completeOpen(openId, opened)
+                _syncVersion.update { it + 1 }
                 if (outcome is SessionSyncResult.Applied || outcome is SessionSyncResult.NeedsResync) {
                     publishTimelineLocked(key, sync)
                 }
@@ -525,27 +583,31 @@ class RemoteRepository(
 
     fun closeSession(rawKey: String) {
         val key = sessionKey(rawKey)
-        if (openKey == key) openKey = null
+        deactivateOpenKey(key)
         persistTimeline(key)
         val a = api ?: return
-        scope.launch { runCatching { a.close(key) } }
+        scope.launch {
+            if (isActiveOpen(key)) return@launch
+            runCatching { a.close(key) }
+            activeOpenSnapshot().first?.let { requestResync(it, fresh = false) }
+        }
     }
 
     suspend fun loadOlder(rawKey: String) {
         val key = sessionKey(rawKey)
         val a = api ?: return
-        val t = _timelines.value[key] ?: return
+        val t = withTimelineSync(key) { it.current() } ?: return
         val first = t.turns.firstOrNull() ?: return
         runCatching { a.page(key, first.anchor) }.onSuccess { r ->
-            _timelines.value[key]?.let { putTimeline(TurnStore.prependOlder(it, r.turns, r.hasOlder)) }
+            updateTimeline(key) { TurnStore.prependOlder(it, r.turns, r.hasOlder) }
         }
     }
 
     suspend fun send(rawKey: String, text: String, mode: String): SendOutcome {
         val key = sessionKey(rawKey)
         val a = api ?: return SendOutcome.Failed("offline")
-        val timeline = withTimelineSync(key) { it.current() }
-        if (timeline == null) {
+        val (sessionReady, timeline) = withTimelineSync(key) { it.isReady(hello?.epoch) to it.current() }
+        if (!sessionReady || timeline == null) {
             requestResync(key, fresh = true)
             return SendOutcome.SessionNotReady
         }
@@ -556,6 +618,7 @@ class RemoteRepository(
                 text = text.trim(),
                 status = PendingSendStatus.Sending,
                 baselineAnchors = timeline.turns.mapTo(HashSet()) { it.anchor },
+                baselineTailAnchor = timeline.turns.lastOrNull()?.anchor,
                 createdAt = System.currentTimeMillis(),
             ).also { item ->
                 _pendingSends.update { current -> current + (key to (current[key].orEmpty() + item)) }
@@ -570,6 +633,7 @@ class RemoteRepository(
         val pending = _pendingSends.value[key].orEmpty().firstOrNull { it.messageId == messageId }
             ?: return SendOutcome.Failed("pending message not found")
         val a = api ?: return SendOutcome.Unknown
+        if (!canSendSession(key)) return SendOutcome.SessionNotReady
         updatePending(key, messageId) { it.copy(status = PendingSendStatus.Sending) }
         return sendWithId(a, key, pending.text, "prompt", messageId, pending, retainPendingOnFailure = true)
     }
@@ -594,13 +658,21 @@ class RemoteRepository(
                 SendOutcome.Failed("host did not accept the message")
             } else {
                 pending?.let { updatePending(key, it.messageId) { it.copy(status = PendingSendStatus.Accepted) } }
-                pending?.let { schedulePendingReconcile(key, it.messageId) }
+                pending?.let { schedulePendingReconcile(key) }
                 SendOutcome.Sent
             }
         } catch (e: HostConnection.ConnectionLost) {
             pending?.let { updatePending(key, it.messageId) { it.copy(status = PendingSendStatus.Unknown) } }
-            pending?.let { schedulePendingReconcile(key, it.messageId) }
+            pending?.let { schedulePendingReconcile(key) }
             SendOutcome.Unknown
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            pending?.let { updatePending(key, it.messageId) { it.copy(status = PendingSendStatus.Unknown) } }
+            pending?.let { schedulePendingReconcile(key) }
+            SendOutcome.Unknown
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            pending?.let { updatePending(key, it.messageId) { it.copy(status = PendingSendStatus.Unknown) } }
+            pending?.let { schedulePendingReconcile(key) }
+            throw e
         } catch (e: Exception) {
             pending?.let {
                 updatePending(key, it.messageId) { current ->
@@ -613,14 +685,14 @@ class RemoteRepository(
 
     private val pendingResyncScheduled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    private fun schedulePendingReconcile(rawKey: String, messageId: String) {
+    private fun schedulePendingReconcile(rawKey: String) {
         val key = sessionKey(rawKey)
         if (!pendingResyncScheduled.add(key)) return
         scope.launch {
             delay(1_500)
             pendingResyncScheduled.remove(key)
             val stillPending = _pendingSends.value[key].orEmpty().any {
-                it.messageId == messageId && it.status != PendingSendStatus.Sending
+                it.status == PendingSendStatus.Accepted || it.status == PendingSendStatus.Unknown
             }
             if (stillPending) requestResync(key, fresh = false)
         }
@@ -687,14 +759,14 @@ class RemoteRepository(
     suspend fun respondUi(rawKey: String, response: UiResponse): Boolean {
         val key = sessionKey(rawKey)
         val ok = runCatching { api?.respondUi(response) ?: false }.getOrDefault(false)
-        withTimelineSync(key) { it.current() }?.let { putTimeline(TurnStore.removeUi(it, response.id)) }
+        updateTimeline(key) { TurnStore.removeUi(it, response.id) }
         return ok
     }
 
     suspend fun cancelUi(rawKey: String, id: String) {
         val key = sessionKey(rawKey)
         runCatching { api?.cancelUi(id) }
-        withTimelineSync(key) { it.current() }?.let { putTimeline(TurnStore.removeUi(it, id)) }
+        updateTimeline(key) { TurnStore.removeUi(it, id) }
     }
 
     suspend fun models(rawKey: String): ModelListResult? = runCatching { api?.models(sessionKey(rawKey)) }.getOrNull()
@@ -716,7 +788,7 @@ class RemoteRepository(
             val was = before[s.sessionKey]?.status ?: continue
             val settled = was == "running" && s.status != "running"
             val asks = s.status == "needsInput" && was != "needsInput"
-            if ((settled || asks) && !(foreground && openKey == s.sessionKey)) n.notifySession(s)
+            if ((settled || asks) && !(foreground && isActiveOpen(sessionKey(s.sessionKey)))) n.notifySession(s)
         }
         updateKeepAlive()
     }
@@ -769,6 +841,9 @@ class RemoteRepository(
     suspend fun createSession(projectId: String, caps: List<String>?): String? = runCatching {
         api?.create(projectId, caps)?.sessionKey?.let(::sessionKey)
     }.getOrNull()
+
+    fun canSendSession(rawKey: String): Boolean =
+        withTimelineSync(sessionKey(rawKey)) { it.isReady(hello?.epoch) }
 
     val canWrite: Boolean get() = (hello?.role ?: _active.value?.role) == "operator"
 

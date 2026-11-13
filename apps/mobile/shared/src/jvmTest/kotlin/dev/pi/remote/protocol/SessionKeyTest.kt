@@ -43,7 +43,7 @@ class SessionKeyTest {
 
     @Test fun uncPrefixIsPreservedExactlyOnce() {
         // Exactly-two-slash inputs keep the UNC prefix; inputs with >2 leading slashes
-        // collapse to three, faithfully mirroring TS `//${key.slice(2).replace(/\/+/, '/')}`.
+        // collapse to three, faithfully mirroring TS `//${key.slice(2).replace(/\/+/g, '/')}`.
         assertEquals("//server/share/s.jsonl", canonicalSessionKey("\\\\server\\share\\s.jsonl"))
         assertEquals("//server/share", canonicalSessionKey("//server//share"))
         assertEquals("///server/share/", canonicalSessionKey("////server//share//"))

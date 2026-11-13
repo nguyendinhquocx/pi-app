@@ -4,6 +4,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import dev.pi.remote.crypto.KeyPair
 import dev.pi.remote.protocol.RemoteJson
+import dev.pi.remote.protocol.canonicalSessionKey
 import dev.pi.remote.protocol.SessionState
 import dev.pi.remote.protocol.SessionSummary
 import dev.pi.remote.protocol.Turn
@@ -152,15 +153,41 @@ class TimelineCache(private val root: File) {
     private fun hostDir(hostId: String) = File(root, hostId.replace(Regex("[^A-Za-z0-9_-]"), "_"))
     private fun name(key: String): String = MessageDigest.getInstance("SHA-256").digest(key.encodeToByteArray()).joinToString("") { "%02x".format(it) }.take(32)
 
+    /** Pre-canonical releases hashed raw Windows separators; keep those cache entries readable once. */
+    private fun keyVariants(raw: String): List<String> {
+        val canonical = canonicalSessionKey(raw)
+        val variants = linkedSetOf(raw, canonical)
+        val windows = canonical.startsWith("//") || Regex("^[A-Za-z]:/").containsMatchIn(canonical)
+        if (windows) {
+            val backslashes = canonical.replace('/', 92.toChar())
+            variants += backslashes
+            if (Regex("^[A-Z]:\\\\").containsMatchIn(backslashes)) {
+                variants += backslashes.replaceFirstChar { it.lowercase() }
+            }
+        }
+        return variants.toList()
+    }
+
     fun loadInbox(hostId: String): List<SessionSummary> =
         runCatching { RemoteJson.decodeFromString(ListSerializer(SessionSummary.serializer()), File(hostDir(hostId), "inbox.json").readText()) }.getOrDefault(emptyList())
 
     fun saveInbox(hostId: String, sessions: List<SessionSummary>) = write(File(hostDir(hostId), "inbox.json"), RemoteJson.encodeToString(ListSerializer(SessionSummary.serializer()), sessions))
 
-    fun loadTimeline(hostId: String, key: String): SessionTimeline? =
-        runCatching { RemoteJson.decodeFromString(CachedTimeline.serializer(), File(hostDir(hostId), "turns/${name(key)}.json").readText()).toTimeline() }.getOrNull()
+    fun loadTimeline(hostId: String, key: String): SessionTimeline? {
+        val turnsDir = File(hostDir(hostId), "turns")
+        for (candidate in keyVariants(key)) {
+            val cached = runCatching {
+                RemoteJson.decodeFromString(CachedTimeline.serializer(), File(turnsDir, "${name(candidate)}.json").readText()).toTimeline()
+            }.getOrNull() ?: continue
+            return cached.copy(sessionKey = canonicalSessionKey(cached.sessionKey))
+        }
+        return null
+    }
 
-    fun saveTimeline(hostId: String, t: SessionTimeline) = write(File(hostDir(hostId), "turns/${name(t.sessionKey)}.json"), RemoteJson.encodeToString(CachedTimeline.serializer(), CachedTimeline.of(t)))
+    fun saveTimeline(hostId: String, t: SessionTimeline) {
+        val canonical = t.copy(sessionKey = canonicalSessionKey(t.sessionKey))
+        write(File(hostDir(hostId), "turns/${name(canonical.sessionKey)}.json"), RemoteJson.encodeToString(CachedTimeline.serializer(), CachedTimeline.of(canonical)))
+    }
 
     fun clearHost(hostId: String) {
         hostDir(hostId).deleteRecursively()

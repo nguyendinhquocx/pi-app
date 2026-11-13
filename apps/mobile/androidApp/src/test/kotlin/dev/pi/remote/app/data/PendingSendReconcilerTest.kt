@@ -33,6 +33,7 @@ class PendingSendReconcilerTest {
             text = "chào",
             status = PendingSendStatus.Accepted,
             baselineAnchors = setOf("old-anchor"),
+            baselineTailAnchor = "old-anchor",
             createdAt = 1,
         )
 
@@ -46,8 +47,8 @@ class PendingSendReconcilerTest {
         val first = turn("new-1", "same")
         val second = turn("new-2", "same")
         val pending = listOf(
-            PendingSend("m_1", "same", PendingSendStatus.Accepted, setOf("old-anchor"), 1),
-            PendingSend("m_2", "same", PendingSendStatus.Sending, setOf("old-anchor"), 2),
+            PendingSend("m_1", "same", PendingSendStatus.Accepted, setOf("old-anchor"), "old-anchor", 1),
+            PendingSend("m_2", "same", PendingSendStatus.Sending, setOf("old-anchor"), "old-anchor", 2),
         )
 
         assertEquals(listOf("m_2"), reconcile(pending, base.copy(turns = listOf(old, first))).map { it.messageId })
@@ -56,8 +57,27 @@ class PendingSendReconcilerTest {
 
     @Test
     fun whitespaceDifferencesDoNotLeaveAnAcceptedBubbleBehind() {
-        val pending = PendingSend("m_1", "fix\n  bug", PendingSendStatus.Accepted, emptySet(), 1)
+        val pending = PendingSend("m_1", "fix\n  bug", PendingSendStatus.Accepted, emptySet(), null, 1)
         val echoed = turn("new-anchor", "fix bug")
         assertEquals(emptyList<PendingSend>(), reconcile(listOf(pending), base.copy(turns = listOf(echoed))))
+    }
+
+    @Test
+    fun loadingOlderIdenticalTextBeforeBaselineTailDoesNotClearPendingSend() {
+        val olderDuplicate = turn("older-duplicate", "same")
+        val baselineTail = turn("tail-at-send", "different")
+        val pending = PendingSend(
+            messageId = "m_1",
+            text = "same",
+            status = PendingSendStatus.Accepted,
+            baselineAnchors = setOf("tail-at-send"),
+            baselineTailAnchor = "tail-at-send",
+            createdAt = 1,
+        )
+
+        assertEquals(
+            listOf("m_1"),
+            reconcile(listOf(pending), base.copy(turns = listOf(olderDuplicate, baselineTail))).map { it.messageId },
+        )
     }
 }

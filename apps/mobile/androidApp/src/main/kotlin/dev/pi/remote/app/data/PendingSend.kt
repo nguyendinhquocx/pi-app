@@ -9,6 +9,8 @@ data class PendingSend(
     val status: PendingSendStatus,
     /** Turns already visible when this send started; old matching text must not clear this bubble. */
     val baselineAnchors: Set<String>,
+    /** Last turn visible when this send started; later-loaded older pages stay before this boundary. */
+    val baselineTailAnchor: String?,
     val createdAt: Long,
 )
 
@@ -24,9 +26,16 @@ object PendingSendReconciler {
         val unmatched = mutableListOf<PendingSend>()
         for (send in pending.sortedBy { it.createdAt }) {
             val wanted = normalize(send.text)
-            val index = available.indexOfFirst { turn ->
-                turn.anchor !in send.baselineAnchors && normalize(turn.user.text) == wanted
-            }
+            val tailIndex = send.baselineTailAnchor?.let { anchor ->
+                available.indexOfFirst { it.anchor == anchor }
+            } ?: -1
+            val index = available.indices.firstOrNull { turnIndex ->
+                val turn = available[turnIndex]
+                turnIndex > tailIndex &&
+                    (send.baselineTailAnchor == null || tailIndex >= 0) &&
+                    turn.anchor !in send.baselineAnchors &&
+                    normalize(turn.user.text) == wanted
+            } ?: -1
             if (index >= 0) available.removeAt(index) else unmatched += send
         }
         return unmatched

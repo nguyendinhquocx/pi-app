@@ -119,9 +119,11 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
     val connection by repo.connection.collectAsState()
     val inbox by repo.inbox.collectAsState()
     val settingsVersion by repo.settingsVersion.collectAsState()
+    val syncVersion by repo.syncVersion.collectAsState()
     val pendingSends by repo.pendingSends.collectAsState()
     val scope = rememberCoroutineScope()
     val timeline = timelines[sessionId]
+    val sessionReady = remember(sessionId, timeline, syncVersion) { timeline != null && repo.canSendSession(sessionId) }
     val summary = inbox.sessions.firstOrNull { canonicalSessionKey(it.sessionKey) == sessionId }
     var draft by remember(sessionKey) { mutableStateOf(TextFieldValue("")) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -289,7 +291,7 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
         toolsOn = caps.count { it.enabled },
         deferredUi = deferred,
         pendingSends = pendingSends[sessionId].orEmpty(),
-        sessionReady = timeline != null,
+        sessionReady = sessionReady,
         onRetryPending = { messageId ->
             scope.launch {
                 when (val r = repo.retryPendingSend(sessionId, messageId)) {

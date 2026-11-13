@@ -10,6 +10,8 @@ import dev.pi.remote.protocol.TurnActivity
 import dev.pi.remote.protocol.TurnPatchEvent
 import dev.pi.remote.protocol.TurnSettle
 import dev.pi.remote.protocol.TurnUpsert
+import dev.pi.remote.protocol.UiConfirm
+import dev.pi.remote.protocol.UiDismiss
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,6 +33,7 @@ class SessionTimelineSyncTest {
         turns = emptyList(),
         patches = null,
         state = SessionState(running = false),
+        pendingUi = emptyList(),
     )
 
     private fun liveTurn(text: String = "chào"): Turn {
@@ -45,6 +48,19 @@ class SessionTimelineSyncTest {
             answer = "",
             files = emptyList(),
         )
+    }
+
+    @Test
+    fun writeReadyRequiresAReconciledTimelineAndIsDisabledDuringOpen() {
+        val sync = SessionTimelineSync(key)
+        assertEquals(false, sync.isReady("e1"))
+        val first = sync.beginOpen("e1")
+        assertEquals(false, sync.isReady("e1"))
+        assertIs<SessionSyncResult.Applied>(sync.completeOpen(first, emptySnapshot(seq = 1)))
+        assertEquals(true, sync.isReady("e1"))
+
+        sync.beginOpen("e1")
+        assertEquals(false, sync.isReady("e1"))
     }
 
     @Test
@@ -145,6 +161,20 @@ class SessionTimelineSyncTest {
         )
         assertEquals(1L, gap.timeline?.seq)
         assertEquals("live patch sequence gap", gap.reason)
+    }
+
+    @Test
+    fun buffersUiRequestAndDismissInArrivalOrderDuringOpen() {
+        val sync = SessionTimelineSync(key)
+        val openId = sync.beginOpen("e1")
+        val request = UiConfirm("q1", key, method = "confirm", title = "Continue?", message = "Question")
+
+        assertIs<SessionSyncResult.Buffered>(sync.onUiRequest(request))
+        assertIs<SessionSyncResult.Buffered>(sync.onUiDismiss(UiDismiss("q1", key, "remote")))
+
+        val timeline = assertIs<SessionSyncResult.Applied>(sync.completeOpen(openId, emptySnapshot(seq = 1))).timeline
+        assertEquals(emptyList<String>(), timeline.pendingUi.map { it.id })
+        assertEquals(true, sync.isReady("e1"))
     }
 
     @Test

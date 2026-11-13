@@ -4,6 +4,8 @@ import dev.pi.remote.protocol.OpenResult
 import dev.pi.remote.protocol.TimelineReset
 import dev.pi.remote.protocol.TurnPatch
 import dev.pi.remote.protocol.TurnPatchEvent
+import dev.pi.remote.protocol.UiDismiss
+import dev.pi.remote.protocol.UiRequest
 import dev.pi.remote.protocol.canonicalSessionKey
 
 /** Result of reconciling one session's snapshot and ordered live patches. */
@@ -29,8 +31,15 @@ class SessionTimelineSync(
     private var generation = 0L
     private var activeOpen: Long? = null
     private var expectedEpoch: String? = null
+    private sealed interface UiPatch {
+        data class Add(val request: UiRequest) : UiPatch
+        data class Remove(val id: String) : UiPatch
+    }
+
     private val buffered = mutableListOf<TurnPatch>()
+    private val bufferedUi = mutableListOf<UiPatch>()
     private var overflowed = false
+    private var needsResync = true
 
     init {
         require(sessionKey.isNotBlank()) { "sessionKey must be canonical and non-empty" }
@@ -40,12 +49,19 @@ class SessionTimelineSync(
 
     fun current(): SessionTimeline? = timeline
 
+    /** A cached timeline is displayable but not writable until a live open reconciles it. */
+    fun isReady(epoch: String?): Boolean {
+        val current = timeline ?: return false
+        return activeOpen == null && !needsResync && (epoch == null || current.epoch == epoch)
+    }
+
     /** Seed from a local cache without replacing a newer live state. */
     fun seed(cached: SessionTimeline) {
         if (canonicalSessionKey(cached.sessionKey) != sessionKey) return
         val normalized = cached.copy(sessionKey = sessionKey)
         val current = timeline
         if (current == null || current.epoch != normalized.epoch || normalized.seq >= current.seq) {
+            if (current == null || current.epoch != normalized.epoch) needsResync = true
             timeline = normalized
         }
     }
@@ -58,12 +74,14 @@ class SessionTimelineSync(
         if (fresh && overflowed) {
             // A fresh full snapshot is the only safe recovery after buffer overflow.
             buffered.clear()
+            bufferedUi.clear()
             overflowed = false
         }
         if (epoch != null && timeline != null && timeline?.epoch != epoch) {
             // The old epoch is not safe for applying current events; retain it only for display
             // until the replacement snapshot is ready.
             buffered.clear()
+            bufferedUi.clear()
             overflowed = false
         }
         return generation
@@ -77,18 +95,23 @@ class SessionTimelineSync(
         }
         if (event.patches.any { it is TimelineReset }) {
             buffered.clear()
+            bufferedUi.clear()
             overflowed = false
+            needsResync = true
             return SessionSyncResult.NeedsResync(timeline, "branch reset")
         }
 
         val current = timeline
-        val shouldBuffer = activeOpen != null || current == null ||
-            (eventEpoch != null && current.epoch != eventEpoch)
+        val epochMismatch = current != null && eventEpoch != null && current.epoch != eventEpoch
+        val shouldBuffer = activeOpen != null || current == null || epochMismatch
+        if (current == null || epochMismatch) needsResync = true
         if (shouldBuffer) {
             if (!overflowed) {
-                if (buffered.size + event.patches.size > maxBufferedPatches) {
+                if (buffered.size + bufferedUi.size + event.patches.size > maxBufferedPatches) {
                     buffered.clear()
+                    bufferedUi.clear()
                     overflowed = true
+                    needsResync = true
                 } else {
                     buffered.addAll(event.patches)
                 }
@@ -105,6 +128,50 @@ class SessionTimelineSync(
         return applyTo(current, event.patches)
     }
 
+    fun onUiRequest(request: UiRequest): SessionSyncResult {
+        if (canonicalSessionKey(request.sessionKey) != sessionKey) return SessionSyncResult.Ignored
+        val current = timeline
+        if (activeOpen != null || current == null) {
+            if (buffered.size + bufferedUi.size >= maxBufferedPatches) {
+                buffered.clear()
+                bufferedUi.clear()
+                overflowed = true
+                needsResync = true
+                return SessionSyncResult.NeedsResync(current, "live event buffer overflow")
+            }
+            bufferedUi += UiPatch.Add(request)
+            return if (current == null && activeOpen == null) {
+                SessionSyncResult.NeedsResync(null, "UI request arrived before a timeline was opened")
+            } else {
+                SessionSyncResult.Buffered(buffered.size + bufferedUi.size)
+            }
+        }
+        timeline = TurnStore.addUi(current, request)
+        return SessionSyncResult.Applied(timeline!!)
+    }
+
+    fun onUiDismiss(dismiss: UiDismiss): SessionSyncResult {
+        if (canonicalSessionKey(dismiss.sessionKey) != sessionKey) return SessionSyncResult.Ignored
+        val current = timeline
+        if (activeOpen != null || current == null) {
+            if (buffered.size + bufferedUi.size >= maxBufferedPatches) {
+                buffered.clear()
+                bufferedUi.clear()
+                overflowed = true
+                needsResync = true
+                return SessionSyncResult.NeedsResync(current, "live event buffer overflow")
+            }
+            bufferedUi += UiPatch.Remove(dismiss.id)
+            return if (current == null && activeOpen == null) {
+                SessionSyncResult.NeedsResync(null, "UI dismiss arrived before a timeline was opened")
+            } else {
+                SessionSyncResult.Buffered(buffered.size + bufferedUi.size)
+            }
+        }
+        timeline = TurnStore.removeUi(current, dismiss.id)
+        return SessionSyncResult.Applied(timeline!!)
+    }
+
     /** Install the latest open response, then drain live patches that arrived while it was loading. */
     fun completeOpen(openId: Long, response: OpenResult): SessionSyncResult {
         if (activeOpen != openId || generation != openId) return SessionSyncResult.StaleOpen
@@ -115,6 +182,7 @@ class SessionTimelineSync(
             is ApplyResult.Gap -> {
                 timeline = opened.timeline
                 activeOpen = null
+                needsResync = true
                 return SessionSyncResult.NeedsResync(opened.timeline, "gap inside session.open replay")
             }
         }
@@ -122,24 +190,32 @@ class SessionTimelineSync(
         if (overflowed) {
             timeline = base
             buffered.clear()
+            bufferedUi.clear()
             overflowed = false
             activeOpen = null
-            return SessionSyncResult.NeedsResync(base, "live patch buffer overflow")
+            needsResync = true
+            return SessionSyncResult.NeedsResync(base, "live event buffer overflow")
         }
 
         return when (val drained = TurnStore.applyAll(base, buffered.toList())) {
             is ApplyResult.Applied -> {
-                timeline = drained.timeline
+                var merged = drained.timeline
+                for (patch in bufferedUi) merged = applyUi(merged, patch)
+                timeline = merged
                 buffered.clear()
+                bufferedUi.clear()
                 activeOpen = null
                 expectedEpoch = response.epoch
-                SessionSyncResult.Applied(drained.timeline)
+                needsResync = false
+                SessionSyncResult.Applied(merged)
             }
             is ApplyResult.Gap -> {
                 timeline = drained.timeline
                 buffered.clear()
+                bufferedUi.clear()
                 activeOpen = null
                 expectedEpoch = response.epoch
+                needsResync = true
                 SessionSyncResult.NeedsResync(drained.timeline, "gap while draining live patches")
             }
         }
@@ -149,12 +225,18 @@ class SessionTimelineSync(
     fun failOpen(openId: Long): SessionSyncResult {
         if (activeOpen != openId || generation != openId) return SessionSyncResult.StaleOpen
         activeOpen = null
+        needsResync = true
         val current = timeline
-        return if (current == null || buffered.isNotEmpty() || overflowed) {
+        return if (current == null || buffered.isNotEmpty() || bufferedUi.isNotEmpty() || overflowed) {
             SessionSyncResult.NeedsResync(current, "session.open failed with unsynchronized state")
         } else {
             SessionSyncResult.Applied(current)
         }
+    }
+
+    private fun applyUi(timeline: SessionTimeline, patch: UiPatch): SessionTimeline = when (patch) {
+        is UiPatch.Add -> TurnStore.addUi(timeline, patch.request)
+        is UiPatch.Remove -> TurnStore.removeUi(timeline, patch.id)
     }
 
     private fun applyTo(current: SessionTimeline, patches: List<TurnPatch>): SessionSyncResult =
@@ -165,6 +247,7 @@ class SessionTimelineSync(
             }
             is ApplyResult.Gap -> {
                 timeline = applied.timeline
+                needsResync = true
                 SessionSyncResult.NeedsResync(applied.timeline, "live patch sequence gap")
             }
         }
