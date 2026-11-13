@@ -1,5 +1,5 @@
 /**
- * 从 resources/icon.svg 导出 build/icon.png (1024) 与 build/icon.ico (256) 供打包与运行时图标
+ * 从 resources/icon.svg 生成桌面图标、renderer favicon 和 Chrome extension 图标。
  * 需要: npm i -D sharp
  * 运行: node scripts/export-app-icon.mjs
  */
@@ -12,6 +12,9 @@ const svgPath = join(root, 'resources', 'icon.svg')
 const outDir = join(root, 'build')
 const outPng = join(outDir, 'icon.png')
 const outIco = join(outDir, 'icon.ico')
+const outFavicon = join(root, 'src', 'renderer', 'public', 'icon.svg')
+const extensionDir = join(root, 'resources', 'chrome-extension')
+const extensionIconSizes = [16, 32, 48, 128]
 
 function pngToIco(pngBuffer) {
   // 生成只含一张 256x256 PNG 的 .ico（Windows 任务栏/托盘可直接解析）
@@ -43,6 +46,15 @@ async function main() {
   }
   const svg = await readFile(svgPath)
   await mkdir(outDir, { recursive: true })
+  await mkdir(extensionDir, { recursive: true })
+
+  await writeFile(outFavicon, svg)
+  console.log('Wrote', outFavicon)
+  for (const size of extensionIconSizes) {
+    const output = join(extensionDir, `icon${size}.png`)
+    await sharp(svg, { density: 300 }).resize(size, size).png().toFile(output)
+    console.log('Wrote', output)
+  }
 
   await sharp(svg, { density: 300 }).resize(1024, 1024).png().toFile(outPng)
   console.log('Wrote', outPng)

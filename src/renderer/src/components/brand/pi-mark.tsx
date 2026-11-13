@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { cn } from '@renderer/lib/utils'
 
 /** 与 resources/icon.svg 一致：terminal prompt，浅色主题为白底黑纹，深色主题自动反色 */
-function PiMarkImpl({ className, size = 16 }: { className?: string; size?: number; inverted?: boolean }) {
+function PiMarkImpl({ className, size = 16 }: { className?: string; size?: number }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

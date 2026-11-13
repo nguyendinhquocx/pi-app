@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  buildPixelPiCells,
-  PIXEL_PI_COLS,
-  PIXEL_PI_ROW_COUNT,
-} from './pixel-pi-matrix'
+  buildPixelPromptCells,
+  PIXEL_PROMPT_COLS,
+  PIXEL_PROMPT_ROW_COUNT,
+} from './pixel-prompt-matrix'
 
-const PIXEL_CELLS = buildPixelPiCells()
+const PIXEL_CELLS = buildPixelPromptCells()
 
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
@@ -104,8 +104,8 @@ export function SessionOpenLoadingView() {
             {
               display: 'grid',
               gap: 'var(--session-pixel-gap)',
-              gridTemplateColumns: `repeat(${PIXEL_PI_COLS}, var(--session-pixel-size))`,
-              gridTemplateRows: `repeat(${PIXEL_PI_ROW_COUNT}, var(--session-pixel-size))`,
+              gridTemplateColumns: `repeat(${PIXEL_PROMPT_COLS}, var(--session-pixel-size))`,
+              gridTemplateRows: `repeat(${PIXEL_PROMPT_ROW_COUNT}, var(--session-pixel-size))`,
               justifyContent: 'center',
               padding: '20px 24px',
               borderRadius: '16px',

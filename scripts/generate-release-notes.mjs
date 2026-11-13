@@ -53,7 +53,7 @@ export function buildReleaseNotesFromChangelog(changelogMarkdown, version) {
   }
 
   return [
-    `## pi Desktop v${normalized}`,
+    `## LiX v${normalized}`,
     '',
     body,
     '',
