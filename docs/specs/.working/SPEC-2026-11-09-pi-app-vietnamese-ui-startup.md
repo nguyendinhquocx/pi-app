@@ -195,6 +195,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
   - All session identifiers on the wire and Android repository/nav/cache maps use one canonical path key (drive uppercase, slash `/`, UNC leading `//` preserved); raw `entry.sessionFile` stays raw for host filesystem and SDK calls.
   - On Windows, `session.watchList`, `session.open`, `session.create`/`fork`, `turn.patch`, `ui.request`, and `ui.dismiss` for one session resolve to the same canonical key. Client also canonicalizes incoming keys for compatibility with older host payloads.
   - Android never silently drops a live event when a timeline is absent/hydrating. Snapshot and patches reconcile by epoch/seq; duplicate overlap is ignored; gaps/overflow force a bounded resync; a stale open response cannot overwrite a newer timeline.
+  - An open/reconcile request for a session that is no longer active cannot steal the gateway client subscription from the session currently visible; stale completion closes only its own subscription and reopens the active session if needed.
   - A message sent from a new or existing session updates user turn, thinking/tool activity, answer, running/completed state live without back/re-enter. Initial empty session is distinct from “not loaded”; send is gated/queued until the first snapshot is installed.
   - Pending sends are tracked per message, not as one string/session. Accepted ACK leaves no infinite “Đang gửi...” state; timeline echo reconciles the optimistic bubble; connection-lost/unknown remains explicit and any retry reuses the same `clientMessageId` for host dedupe.
   - Custom local artifact version bumps from `0.7.8` to `0.7.9` so the repaired Android APK and Windows installer are distinguishable; build only, do not publish or install automatically.
@@ -205,7 +206,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 - Verify:
   - Gateway regression with a Windows path asserts list/open/create-or-fork/event key parity; this must fail on pre-fix code and pass after the server boundary fix.
   - KMP tests cover Windows drive/backslash, drive-letter case, UNC, and POSIX key normalization.
-  - Android repository/sync barrier tests cover event before open response, null timeline, stale concurrent open, replay gap, duplicate/overlap, epoch reset, buffer bound, repeated/identical sends, accepted/unknown/failure and pending reconciliation.
+  - Android repository/sync barrier tests cover event before open response, null timeline, stale concurrent open, replay gap, duplicate/overlap, epoch reset, buffer bound, repeated/identical sends, accepted/unknown/failure and pending reconciliation. Add a cross-session barrier case: slow open A, navigate/open B, then let A complete; B must keep receiving patches and A must not become active again.
   - Run `npx vitest run src/main/remote/__tests__/gateway.test.ts`; run `cd apps/mobile && gradlew.bat --no-daemon :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleRelease`; run `npm run typecheck`.
   - Run `npm run package:win`; verify output version `0.7.9`, Chromium `vi.pak`, Android `applicationId=dev.pi.remote`, versionCode `709`, release signer debug key; do not auto-install/publish.
   - Manual A55 smoke while app stays foreground: new/existing session, live thinking + answer, repeated sends, temporary network drop/reconnect, no back/re-enter workaround.
@@ -265,7 +266,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 ## Completion Gates
 - [ ] Desktop unit tests, locale parity, notification tests, scripts tests, typecheck và Windows package pass.
 - [ ] Android Robolectric API 32/33 locale tests, resource/placeholder-multiset parity và APK build pass.
-- [ ] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter.
+- [ ] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter và stale cross-session opens không chiếm subscription của session active.
 - [ ] Task 5 Windows installer + Android APK built as `0.7.9`; user UAT on A55 passes before archive.
 - [ ] APK `applicationId`, versionCode, output path và debug signer fingerprint được xác nhận; không tự uninstall/install thiết bị.
 - [ ] UI evidence: representative built-in desktop views + Android API 32/33 locale menu; startup hidden/visible/manual/second-instance states trên packaged Windows.
