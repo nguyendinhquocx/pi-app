@@ -217,8 +217,16 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
   - Tests: `apps/mobile/shared/src/jvmTest/.../{SessionKeyTest,SessionTimelineSyncTest}.kt`; `apps/mobile/androidApp/src/test/.../{PendingSendReconcilerTest,ActiveSessionGateTest,TimelineCacheTest}.kt`.
 - Skills: `implement`, `test`.
 
+### Task 6: LiX branding + ProDesk rollout
+- User decisions: display name `LiX`; use the supplied Tabler terminal prompt as the app mark; final palette is white rounded square + near-black strokes. Keep internal app IDs, URI scheme, Android package, data directory, and systemd unit names stable.
+- Acceptance:
+  - Desktop, Android launcher, tray, notifications, pairing copy, Chrome extension, and README show `LiX`; no user-facing `pi Desktop`/`pi Remote` labels remain in shipped surfaces.
+  - Master and app marks use the terminal prompt; light-theme icon is white/black, dark-theme in-app mark adapts, Android status-bar notification remains white alpha glyph.
+  - ProDesk keeps `~/.config/pi-desktop` and existing unit names; deployed app reports `LiX`, current points to 0.7.10, service is active, and gateway port 47900 listens.
+- Verify/result: typecheck PASS; focused desktop tests 51/51 PASS; Android unit tests PASS and APK verifies `dev.pi.remote`, versionCode 710/versionName 0.7.10, label `LiX`; Windows Setup/Portable 0.7.10 built. Linux AppImage built in Debian Trixie container (GCC 14) with `--publish never`; packaged desktop file is `Name=LiX`, `StartupWMClass=LiX`, icon pixels are white background + `#09090B` strokes. ProDesk deploy checksum `1727a42c9fedec88b8123ed17bb9ada555348311c83365c26bb8ee75572e3798`; after restart, `current` resolves to `0.7.10`, app and Xvfb are active, 47900 listens, and `~/.config/pi-desktop` remains.
+
 ## Checkpoints
-- Task 5 source gates (candidate 0.7.9): Windows-path gateway + session-key tests 40/40 PASS; KMP shared + Android unit tests 99/99 PASS; `npm run typecheck` PASS. Release APK verifies `dev.pi.remote`, versionCode 709/versionName 0.7.9, debug signer SHA-256 `15aeec9a1d483f614ccc0da28d4bdc355e2578dffb15b7bbd3c582a41bd6ad6b`; Windows Setup/Portable 0.7.9 built with `vi.pak`. Manual A55 live-stream smoke is still pending; do not archive yet.
+- Task 5 source gates PASS: Windows-path gateway + session-key tests 43/43; KMP shared + Android unit tests 106/106; `npm run typecheck` PASS. APK verifies `dev.pi.remote`, versionCode 709/versionName 0.7.9, debug signer SHA-256 `15aeec9a1d483f614ccc0da28d4bdc355e2578dffb15b7bbd3c582a41bd6ad6b`; Windows Setup/Portable 0.7.9 built with `vi.pak`. Owner confirmed live-stream behavior works on A55; no back/re-enter workaround.
 - Sau Task 1–2: desktop recursive locale parity + Android placeholder-multiset parity pass; first-run `vi` và saved System/en/zh/vi tests pass.
 - Sau Task 3: login-item state/args/rollback tests pass; Windows package mở bình thường, hidden startup không flash, manual/second-instance launch restore window.
 - Trước hoàn tất: Windows installer + Android APK build pass; signer/package metadata verify; desktop screenshots và Android API 32/33 QA đủ; giữ working spec tới khi owner UAT pass.
@@ -267,7 +275,8 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 - [ ] Desktop unit tests, locale parity, notification tests, scripts tests, typecheck và Windows package pass.
 - [ ] Android Robolectric API 32/33 locale tests, resource/placeholder-multiset parity và APK build pass.
 - [ ] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter và stale cross-session opens không chiếm subscription của session active.
-- [ ] Task 5 Windows installer + Android APK built as `0.7.9`; user UAT on A55 passes before archive.
+- [x] Task 5 Windows installer + Android APK built as `0.7.9`; user UAT on A55 passes before archive.
+- [x] Task 6 LiX name/icon shipped in Windows, Android, and Linux AppImage; ProDesk 0.7.10 checksum, active service, port 47900, and preserved app-data verified.
 - [ ] APK `applicationId`, versionCode, output path và debug signer fingerprint được xác nhận; không tự uninstall/install thiết bị.
 - [ ] UI evidence: representative built-in desktop views + Android API 32/33 locale menu; startup hidden/visible/manual/second-instance states trên packaged Windows.
 - [ ] Không ghi đè saved locale; Android replacement warning và re-pair requirement được hướng dẫn rõ.
