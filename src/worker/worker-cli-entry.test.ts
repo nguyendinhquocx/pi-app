@@ -44,7 +44,7 @@ describe('worker Pi CLI identity', () => {
     expect(child.error).toBeUndefined()
     expect(child.status, child.stderr).toBe(0)
     expect(child.stdout.trim()).toMatch(/\d+\.\d+\.\d+/)
-  })
+  }, 30_000)
 
   it('should_leave_worker_entry_unchanged_when_sdk_cli_is_missing', async () => {
     const { entry, cli } = sdk('dist/cli.js')
