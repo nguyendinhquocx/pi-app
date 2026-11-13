@@ -2,6 +2,7 @@ package dev.pi.remote.app.data
 
 import dev.pi.remote.protocol.CommandInfo
 import dev.pi.remote.protocol.ContextStats
+import dev.pi.remote.protocol.canonicalSessionKey
 import dev.pi.remote.protocol.SessionStatsResult
 import dev.pi.remote.protocol.ReviewDiffResult
 import dev.pi.remote.protocol.BranchInfo
@@ -31,7 +32,9 @@ import dev.pi.remote.protocol.UiDismiss
 import dev.pi.remote.protocol.UiRequest
 import dev.pi.remote.protocol.UiResponse
 import dev.pi.remote.sync.ApplyResult
+import dev.pi.remote.sync.SessionSyncResult
 import dev.pi.remote.sync.SessionTimeline
+import dev.pi.remote.sync.SessionTimelineSync
 import dev.pi.remote.sync.TurnStore
 import java.io.File
 import java.net.URI
@@ -66,6 +69,7 @@ data class InboxState(
 
 sealed interface SendOutcome {
     data object Sent : SendOutcome
+    data object SessionNotReady : SendOutcome
     /** The socket dropped before the answer: the message may or may not have arrived. */
     data object Unknown : SendOutcome
     data class Failed(val message: String) : SendOutcome
@@ -96,9 +100,12 @@ class RemoteRepository(
     val inbox: StateFlow<InboxState> = _inbox
     private val _timelines = MutableStateFlow<Map<String, SessionTimeline>>(emptyMap())
     val timelines: StateFlow<Map<String, SessionTimeline>> = _timelines
-    private val _pendingSends = MutableStateFlow<Map<String, String>>(emptyMap())
-    /** Text sent from this phone that the host has not echoed back as a turn yet (shown as a ghost bubble). */
-    val pendingSends: StateFlow<Map<String, String>> = _pendingSends
+    private val _pendingSends = MutableStateFlow<Map<String, List<PendingSend>>>(emptyMap())
+    /** Per-session optimistic bubbles, tracked until a matching host turn is observed. */
+    val pendingSends: StateFlow<Map<String, List<PendingSend>>> = _pendingSends
+    private val timelineSyncLock = Any()
+    /** Mutable reducer state is owned by timelineSyncLock; UI observes the immutable StateFlow. */
+    private val timelineSync = HashMap<String, SessionTimelineSync>()
     private val _settingsVersion = MutableStateFlow(0)
     val settingsVersion: StateFlow<Int> = _settingsVersion
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -114,8 +121,24 @@ class RemoteRepository(
 
     private val helloParams get() = HelloParams(AppInfo("pi-remote", appVersion, platform), CLIENT_CAPS)
 
+    private fun sessionKey(raw: String): String = canonicalSessionKey(raw)
+
+    private fun normalizeSummary(summary: SessionSummary): SessionSummary =
+        summary.copy(sessionKey = sessionKey(summary.sessionKey))
+
+    private fun normalizeSummaries(sessions: List<SessionSummary>): List<SessionSummary> =
+        sessions.map(::normalizeSummary)
+
+    private inline fun <T> withTimelineSync(key: String, block: (SessionTimelineSync) -> T): T =
+        synchronized(timelineSyncLock) {
+            val canonical = sessionKey(key)
+            block(timelineSync.getOrPut(canonical) { SessionTimelineSync(canonical) })
+        }
+
     init {
-        _active.value?.let { h -> _inbox.value = InboxState(sessions = cache.loadInbox(h.hostId)) }
+        _active.value?.let { h ->
+            _inbox.value = InboxState(sessions = cache.loadInbox(h.hostId).map(::normalizeSummary))
+        }
     }
 
     // ── Hosts / pairing ──
@@ -153,8 +176,13 @@ class RemoteRepository(
         hostStore.setActive(hostId)
         if (_active.value?.hostId != hostId) {
             disconnect()
+            openKey = null
             _timelines.value = emptyMap()
-            _inbox.value = InboxState(sessions = cache.loadInbox(hostId))
+            synchronized(timelineSyncLock) { timelineSync.clear() }
+            _pendingSends.value = emptyMap()
+            resyncing.clear()
+            pendingResyncScheduled.clear()
+            _inbox.value = InboxState(sessions = cache.loadInbox(hostId).map(::normalizeSummary))
         }
         _active.value = host
         if (foreground) connect()
@@ -176,9 +204,14 @@ class RemoteRepository(
     fun forget(hostId: String) {
         if (_active.value?.hostId == hostId) {
             disconnect()
+            openKey = null
             _active.value = null
             _inbox.value = InboxState()
             _timelines.value = emptyMap()
+            synchronized(timelineSyncLock) { timelineSync.clear() }
+            _pendingSends.value = emptyMap()
+            resyncing.clear()
+            pendingResyncScheduled.clear()
         }
         hostStore.remove(hostId)
         cache.clearHost(hostId)
@@ -220,7 +253,7 @@ class RemoteRepository(
         val a = api ?: return false
         return runCatching {
             val projects = a.projects()
-            val sessions = a.watchList()
+            val sessions = normalizeSummaries(a.watchList())
             _inbox.value = InboxState(sessions, projects, loaded = true)
             persistInbox()
         }.onFailure { _notices.tryEmit(it.message ?: "list failed") }.isSuccess
@@ -233,7 +266,7 @@ class RemoteRepository(
         conn = c
         api = RemoteApi(c)
         jobs += scope.launch { c.state.collect { s -> _connection.value = s; if (s is HostConnection.State.Ready) onReady(s) } }
-        jobs += scope.launch { c.events.collect(::onEvent) }
+        jobs += scope.launch { c.events.collect { event -> onEvent(event) } }
         c.start()
     }
 
@@ -261,7 +294,7 @@ class RemoteRepository(
         val a = api ?: return
         runCatching {
             val projects = a.projects()
-            val sessions = a.watchList()
+            val sessions = normalizeSummaries(a.watchList())
             _inbox.value = InboxState(sessions, projects, loaded = true)
             persistInbox()
         }.onFailure { _notices.tryEmit(it.message ?: "list failed") }
@@ -274,42 +307,41 @@ class RemoteRepository(
         scope.launch(Dispatchers.IO) { cache.saveInbox(host.hostId, sessions) }
     }
 
-    private fun onEvent(e: HostConnection.Event) {
+    private suspend fun onEvent(e: HostConnection.Event) {
         when (e.method) {
             "sessions.update" -> {
                 val u = RemoteJson.decodeFromJsonElement(SessionsUpdate.serializer(), e.payload)
-                val before = _inbox.value.sessions.associateBy { it.sessionKey }
+                val before = _inbox.value.sessions.associateBy { sessionKey(it.sessionKey) }
+                val updated = normalizeSummaries(u.sessions)
+                val removed = u.removed.orEmpty().map(::sessionKey).toSet()
                 _inbox.update { inbox ->
-                    val byKey = inbox.sessions.associateBy { it.sessionKey }.toMutableMap()
-                    u.sessions.forEach { byKey[it.sessionKey] = it }
-                    u.removed?.forEach { byKey.remove(it) }
+                    val byKey = inbox.sessions.associateBy { sessionKey(it.sessionKey) }.toMutableMap()
+                    updated.forEach { byKey[it.sessionKey] = it }
+                    removed.forEach { byKey.remove(it) }
                     inbox.copy(sessions = byKey.values.sortedByDescending { it.updatedAt })
                 }
                 persistInbox()
-                noticeTransitions(before, u.sessions)
+                noticeTransitions(before, updated)
             }
             "turn.patch" -> {
-                val evt = RemoteJson.decodeFromJsonElement(TurnPatchEvent.serializer(), e.payload)
-                val current = _timelines.value[evt.sessionKey] ?: return
-                if (evt.patches.any { it is TimelineReset }) {
-                    scope.launch { reopen(evt.sessionKey, fresh = true) }
-                    return
-                }
-                when (val r = TurnStore.applyAll(current, evt.patches)) {
-                    is ApplyResult.Applied -> putTimeline(r.timeline)
-                    is ApplyResult.Gap -> {
-                        putTimeline(r.timeline)
-                        scope.launch { reopen(evt.sessionKey) }
-                    }
-                }
+                val event = RemoteJson.decodeFromJsonElement(TurnPatchEvent.serializer(), e.payload)
+                val key = sessionKey(event.sessionKey)
+                val result = withTimelineSync(key) { it.onPatch(event, hello?.epoch) }
+                handleSyncResult(key, result)
             }
             "ui.request" -> {
                 val req = RemoteJson.decodeFromJsonElement(UiRequest.serializer(), e.payload)
-                _timelines.value[req.sessionKey]?.let { putTimeline(TurnStore.addUi(it, req)) }
+                val key = sessionKey(req.sessionKey)
+                val current = withTimelineSync(key) { it.current() }
+                if (current == null) requestResync(key, fresh = true)
+                else putTimeline(TurnStore.addUi(current, req))
             }
             "ui.dismiss" -> {
-                val d = RemoteJson.decodeFromJsonElement(UiDismiss.serializer(), e.payload)
-                _timelines.value[d.sessionKey]?.let { putTimeline(TurnStore.removeUi(it, d.id)) }
+                val wire = RemoteJson.decodeFromJsonElement(UiDismiss.serializer(), e.payload)
+                val key = sessionKey(wire.sessionKey)
+                val current = withTimelineSync(key) { it.current() }
+                if (current == null) requestResync(key, fresh = true)
+                else putTimeline(TurnStore.removeUi(current, wire.id))
             }
             "settings.changed" -> {
                 RemoteJson.decodeFromJsonElement(SettingsChanged.serializer(), e.payload)
@@ -319,15 +351,77 @@ class RemoteRepository(
         }
     }
 
-    private fun putTimeline(t: SessionTimeline) {
-        _timelines.update { it + (t.sessionKey to t) }
-        val pending = _pendingSends.value[t.sessionKey] ?: return
-        if (t.turns.takeLast(2).any { it.user.text.trim() == pending }) _pendingSends.update { it - t.sessionKey }
+    private suspend fun handleSyncResult(key: String, result: SessionSyncResult) {
+        when (result) {
+            is SessionSyncResult.Applied -> publishCurrentTimeline(key)
+            is SessionSyncResult.Buffered, SessionSyncResult.Ignored, SessionSyncResult.StaleOpen -> Unit
+            is SessionSyncResult.NeedsResync -> {
+                publishCurrentTimeline(key)
+                requestResync(key, fresh = true)
+            }
+        }
+    }
+
+    /** Cache/open/page mutations enter the same per-session reducer used by live patches. */
+    private suspend fun putTimeline(raw: SessionTimeline) {
+        val key = sessionKey(raw.sessionKey)
+        val normalized = raw.copy(sessionKey = key)
+        withTimelineSync(key) { sync ->
+            sync.seed(normalized)
+            publishTimelineLocked(key, sync)
+        }
+    }
+
+    /** Must be called while holding timelineSyncLock so StateFlow cannot lag behind reducer state. */
+    private fun publishTimelineLocked(key: String, sync: SessionTimelineSync): SessionTimeline? {
+        val timeline = sync.current()?.let { if (it.sessionKey == key) it else it.copy(sessionKey = key) } ?: return null
+        _timelines.update { it + (key to timeline) }
+        reconcilePendingSends(key, timeline)
+        return timeline
+    }
+
+    private fun publishCurrentTimeline(rawKey: String): SessionTimeline? {
+        val key = sessionKey(rawKey)
+        return synchronized(timelineSyncLock) {
+            timelineSync[key]?.let { publishTimelineLocked(key, it) }
+        }
+    }
+
+    private fun reconcilePendingSends(key: String, timeline: SessionTimeline) {
+        val pending = _pendingSends.value[key].orEmpty()
+        if (pending.isEmpty()) return
+        val unmatched = PendingSendReconciler.reconcile(pending, timeline)
+        _pendingSends.update { current ->
+            if (unmatched.isEmpty()) current - key else current + (key to unmatched)
+        }
+    }
+
+    private fun updatePending(key: String, messageId: String, transform: (PendingSend) -> PendingSend?) {
+        _pendingSends.update { current ->
+            val sends = current[sessionKey(key)].orEmpty()
+            val next = sends.mapNotNull { send -> if (send.messageId == messageId) transform(send) else send }
+            if (next.isEmpty()) current - sessionKey(key) else current + (sessionKey(key) to next)
+        }
+    }
+
+    private val resyncing = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private fun requestResync(rawKey: String, fresh: Boolean = true) {
+        val key = sessionKey(rawKey)
+        if (!resyncing.add(key)) return
+        scope.launch {
+            try {
+                reopen(key, fresh = fresh, maxResyncs = 1)
+            } finally {
+                resyncing.remove(key)
+            }
+        }
     }
 
     private var saveJob: Job? = null
-    private fun persistTimeline(key: String) {
+    private fun persistTimeline(rawKey: String) {
         val host = _active.value ?: return
+        val key = sessionKey(rawKey)
         saveJob?.cancel()
         saveJob = scope.launch(Dispatchers.IO) {
             delay(1500)
@@ -337,45 +431,108 @@ class RemoteRepository(
 
     // ── Sessions ──
 
-    /** Show cache immediately, then sync (replay from cursor when possible). */
-    suspend fun openSession(key: String) {
+    /** Show cache immediately, then sync (replay from the current cursor when possible). */
+    suspend fun openSession(rawKey: String) {
+        val key = sessionKey(rawKey)
         openKey = key
-        // The session screen stays composed in the background and re-opens on reconnects;
-        // only an actual look at it (foreground) should clear its notification.
         if (foreground) notifier?.clear(key)
         val host = _active.value
         if (_timelines.value[key] == null && host != null) {
-            withContext(Dispatchers.IO) { cache.loadTimeline(host.hostId, key) }?.let { putTimeline(it) }
+            // Try the old raw-path cache name once for upgrades; new writes always use canonical keys.
+            val cached = withContext(Dispatchers.IO) {
+                cache.loadTimeline(host.hostId, rawKey) ?: cache.loadTimeline(host.hostId, key)
+            }
+            cached?.let { putTimeline(it) }
         }
         reopen(key)
     }
 
-    private suspend fun reopen(key: String, fresh: Boolean = false) {
+    private suspend fun reopen(rawKey: String, fresh: Boolean = false, maxResyncs: Int = 1) {
+        val key = sessionKey(rawKey)
         val a = api ?: return
         if (conn?.isReady != true) return
-        val prev = _timelines.value[key]
-        val cursor = if (fresh) null else prev?.cursor?.takeIf { it.epoch == hello?.epoch }
-        runCatching { a.open(key, cursor) }
-            .onSuccess { r ->
-                // A rewind happened while we were away: the replayed patches describe a stale branch.
-                if (r.kind == "replay" && r.patches.orEmpty().any { it is TimelineReset }) {
-                    reopen(key, fresh = true)
-                    return@onSuccess
-                }
-                putTimeline(TurnStore.fromOpen(prev?.takeIf { r.kind == "replay" }, r))
-                persistTimeline(key)
+        var requestFresh = fresh
+        repeat(maxResyncs + 1) { attempt ->
+            val (openId, cursor) = withTimelineSync(key) { sync ->
+                val id = sync.beginOpen(hello?.epoch, fresh = requestFresh)
+                val current = sync.current()
+                val nextCursor = if (requestFresh) null else current?.cursor?.takeIf { it.epoch == hello?.epoch }
+                id to nextCursor
             }
-            .onFailure { _notices.tryEmit(it.message ?: "open failed") }
+            val response = runCatching { a.open(key, cursor) }
+            if (response.isFailure) {
+                val failure = response.exceptionOrNull()!!
+                val syncResult = withTimelineSync(key) { sync ->
+                    val result = sync.failOpen(openId)
+                    if (result is SessionSyncResult.Applied || result is SessionSyncResult.NeedsResync) {
+                        publishTimelineLocked(key, sync)
+                    }
+                    result
+                }
+                when (syncResult) {
+                    is SessionSyncResult.NeedsResync -> {
+                        if (attempt < maxResyncs && conn?.isReady == true) {
+                            requestFresh = true
+                            return@repeat
+                        }
+                    }
+                    is SessionSyncResult.Applied -> Unit
+                    is SessionSyncResult.Buffered,
+                    is SessionSyncResult.StaleOpen,
+                    SessionSyncResult.Ignored -> Unit
+                }
+                _notices.tryEmit(failure.message ?: "open failed")
+                return
+            }
+
+            val opened = response.getOrThrow().copy(sessionKey = key)
+            if (opened.kind == "replay" && opened.patches.orEmpty().any { it is TimelineReset }) {
+                requestFresh = true
+                if (attempt < maxResyncs) return@repeat
+                withTimelineSync(key) { sync ->
+                    sync.failOpen(openId)
+                    publishTimelineLocked(key, sync)
+                }
+                _notices.tryEmit("session changed while opening; retry sync")
+                return
+            }
+
+            when (val result = withTimelineSync(key) { sync ->
+                val outcome = sync.completeOpen(openId, opened)
+                if (outcome is SessionSyncResult.Applied || outcome is SessionSyncResult.NeedsResync) {
+                    publishTimelineLocked(key, sync)
+                }
+                outcome
+            }) {
+                is SessionSyncResult.Applied -> {
+                    persistTimeline(key)
+                    return
+                }
+                is SessionSyncResult.NeedsResync -> {
+                    if (attempt < maxResyncs) {
+                        requestFresh = true
+                    } else {
+                        _notices.tryEmit("session stream has a sequence gap; reopen the session to resync")
+                        return
+                    }
+                }
+                is SessionSyncResult.StaleOpen,
+                is SessionSyncResult.Buffered,
+                SessionSyncResult.Ignored -> return
+            }
+        }
     }
 
-    fun closeSession(key: String) {
+    fun closeSession(rawKey: String) {
+        val key = sessionKey(rawKey)
         if (openKey == key) openKey = null
         persistTimeline(key)
         val a = api ?: return
         scope.launch { runCatching { a.close(key) } }
     }
 
-    suspend fun loadOlder(key: String) {
+    suspend fun loadOlder(rawKey: String) {
+        val key = sessionKey(rawKey)
         val a = api ?: return
         val t = _timelines.value[key] ?: return
         val first = t.turns.firstOrNull() ?: return
@@ -384,77 +541,164 @@ class RemoteRepository(
         }
     }
 
-    suspend fun send(key: String, text: String, mode: String): SendOutcome {
+    suspend fun send(rawKey: String, text: String, mode: String): SendOutcome {
+        val key = sessionKey(rawKey)
         val a = api ?: return SendOutcome.Failed("offline")
-        if (mode == "prompt") _pendingSends.update { it + (key to text.trim()) }
+        val timeline = withTimelineSync(key) { it.current() }
+        if (timeline == null) {
+            requestResync(key, fresh = true)
+            return SendOutcome.SessionNotReady
+        }
+        val messageId = "m_${UUID.randomUUID()}"
+        val pending = if (mode == "prompt") {
+            PendingSend(
+                messageId = messageId,
+                text = text.trim(),
+                status = PendingSendStatus.Sending,
+                baselineAnchors = timeline.turns.mapTo(HashSet()) { it.anchor },
+                createdAt = System.currentTimeMillis(),
+            ).also { item ->
+                _pendingSends.update { current -> current + (key to (current[key].orEmpty() + item)) }
+            }
+        } else null
+        return sendWithId(a, key, text, mode, messageId, pending)
+    }
+
+    /** Retry an ambiguous delivery with the same ID so the desktop can deduplicate it. */
+    suspend fun retryPendingSend(rawKey: String, messageId: String): SendOutcome {
+        val key = sessionKey(rawKey)
+        val pending = _pendingSends.value[key].orEmpty().firstOrNull { it.messageId == messageId }
+            ?: return SendOutcome.Failed("pending message not found")
+        val a = api ?: return SendOutcome.Unknown
+        updatePending(key, messageId) { it.copy(status = PendingSendStatus.Sending) }
+        return sendWithId(a, key, pending.text, "prompt", messageId, pending, retainPendingOnFailure = true)
+    }
+
+    private suspend fun sendWithId(
+        a: RemoteApi,
+        key: String,
+        text: String,
+        mode: String,
+        messageId: String,
+        pending: PendingSend?,
+        retainPendingOnFailure: Boolean = false,
+    ): SendOutcome {
         return try {
-            a.send(key, text, mode, "m_${UUID.randomUUID()}")
-            SendOutcome.Sent
+            val result = a.send(key, text, mode, messageId)
+            if (!result.accepted) {
+                pending?.let {
+                    updatePending(key, it.messageId) { current ->
+                        if (retainPendingOnFailure) current.copy(status = PendingSendStatus.Unknown) else null
+                    }
+                }
+                SendOutcome.Failed("host did not accept the message")
+            } else {
+                pending?.let { updatePending(key, it.messageId) { it.copy(status = PendingSendStatus.Accepted) } }
+                pending?.let { schedulePendingReconcile(key, it.messageId) }
+                SendOutcome.Sent
+            }
         } catch (e: HostConnection.ConnectionLost) {
+            pending?.let { updatePending(key, it.messageId) { it.copy(status = PendingSendStatus.Unknown) } }
+            pending?.let { schedulePendingReconcile(key, it.messageId) }
             SendOutcome.Unknown
         } catch (e: Exception) {
-            _pendingSends.update { it - key }
+            pending?.let {
+                updatePending(key, it.messageId) { current ->
+                    if (retainPendingOnFailure) current.copy(status = PendingSendStatus.Unknown) else null
+                }
+            }
             SendOutcome.Failed(e.message ?: "send failed")
         }
     }
 
+    private val pendingResyncScheduled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private fun schedulePendingReconcile(rawKey: String, messageId: String) {
+        val key = sessionKey(rawKey)
+        if (!pendingResyncScheduled.add(key)) return
+        scope.launch {
+            delay(1_500)
+            pendingResyncScheduled.remove(key)
+            val stillPending = _pendingSends.value[key].orEmpty().any {
+                it.messageId == messageId && it.status != PendingSendStatus.Sending
+            }
+            if (stillPending) requestResync(key, fresh = false)
+        }
+    }
+
     /** Queued texts the host pulled back, or null when the stop did not reach it. */
-    suspend fun abort(key: String): List<String>? = runCatching { api?.abort(key)?.let { it.restored.orEmpty() } }.getOrNull()
+    suspend fun abort(rawKey: String): List<String>? = runCatching { api?.abort(sessionKey(rawKey))?.let { it.restored.orEmpty() } }.getOrNull()
 
     private val commandCache = HashMap<String, Pair<Long, List<CommandInfo>>>()
 
     /** Slash commands for the session's project; cached briefly so the panel opens instantly. */
-    suspend fun commands(key: String, maxAgeMs: Long = 15_000): List<CommandInfo>? {
+    suspend fun commands(rawKey: String, maxAgeMs: Long = 15_000): List<CommandInfo>? {
+        val key = sessionKey(rawKey)
         commandCache[key]?.let { (at, list) -> if (System.currentTimeMillis() - at < maxAgeMs) return list }
         val list = runCatching { api?.commands(key) }.getOrNull() ?: return commandCache[key]?.second
         commandCache[key] = System.currentTimeMillis() to list
         return list
     }
 
-    fun cachedCommands(key: String): List<CommandInfo>? = commandCache[key]?.second
+    fun cachedCommands(rawKey: String): List<CommandInfo>? = commandCache[sessionKey(rawKey)]?.second
 
-    suspend fun listFiles(key: String, path: String): FileListResult? = runCatching { api?.listFiles(key, path) }.getOrNull()
+    suspend fun listFiles(rawKey: String, path: String): FileListResult? = runCatching { api?.listFiles(sessionKey(rawKey), path) }.getOrNull()
 
-    suspend fun searchFiles(key: String, query: String): List<FileEntry>? = runCatching { api?.searchFiles(key, query) }.getOrNull()
+    suspend fun searchFiles(rawKey: String, query: String): List<FileEntry>? = runCatching { api?.searchFiles(sessionKey(rawKey), query) }.getOrNull()
 
     /** Rewind before the turn's user message; the message text on success, failure message otherwise. */
-    suspend fun rewind(key: String, anchor: String): Result<String> = runCatching {
-        val a = api ?: error("offline")
-        a.rewind(key, anchor).editorText.orEmpty()
-    }.onSuccess { reopen(key, fresh = true) }
+    suspend fun rewind(rawKey: String, anchor: String): Result<String> {
+        val key = sessionKey(rawKey)
+        return runCatching {
+            val a = api ?: error("offline")
+            a.rewind(key, anchor).editorText.orEmpty()
+        }.onSuccess { reopen(key, fresh = true) }
+    }
 
-    suspend fun branches(key: String): Result<List<BranchInfo>> = runCatching { api?.branches(key) ?: error("offline") }
+    suspend fun branches(rawKey: String): Result<List<BranchInfo>> {
+        val key = sessionKey(rawKey)
+        return runCatching { api?.branches(key) ?: error("offline") }
+    }
 
     /** Make another branch active; viewers re-open like after a rewind. */
-    suspend fun switchBranch(key: String, leafId: String): Result<Unit> = runCatching {
-        (api ?: error("offline")).switchBranch(key, leafId)
-        Unit
-    }.onSuccess { reopen(key, fresh = true) }
+    suspend fun switchBranch(rawKey: String, leafId: String): Result<Unit> {
+        val key = sessionKey(rawKey)
+        return runCatching {
+            (api ?: error("offline")).switchBranch(key, leafId)
+            Unit
+        }.onSuccess { reopen(key, fresh = true) }
+    }
 
     /** Fork before a user message: the new session's key and the message to edit there. */
-    suspend fun fork(key: String, anchor: String): Result<ForkResult> = runCatching { (api ?: error("offline")).fork(key, anchor) }
+    suspend fun fork(rawKey: String, anchor: String): Result<ForkResult> = runCatching {
+        (api ?: error("offline")).fork(sessionKey(rawKey), anchor).let { it.copy(sessionKey = sessionKey(it.sessionKey)) }
+    }
 
     /** `review.diff`: file list (no [path]) or one file's lines; failure carries the host's message. */
-    suspend fun reviewDiff(key: String, scope: String, turnId: String? = null, path: String? = null): Result<ReviewDiffResult> =
-        runCatching { api?.reviewDiff(key, scope, turnId, path) ?: error("offline") }
+    suspend fun reviewDiff(rawKey: String, scope: String, turnId: String? = null, path: String? = null): Result<ReviewDiffResult> {
+        val key = sessionKey(rawKey)
+        return runCatching { api?.reviewDiff(key, scope, turnId, path) ?: error("offline") }
+    }
 
-    suspend fun sessionStats(key: String): SessionStatsResult? = runCatching { api?.stats(key) }.getOrNull()
+    suspend fun sessionStats(rawKey: String): SessionStatsResult? = runCatching { api?.stats(sessionKey(rawKey)) }.getOrNull()
 
-    suspend fun dequeue(key: String): List<String>? = runCatching { api?.dequeue(key)?.restored }.getOrNull()
+    suspend fun dequeue(rawKey: String): List<String>? = runCatching { api?.dequeue(sessionKey(rawKey))?.restored }.getOrNull()
 
-    suspend fun respondUi(key: String, response: UiResponse): Boolean {
+    suspend fun respondUi(rawKey: String, response: UiResponse): Boolean {
+        val key = sessionKey(rawKey)
         val ok = runCatching { api?.respondUi(response) ?: false }.getOrDefault(false)
-        _timelines.value[key]?.let { putTimeline(TurnStore.removeUi(it, response.id)) }
+        withTimelineSync(key) { it.current() }?.let { putTimeline(TurnStore.removeUi(it, response.id)) }
         return ok
     }
 
-    suspend fun cancelUi(key: String, id: String) {
+    suspend fun cancelUi(rawKey: String, id: String) {
+        val key = sessionKey(rawKey)
         runCatching { api?.cancelUi(id) }
-        _timelines.value[key]?.let { putTimeline(TurnStore.removeUi(it, id)) }
+        withTimelineSync(key) { it.current() }?.let { putTimeline(TurnStore.removeUi(it, id)) }
     }
 
-    suspend fun models(key: String): ModelListResult? = runCatching { api?.models(key) }.getOrNull()
-    suspend fun setModel(key: String, id: String) = runCatching { api?.setModel(key, id) }
+    suspend fun models(rawKey: String): ModelListResult? = runCatching { api?.models(sessionKey(rawKey)) }.getOrNull()
+    suspend fun setModel(rawKey: String, id: String) = runCatching { api?.setModel(sessionKey(rawKey), id) }
     private val _pendingShare = MutableStateFlow<SharedContent?>(null)
     /** Shared from another app; the next opened session takes it into its composer. */
     val pendingShare: StateFlow<SharedContent?> = _pendingShare
@@ -516,13 +760,15 @@ class RemoteRepository(
         val r = a.attachment(path)
         return withContext(Dispatchers.Default) { android.util.Base64.decode(r.data, android.util.Base64.NO_WRAP) }
     }
-    suspend fun setThinking(key: String, level: String) = runCatching { api?.setThinking(key, level) }
-    suspend fun capabilities(key: String): List<CapabilityRow> = runCatching { api?.capabilities(key) }.getOrNull().orEmpty()
-    suspend fun setCapability(key: String, id: String, on: Boolean) = runCatching { api?.setCapability(key, id, on) }
+    suspend fun setThinking(rawKey: String, level: String) = runCatching { api?.setThinking(sessionKey(rawKey), level) }
+    suspend fun capabilities(rawKey: String): List<CapabilityRow> = runCatching { api?.capabilities(sessionKey(rawKey)) }.getOrNull().orEmpty()
+    suspend fun setCapability(rawKey: String, id: String, on: Boolean) = runCatching { api?.setCapability(sessionKey(rawKey), id, on) }
     suspend fun cacheWarming(): String? = runCatching { api?.cacheWarming() }.getOrNull()
     suspend fun setCacheWarming(mode: String) = runCatching { api?.setCacheWarming(mode) }
-    suspend fun toolDetail(key: String, toolCallId: String): ToolDetailResult? = runCatching { api?.toolDetail(key, toolCallId) }.getOrNull()
-    suspend fun createSession(projectId: String, caps: List<String>?): String? = runCatching { api?.create(projectId, caps)?.sessionKey }.getOrNull()
+    suspend fun toolDetail(rawKey: String, toolCallId: String): ToolDetailResult? = runCatching { api?.toolDetail(sessionKey(rawKey), toolCallId) }.getOrNull()
+    suspend fun createSession(projectId: String, caps: List<String>?): String? = runCatching {
+        api?.create(projectId, caps)?.sessionKey?.let(::sessionKey)
+    }.getOrNull()
 
     val canWrite: Boolean get() = (hello?.role ?: _active.value?.role) == "operator"
 

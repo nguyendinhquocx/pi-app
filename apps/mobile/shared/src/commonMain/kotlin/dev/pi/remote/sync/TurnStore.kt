@@ -43,25 +43,57 @@ sealed interface ApplyResult {
 }
 
 object TurnStore {
-    fun fromOpen(prev: SessionTimeline?, r: OpenResult): SessionTimeline {
+    /**
+     * Apply an open response without claiming a replay cursor that contains unapplied patches.
+     * A replay gap must remain visible to the caller so it can request a fresh snapshot.
+     */
+    fun fromOpenResult(prev: SessionTimeline?, r: OpenResult): ApplyResult {
         if (r.kind == "replay" && prev != null && prev.epoch == r.epoch) {
-            val replayed = applyAll(prev, r.patches.orEmpty())
-            val t = when (replayed) {
-                is ApplyResult.Applied -> replayed.timeline
-                is ApplyResult.Gap -> replayed.timeline
+            return when (val replayed = applyAll(prev, r.patches.orEmpty())) {
+                is ApplyResult.Applied -> ApplyResult.Applied(
+                    replayed.timeline.copy(
+                        title = r.title.ifEmpty { replayed.timeline.title },
+                        seq = maxOf(replayed.timeline.seq, r.seq),
+                        state = r.state,
+                        pendingUi = r.pendingUi,
+                    ),
+                )
+                is ApplyResult.Gap -> ApplyResult.Gap(
+                    replayed.timeline.copy(
+                        title = r.title.ifEmpty { replayed.timeline.title },
+                        state = r.state,
+                        pendingUi = r.pendingUi,
+                    ),
+                    replayed.expected,
+                    replayed.got,
+                )
             }
-            return t.copy(title = r.title.ifEmpty { t.title }, seq = maxOf(t.seq, r.seq), state = r.state, pendingUi = r.pendingUi)
         }
-        return SessionTimeline(
-            sessionKey = r.sessionKey,
-            title = r.title,
-            epoch = r.epoch,
-            seq = r.seq,
-            turns = r.turns.orEmpty(),
-            hasOlder = r.hasOlder ?: false,
-            state = r.state,
-            pendingUi = r.pendingUi,
+
+        // An older open response may finish after a newer live patch. Never roll the timeline
+        // back within one epoch; the caller will merge buffered patches after this snapshot.
+        if (prev != null && prev.epoch == r.epoch && prev.seq > r.seq) {
+            return ApplyResult.Applied(prev)
+        }
+
+        return ApplyResult.Applied(
+            SessionTimeline(
+                sessionKey = r.sessionKey,
+                title = r.title,
+                epoch = r.epoch,
+                seq = r.seq,
+                turns = r.turns.orEmpty(),
+                hasOlder = r.hasOlder ?: false,
+                state = r.state,
+                pendingUi = r.pendingUi,
+            ),
         )
+    }
+
+    /** Compatibility helper for simple callers/tests; on a gap it returns the last contiguous state. */
+    fun fromOpen(prev: SessionTimeline?, r: OpenResult): SessionTimeline = when (val result = fromOpenResult(prev, r)) {
+        is ApplyResult.Applied -> result.timeline
+        is ApplyResult.Gap -> result.timeline
     }
 
     /** Older page from `turn.page`, prepended. */

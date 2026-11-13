@@ -182,6 +182,9 @@
     <string name="new_session_pick">Choose a project</string>
     <string name="creating">Creating…</string>
     <string name="sending">Sending…</string>
+    <string name="send_accepted">Sent · syncing session…</string>
+    <string name="send_unknown">Delivery not confirmed</string>
+    <string name="session_syncing">Syncing session…</string>
     <string name="attach">Attach</string>
     <string name="attach_camera">Take photo</string>
     <string name="attach_photos">Photos</string>

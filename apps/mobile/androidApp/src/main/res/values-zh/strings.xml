@@ -181,6 +181,9 @@
     <string name="new_session_pick">选择项目</string>
     <string name="creating">正在创建…</string>
     <string name="sending">发送中…</string>
+    <string name="send_accepted">已发送 · 正在同步会话…</string>
+    <string name="send_unknown">尚未确认是否送达</string>
+    <string name="session_syncing">正在同步会话…</string>
     <string name="attach">添加附件</string>
     <string name="attach_camera">拍照</string>
     <string name="attach_photos">照片</string>

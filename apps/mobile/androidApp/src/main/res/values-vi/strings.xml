@@ -181,6 +181,9 @@
     <string name="new_session_pick">Chọn một dự án</string>
     <string name="creating">Đang tạo…</string>
     <string name="sending">Đang gửi…</string>
+    <string name="send_accepted">Đã gửi · đang đồng bộ phiên…</string>
+    <string name="send_unknown">Chưa xác nhận đã gửi</string>
+    <string name="session_syncing">Đang đồng bộ phiên…</string>
     <string name="attach">Đính kèm</string>
     <string name="attach_camera">Chụp ảnh</string>
     <string name="attach_photos">Ảnh</string>

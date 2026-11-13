@@ -52,6 +52,8 @@ import dev.pi.remote.app.data.AttachmentPrep
 import dev.pi.remote.app.data.AttachmentTooLarge
 import dev.pi.remote.app.data.PreparedAttachment
 import dev.pi.remote.app.data.PromptAttachments
+import dev.pi.remote.app.data.PendingSend
+import dev.pi.remote.protocol.canonicalSessionKey
 import kotlinx.coroutines.flow.first
 import dev.pi.remote.app.ui.rich.MarkdownCache
 import kotlinx.coroutines.Dispatchers
@@ -112,14 +114,15 @@ private suspend fun <T> retrying(block: suspend () -> T?): T? {
 
 @Composable
 fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit, onOpenSession: (String) -> Unit = {}) {
+    val sessionId = remember(sessionKey) { canonicalSessionKey(sessionKey) }
     val timelines by repo.timelines.collectAsState()
     val connection by repo.connection.collectAsState()
     val inbox by repo.inbox.collectAsState()
     val settingsVersion by repo.settingsVersion.collectAsState()
     val pendingSends by repo.pendingSends.collectAsState()
     val scope = rememberCoroutineScope()
-    val timeline = timelines[sessionKey]
-    val summary = inbox.sessions.firstOrNull { it.sessionKey == sessionKey }
+    val timeline = timelines[sessionId]
+    val summary = inbox.sessions.firstOrNull { canonicalSessionKey(it.sessionKey) == sessionId }
     var draft by remember(sessionKey) { mutableStateOf(TextFieldValue("")) }
     var notice by remember { mutableStateOf<String?>(null) }
     var sheet by remember { mutableStateOf<String?>(null) }
@@ -135,6 +138,7 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
     val tooLarge = stringResource(R.string.attach_too_large, "%s")
     val cameraDenied = stringResource(R.string.camera_denied)
     val attachPending = stringResource(R.string.attach_pending)
+    val sessionSyncing = stringResource(R.string.session_syncing)
 
     fun update(id: String, f: (Attachment) -> Attachment) {
         val i = attachments.indexOfFirst { it.id == id }
@@ -219,7 +223,7 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
     }
     val maybeLost = stringResource(R.string.maybe_not_sent)
 
-    LaunchedEffect(sessionKey, ready) { repo.openSession(sessionKey) }
+    LaunchedEffect(sessionId, ready) { repo.openSession(sessionId) }
     LaunchedEffect(sessionKey, ready, settingsVersion) {
         if (ready) {
             caps = repo.capabilities(sessionKey)
@@ -271,7 +275,7 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
             runBuiltin(item.name)
         } else draft = insertSlash(draft, item.name)
     }
-    androidx.compose.runtime.DisposableEffect(sessionKey) { onDispose { repo.closeSession(sessionKey) } }
+    androidx.compose.runtime.DisposableEffect(sessionId) { onDispose { repo.closeSession(sessionId) } }
 
     SessionContent(
         title = timeline?.title?.ifEmpty { null } ?: summary?.title?.ifEmpty { null } ?: stringResource(R.string.session_untitled),
@@ -284,7 +288,18 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
         notice = notice,
         toolsOn = caps.count { it.enabled },
         deferredUi = deferred,
-        pendingText = pendingSends[sessionKey],
+        pendingSends = pendingSends[sessionId].orEmpty(),
+        sessionReady = timeline != null,
+        onRetryPending = { messageId ->
+            scope.launch {
+                when (val r = repo.retryPendingSend(sessionId, messageId)) {
+                    SendOutcome.Sent -> notice = null
+                    SendOutcome.Unknown -> notice = maybeLost
+                    SendOutcome.SessionNotReady -> notice = sessionSyncing
+                    is SendOutcome.Failed -> notice = r.message
+                }
+            }
+        },
         attachments = attachments,
         onAttach = { attachSheet = true },
         onRemoveAttachment = { id ->
@@ -316,9 +331,14 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
                     if (text.isEmpty()) return@launch
                     draft = TextFieldValue("")
                     attachments.clear()
-                    when (val r = repo.send(sessionKey, text, mode)) {
+                    when (val r = repo.send(sessionId, text, mode)) {
                         SendOutcome.Sent -> notice = null
                         SendOutcome.Unknown -> notice = maybeLost
+                        SendOutcome.SessionNotReady -> {
+                            notice = sessionSyncing
+                            draft = TextFieldValue(typed)
+                            attachments.addAll(sent)
+                        }
                         is SendOutcome.Failed -> {
                             notice = r.message
                             draft = TextFieldValue(typed)
@@ -515,7 +535,9 @@ fun SessionContent(
     notice: String?,
     toolsOn: Int,
     deferredUi: Set<String>,
-    pendingText: String? = null,
+    pendingSends: List<PendingSend> = emptyList(),
+    sessionReady: Boolean = true,
+    onRetryPending: (String) -> Unit = {},
     attachments: List<Attachment> = emptyList(),
     onAttach: () -> Unit = {},
     onRemoveAttachment: (String) -> Unit = {},
@@ -634,11 +656,16 @@ fun SessionContent(
         ConnectionBanner(connection, onRetry)
         notice?.let { Banner(it) }
         if (!canWrite) Banner(stringResource(R.string.readonly))
+        else if (!sessionReady && connection is HostConnection.State.Ready) Banner(stringResource(R.string.session_syncing))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(state = listState, reverseLayout = true, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
                 item("pad-bottom") { Spacer(Modifier.height(4.dp)) }
-                pendingText?.let { text -> item("pending-send", contentType = "pending") { PendingBubble(text) } }
+                pendingSends.asReversed().forEach { pending ->
+                    item("pending-send-${pending.messageId}", contentType = "pending") {
+                        PendingBubble(pending, onRetry = { onRetryPending(pending.messageId) })
+                    }
+                }
                 val reversed = turns.asReversed()
                 itemsIndexed(reversed, key = { _, t -> t.id }, contentType = { _, t -> if (t.running) "live" else "turn" }) { ri, t ->
                     val i = turns.size - 1 - ri
@@ -682,13 +709,13 @@ fun SessionContent(
 
         if (question == null) state?.todo?.let { TodoTray(it, todoOpen) { todoOpen = !todoOpen } }
         if (question != null) {
-            QuestionCard(question, enabled = canWrite && connection is HostConnection.State.Ready, onAnswer = onAnswer, onSkip = { onSkip(question.id) }, onDesktop = { onDefer(question.id) })
+            QuestionCard(question, enabled = canWrite && sessionReady && connection is HostConnection.State.Ready, onAnswer = onAnswer, onSkip = { onSkip(question.id) }, onDesktop = { onDefer(question.id) })
         } else {
             Composer(
                 text = draft,
                 onText = onDraft,
                 running = running,
-                enabled = canWrite && connection is HostConnection.State.Ready,
+                enabled = canWrite && sessionReady && connection is HostConnection.State.Ready,
                 editable = canWrite,
                 modelLabel = state?.model?.substringAfter('/')?.ifEmpty { null } ?: stringResource(R.string.model),
                 thinkingLabel = thinkingLabel(state?.thinking),

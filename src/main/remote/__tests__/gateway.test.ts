@@ -158,9 +158,26 @@ describe('sessions', () => {
     expect(summary.sessionKey).toBe(expected)
     expect(opened.sessionKey).toBe(expected)
 
-    await host.playRun(windowsFile, 'live Windows run')
+    await host.playRun(windowsFile, 'live Windows run', { ask: true })
     const evt = await c.waitFor((event) => event.m === 'turn.patch')
     expect((evt.p as { sessionKey: string }).sessionKey).toBe(expected)
+    const ui = await c.waitFor((event) => event.m === 'ui.request')
+    expect((ui.p as { sessionKey: string }).sessionKey).toBe(expected)
+  })
+
+  it('canonicalizes the session keys returned by create and fork on Windows', async () => {
+    const c = await pairNew()
+    const createdRaw = 'C:\\Users\\quocn\\.pi\\agent\\sessions\\created.jsonl'
+    host.createSession = async () => createdRaw
+    const created = await c.call('session.create', { projectId: '/work/pi-app' })
+    expect(created.sessionKey).toBe('C:/Users/quocn/.pi/agent/sessions/created.jsonl')
+
+    const opened = (await c.call('session.open', { sessionKey: session })) as OpenResult
+    const anchor = opened.turns!.at(-1)!.anchor
+    const forkedRaw = 'C:\\Users\\quocn\\.pi\\agent\\sessions\\forked.jsonl'
+    host.fork = async () => ({ sessionFile: forkedRaw, editorText: '修一下' })
+    const forked = await c.call('session.fork', { sessionKey: session, anchor })
+    expect(forked.sessionKey).toBe('C:/Users/quocn/.pi/agent/sessions/forked.jsonl')
   })
 
   it('opens a snapshot, streams a run, and replays from a cursor after reconnect', async () => {

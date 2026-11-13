@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -42,6 +43,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import dev.pi.remote.R
 import dev.pi.remote.app.data.PromptAttachments
+import dev.pi.remote.app.data.PendingSend
+import dev.pi.remote.app.data.PendingSendStatus
 import dev.pi.remote.app.data.ImageSource
 import dev.pi.remote.app.data.LocalAttachmentImages
 import androidx.compose.foundation.Image
@@ -157,12 +160,24 @@ fun TurnItem(turn: Turn, expanded: Boolean, divider: Long?, now: Long, mermaid: 
     }
 }
 
-/** The phone's own message before the host echoes it back as a turn. */
+/** The phone's own message until the host echoes it back as a turn. */
 @Composable
-fun PendingBubble(text: String) {
+fun PendingBubble(pending: PendingSend, onRetry: () -> Unit = {}) {
+    val label = when (pending.status) {
+        PendingSendStatus.Sending -> stringResource(R.string.sending)
+        PendingSendStatus.Accepted -> stringResource(R.string.send_accepted)
+        PendingSendStatus.Unknown -> stringResource(R.string.send_unknown)
+    }
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        UserBubble(text, dim = true)
-        Text(stringResource(R.string.sending), style = Pi.t.meta.copy(color = Pi.c.fg3))
+        UserBubble(pending.text, dim = pending.status != PendingSendStatus.Accepted)
+        if (pending.status == PendingSendStatus.Unknown) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = Pi.t.meta.copy(color = Pi.c.warn))
+                TextButton(onClick = onRetry) { Text(stringResource(R.string.conn_retry)) }
+            }
+        } else {
+            Text(label, style = Pi.t.meta.copy(color = Pi.c.fg3))
+        }
     }
 }
 
