@@ -93,7 +93,7 @@ export interface AgentApp {
   close(): Promise<void>
 }
 
-/** Launch pi Desktop against the scripted model with the Browser panel enabled. */
+/** Launch LiX against the scripted model with the Browser panel enabled. */
 export async function launchAgentApp(modelPort: number, opts: { language?: 'en' | 'zh'; home?: string; keepHome?: boolean; config?: Record<string, unknown> } = {}): Promise<AgentApp> {
   const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), 'pi-e2e-agent-'))
   const agentDir = path.join(home, '.pi', 'agent')

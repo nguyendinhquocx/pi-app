@@ -3,10 +3,10 @@ const statusEl = document.getElementById('status')
 
 const LABELS = {
   unpaired: 'Not paired yet.',
-  connecting: 'Connecting to pi Desktop…',
+  connecting: 'Connecting to LiX…',
   connected: 'Connected. The AI can now open tabs in its own window.',
-  disconnected: 'pi Desktop is not reachable (is it running, with My Chrome turned on?). Retrying…',
-  rejected: 'pi Desktop rejected the code. Copy a fresh one.',
+  disconnected: 'LiX is not reachable (is it running, with My Chrome turned on?). Retrying…',
+  rejected: 'LiX rejected the code. Copy a fresh one.',
 }
 
 async function showStatus() {

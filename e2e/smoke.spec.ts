@@ -26,7 +26,7 @@ async function launchApp(extraEnv: Record<string, string> = {}) {
   })
 }
 
-test.describe('pi Desktop smoke', () => {
+test.describe('LiX smoke', () => {
   test('launches built app and shows window', async () => {
     const app = await launchApp()
     try {

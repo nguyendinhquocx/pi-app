@@ -26,9 +26,9 @@ function sdk(bin: string): { entry: string; cli: string } {
 describe('worker Pi CLI identity', () => {
   it('should_expose_active_sdk_cli_when_worker_entry_is_not_a_pi_script', async () => {
     const { entry, cli } = sdk('dist/bundle/cli.js')
-    const argv = ['pi Desktop.exe', 'worker.mjs']
+    const argv = ['LiX.exe', 'worker.mjs']
     await preparePiCliEntry(entry, argv)
-    expect([argv[0], await realpath(argv[1]!)]).toEqual(['pi Desktop.exe', await realpath(cli)])
+    expect([argv[0], await realpath(argv[1]!)]).toEqual(['LiX.exe', await realpath(cli)])
   })
 
   it('should_run_the_actual_sdk_cli_with_electron_when_exposed_as_worker_identity', async () => {

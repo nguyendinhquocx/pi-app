@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="hosts_title">Kết nối máy tính của bạn</string>
-    <string name="hosts_desc">Mở pi Desktop trên máy tính, vào Cài đặt › Di động rồi quét mã QR. Điện thoại và máy tính cần cùng một mạng nội bộ, hoặc cùng mạng Tailscale / ZeroTier / WireGuard.</string>
+    <string name="hosts_desc">Mở LiX trên máy tính, vào Cài đặt › Di động rồi quét mã QR. Điện thoại và máy tính cần cùng một mạng nội bộ, hoặc cùng mạng Tailscale / ZeroTier / WireGuard.</string>
     <string name="hosts_scan">Quét mã để kết nối</string>
     <string name="hosts_paste">Dán liên kết ghép nối</string>
     <string name="hosts_saved">Máy tính đã lưu</string>
@@ -24,7 +24,7 @@
     <string name="hosts_address_public_note">Chấp nhận mọi IP hoặc tên miền. Kết nối vẫn được mã hóa đầu-cuối, nhưng cổng sẽ mở ra internet: hãy ghép nối ở nhà trước, rồi thêm địa chỉ tại đây.</string>
     <string name="hosts_address_invalid_public">Dùng định dạng host:port, ví dụ 203.0.113.7:7000 hoặc pi.example.com:7000.</string>
     <string name="hosts_scan_prompt">Quét mã QR hiển thị trên máy tính</string>
-    <string name="pair_err_unreachable">Không kết nối được máy tính. Hãy kiểm tra cả hai cùng một mạng và Di động đã được bật trong pi Desktop.</string>
+    <string name="pair_err_unreachable">Không kết nối được máy tính. Hãy kiểm tra cả hai cùng một mạng và Di động đã được bật trong LiX.</string>
     <string name="pair_err_pair_expired">Mã QR này đã hết hạn. Hãy tạo mã mới trên máy tính.</string>
     <string name="pair_err_pair_used">Mã QR này đã được dùng rồi. Hãy tạo mã mới trên máy tính.</string>
     <string name="pair_err_revoked">Điện thoại này đã bị hủy ghép nối. Hãy ghép nối lại trên máy tính.</string>

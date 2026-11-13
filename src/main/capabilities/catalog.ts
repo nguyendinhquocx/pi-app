@@ -42,7 +42,7 @@ const PROMPTS: Partial<Record<CapabilityId, string>> = {
   'pi-ui': piUiPrompt.replace(/^<!--[\s\S]*?-->\s*/, '').trim(),
   browser: [
     '# Built-in browser',
-    'The browser_* tools drive the browser panel in pi Desktop. The user can watch and take over; tabs keep their sign-ins. Tabs you open belong to this conversation.',
+    'The browser_* tools drive the browser panel in LiX. The user can watch and take over; tabs keep their sign-ins. Tabs you open belong to this conversation.',
     '- browser_snapshot lists roles, names and refs like [ref=e12] (f1e3 inside an iframe); act with refs. query="…" or target=<ref> narrows it; mode:"text" reads articles cheaply; index:N reads tab N; allTabs:true reads all open tabs at once. Action results show only what changed, so re-snapshotting is rarely needed.',
     '- `target` also takes a locator matching one element: getByRole(\'button\', { name: \'Save\' }), getByText(\'…\'), getByLabel(\'…\'), getByPlaceholder(\'…\'), or CSS.',
     '- browser_fill_form and browser_batch do several steps in one call. Screenshots are for visual questions and canvas (browser_click x/y uses their pixels).',

@@ -39,7 +39,7 @@ const COPY = {
     arch: {
       eyebrow: 'How it fits together',
       termEyebrow: 'Terminal', termTitle: 'pi CLI',
-      deskEyebrow: 'Desktop', deskTitle: 'pi Desktop', deskNote: 'One worker process per session runs the same pi SDK — on the host or inside a WSL distribution.',
+      deskEyebrow: 'Desktop', deskTitle: 'LiX', deskNote: 'One worker process per session runs the same pi SDK — on the host or inside a WSL distribution.',
       layers: [['Renderer', 'Timeline · Review · Files · Tree · Composer'], ['Main process', 'IPC · worker pool · Git · previews · notifications']],
       workersLabel: 'Workers', workers: [['session A · running', true], ['session B · running', true], ['session C · idle', false]],
       cliEdge: 'read / write', deskEdge: 'read / write',
@@ -61,7 +61,7 @@ const COPY = {
     arch: {
       eyebrow: '整体结构',
       termEyebrow: '终端', termTitle: 'pi CLI',
-      deskEyebrow: '桌面', deskTitle: 'pi Desktop', deskNote: '每个会话一个 Worker 进程，运行同一个 pi SDK——在本机或 WSL 发行版里。',
+      deskEyebrow: '桌面', deskTitle: 'LiX', deskNote: '每个会话一个 Worker 进程，运行同一个 pi SDK——在本机或 WSL 发行版里。',
       layers: [['Renderer', '时间线 · Review · 文件 · 会话树 · 输入框'], ['Main 进程', 'IPC · Worker 池 · Git · 预览 · 通知']],
       workersLabel: 'Workers', workers: [['会话 A · 运行中', true], ['会话 B · 运行中', true], ['会话 C · 空闲', false]],
       cliEdge: '读 / 写', deskEdge: '读 / 写',

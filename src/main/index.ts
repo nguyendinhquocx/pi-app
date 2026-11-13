@@ -33,7 +33,7 @@ process.on('uncaughtException', (err) => {
     const msg = err instanceof Error ? err.message : String(err)
     const opts = {
       type: 'error' as const,
-      title: 'pi Desktop',
+      title: 'LiX',
       message: uiText({
         vi: 'Đã xảy ra lỗi nghiêm trọng. Vui lòng khởi động lại ứng dụng.',
         en: 'A critical error occurred. Please restart the app.',

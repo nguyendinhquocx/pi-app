@@ -1,5 +1,5 @@
 appId: com.pi.desktop
-productName: pi Desktop
+productName: LiX
 directories:
   buildResources: build
   output: dist

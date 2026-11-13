@@ -81,7 +81,7 @@ export function deliverDesktopAlert(win: BrowserWindow | null, payload: DesktopA
         ...copy,
         title: payload.title || copy.title,
         body: payload.body || copy.body,
-        projectLabel: 'pi Desktop',
+        projectLabel: 'LiX',
         openLabel:
           language === 'zh' ? '返回应用' : language === 'vi' ? 'Về ứng dụng' : 'Back to app',
       },

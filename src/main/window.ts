@@ -88,7 +88,7 @@ export function createWindow(closeToTray = false, startHidden = false): BrowserW
     ...(isMac && useFrameless
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 10 } }
       : {}),
-    title: 'pi Desktop',
+    title: 'LiX',
     icon: resolveAppIcon(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),

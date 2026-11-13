@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="hosts_title">连接你的电脑</string>
-    <string name="hosts_desc">在电脑上打开 pi Desktop，进入 设置 › 手机连接，扫描二维码。手机和电脑需要在同一个局域网，或加入同一个 Tailscale / ZeroTier / WireGuard 网络。</string>
+    <string name="hosts_desc">在电脑上打开 LiX，进入 设置 › 手机连接，扫描二维码。手机和电脑需要在同一个局域网，或加入同一个 Tailscale / ZeroTier / WireGuard 网络。</string>
     <string name="hosts_scan">扫码连接</string>
     <string name="hosts_paste">粘贴配对链接</string>
     <string name="hosts_saved">已保存的电脑</string>

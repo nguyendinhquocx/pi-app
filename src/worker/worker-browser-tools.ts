@@ -1,4 +1,4 @@
-// browser_* tools (pi Desktop host capability "browser"). Registered by a hidden inline extension,
+// browser_* tools (LiX host capability "browser"). Registered by a hidden inline extension,
 // kept OUT of the active tool set unless the user switched the capability on for the session.
 // Execution happens in Main (BrowserHost); the worker only forwards calls. See
 // docs/architecture/adr/ADR-desktop-host-tools.md.

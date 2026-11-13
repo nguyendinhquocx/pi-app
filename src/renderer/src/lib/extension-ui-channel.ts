@@ -178,7 +178,7 @@ export function ensureExtensionUIChannel(): void {
     // Desktop alert only when running (idle dialog doesn't need system notification)
     if (useUIStore.getState().runState.status === 'running') {
       void signalDesktopAlert('extension_ui', {
-        title: 'pi Desktop · 等待操作',
+        title: 'LiX · 等待操作',
         body,
       })
     }

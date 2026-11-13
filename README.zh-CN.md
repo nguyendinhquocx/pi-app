@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="resources/icon.svg" alt="pi Desktop" width="72" height="72" />
+<img src="resources/icon.svg" alt="LiX" width="72" height="72" />
 
-# pi Desktop
+# LiX
 
 **[pi](https://github.com/earendil-works/pi) 编程 Agent 的桌面客户端。**<br/>
 还是终端里那个 Agent、那份 `~/.pi/agent`，多了时间线、Git Review、内置终端，还有一个能在手机上接着干活的 Android 应用。
@@ -18,10 +18,10 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/readme/zh/hero-dark.png" />
-  <img src="doc/assets/readme/zh/hero-light.png" alt="pi Desktop：时间线里一轮已完成的对话，右侧 Review 面板展开了 Git diff" />
+  <img src="doc/assets/readme/zh/hero-light.png" alt="LiX：时间线里一轮已完成的对话，右侧 Review 面板展开了 Git diff" />
 </picture>
 
-pi Desktop 不是另一个 Agent。它在后台 Worker 里运行 pi SDK，读写的就是 CLI 用的那些文件：会话、模型登录、`settings.json`、已安装的扩展。打开项目，终端里聊过的会话已经在侧栏里，接着聊或者新开都行。
+LiX 不是另一个 Agent。它在后台 Worker 里运行 pi SDK，读写的就是 CLI 用的那些文件：会话、模型登录、`settings.json`、已安装的扩展。打开项目，终端里聊过的会话已经在侧栏里，接着聊或者新开都行。
 
 ## 一图看全
 
@@ -106,15 +106,15 @@ Markdown、代码块、KaTeX 和长输出都在原位渲染。悬停消息可以
 
 ## 手机上的 pi
 
-<img src="doc/assets/readme/zh/phone.png" alt="Android 上的 pi Remote：会话收件箱、带工具步骤和改动文件的会话、选中两行准备批注的 diff，以及显示上下文、改动、分支和费用的会话面板" width="100%" />
+<img src="doc/assets/readme/zh/phone.png" alt="Android 上的 LiX：会话收件箱、带工具步骤和改动文件的会话、选中两行准备批注的 diff，以及显示上下文、改动、分支和费用的会话面板" width="100%" />
 
-**pi Remote**（Android）连到桌面端：打开「设置 → 手机连接」，扫码配对，所有会话就都在手机上了——回合运行时可以跟着看，回答它的提问，发带图片的消息，切换模型和思考强度。按文件查看本轮或工作区的改动，长按几行写批注，批注会进到下一条消息里；还能切换会话分支，或从任意一条消息分叉。连接端到端加密、不出你的网络；在外面时，让电脑和手机加入同一个 Tailscale / ZeroTier / WireGuard 网络即可（应用会自动发现组网地址，也可以手动添加）。界面内置越南语、英语和中文——全新安装默认越南语，也可以在应用里单独设置。
+**LiX Android 端**连到桌面端：打开「设置 → 手机连接」，扫码配对，所有会话就都在手机上了——回合运行时可以跟着看，回答它的提问，发带图片的消息，切换模型和思考强度。按文件查看本轮或工作区的改动，长按几行写批注，批注会进到下一条消息里；还能切换会话分支，或从任意一条消息分叉。连接端到端加密、不出你的网络；在外面时，让电脑和手机加入同一个 Tailscale / ZeroTier / WireGuard 网络即可（应用会自动发现组网地址，也可以手动添加）。界面内置越南语、英语和中文——全新安装默认越南语，也可以在应用里单独设置。
 
 ## 整体结构
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/readme/zh/architecture-dark.png" />
-  <img src="doc/assets/readme/zh/architecture-light.png" alt="终端 pi 与 pi Desktop 都读写 ~/.pi/agent；pi Desktop 由 Renderer、Main 进程和每个会话一个的 Worker 组成" width="100%" />
+  <img src="doc/assets/readme/zh/architecture-light.png" alt="终端 pi 与 LiX 都读写 ~/.pi/agent；LiX 由 Renderer、Main 进程和每个会话一个的 Worker 组成" width="100%" />
 </picture>
 
 界面层不直接调用 SDK：Main 进程把每个请求转给负责该会话的 Worker，由它在本机或 WSL 发行版里运行 pi SDK。会话、登录和设置都留在 `~/.pi/agent`，CLI 和桌面端可以轮流接着同一个会话聊。

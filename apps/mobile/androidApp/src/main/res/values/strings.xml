@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">pi Remote</string>
+    <string name="app_name">LiX</string>
     <string name="hosts_title">Connect your computer</string>
-    <string name="hosts_desc">Open pi Desktop on your computer, go to Settings › Mobile and scan the QR code. Your phone and computer need to be on the same local network, or in the same Tailscale / ZeroTier / WireGuard network.</string>
+    <string name="hosts_desc">Open LiX on your computer, go to Settings › Mobile and scan the QR code. Your phone and computer need to be on the same local network, or in the same Tailscale / ZeroTier / WireGuard network.</string>
     <string name="hosts_scan">Scan to connect</string>
     <string name="hosts_paste">Paste pairing link</string>
     <string name="hosts_saved">Saved computers</string>
@@ -25,7 +25,7 @@
     <string name="hosts_address_public_note">Any IP or domain is accepted. The connection stays end-to-end encrypted, but the port is open to the internet: pair at home first, then add the address here.</string>
     <string name="hosts_address_invalid_public">Use host:port, for example 203.0.113.7:7000 or pi.example.com:7000.</string>
     <string name="hosts_scan_prompt">Scan the QR code shown on your computer</string>
-    <string name="pair_err_unreachable">Couldn’t reach the computer. Check that both are on the same network and Mobile is turned on in pi Desktop.</string>
+    <string name="pair_err_unreachable">Couldn’t reach the computer. Check that both are on the same network and Mobile is turned on in LiX.</string>
     <string name="pair_err_pair_expired">This QR code has expired. Generate a new one on the computer.</string>
     <string name="pair_err_pair_used">This QR code was already used. Generate a new one on the computer.</string>
     <string name="pair_err_revoked">This phone was unpaired. Pair it again on the computer.</string>

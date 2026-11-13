@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="resources/icon.svg" alt="pi Desktop" width="72" height="72" />
+<img src="resources/icon.svg" alt="LiX" width="72" height="72" />
 
-# pi Desktop
+# LiX
 
 **A desktop app for the [pi](https://github.com/earendil-works/pi) coding agent.**<br/>
 The same agent and the same `~/.pi/agent` you use in the terminal — with a timeline, Git review, a built-in terminal, and an Android app to keep going from your phone.
@@ -18,10 +18,10 @@ The same agent and the same `~/.pi/agent` you use in the terminal — with a tim
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/readme/en/hero-dark.png" />
-  <img src="doc/assets/readme/en/hero-light.png" alt="pi Desktop: a finished turn in the timeline, with the Git diff open in the Review panel" />
+  <img src="doc/assets/readme/en/hero-light.png" alt="LiX: a finished turn in the timeline, with the Git diff open in the Review panel" />
 </picture>
 
-pi Desktop is not another agent. It runs the pi SDK in a background worker and reads the same files as the CLI — sessions, model logins, `settings.json`, installed extensions. Open a project and the sessions you started in the terminal are already in the sidebar; continue any of them, or start a new one.
+LiX is not another agent. It runs the pi SDK in a background worker and reads the same files as the CLI — sessions, model logins, `settings.json`, installed extensions. Open a project and the sessions you started in the terminal are already in the sidebar; continue any of them, or start a new one.
 
 ## At a glance
 
@@ -106,15 +106,15 @@ Light and dark each take a preset — **Claude**, VS Code Light+, Codex Dark —
 
 ## pi on your phone
 
-<img src="doc/assets/readme/en/phone.png" alt="pi Remote on Android: the inbox of sessions, a session with its tool steps and changed files, a diff with a line comment, and the session panel with context, changes, branches and cost" width="100%" />
+<img src="doc/assets/readme/en/phone.png" alt="LiX on Android: the inbox of sessions, a session with its tool steps and changed files, a diff with a line comment, and the session panel with context, changes, branches and cost" width="100%" />
 
-**pi Remote** (Android) connects to the desktop app: turn on **Settings → Mobile**, scan the QR code, and every session is on the phone — read along while a turn runs, answer its questions, send prompts with images, pick the model and thinking level. Review a turn's changes or the working tree file by file, long-press lines to leave comments that go into your next message, switch the session's branch or fork from any message. The connection is end-to-end encrypted and stays on your network; away from home, put both devices in the same Tailscale / ZeroTier / WireGuard network (the app finds the overlay address, or add one by hand). Vietnamese, English and Chinese are built in — fresh installs start Vietnamese, with an in-app override.
+**The LiX Android app** connects to the desktop app: turn on **Settings → Mobile**, scan the QR code, and every session is on the phone — read along while a turn runs, answer its questions, send prompts with images, pick the model and thinking level. Review a turn's changes or the working tree file by file, long-press lines to leave comments that go into your next message, switch the session's branch or fork from any message. The connection is end-to-end encrypted and stays on your network; away from home, put both devices in the same Tailscale / ZeroTier / WireGuard network (the app finds the overlay address, or add one by hand). Vietnamese, English and Chinese are built in — fresh installs start Vietnamese, with an in-app override.
 
 ## How it fits together
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/readme/en/architecture-dark.png" />
-  <img src="doc/assets/readme/en/architecture-light.png" alt="Terminal pi and pi Desktop both read and write ~/.pi/agent; pi Desktop has a renderer, a main process, and one worker per session" width="100%" />
+  <img src="doc/assets/readme/en/architecture-light.png" alt="Terminal pi and LiX both read and write ~/.pi/agent; LiX has a renderer, a main process, and one worker per session" width="100%" />
 </picture>
 
 The renderer never talks to the SDK directly: the main process routes each request to the worker that owns the session, and that worker runs the pi SDK on your machine or inside a WSL distribution. Sessions, logins and settings stay in `~/.pi/agent`, so the CLI and the app can take turns on the same session.

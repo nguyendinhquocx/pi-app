@@ -1,4 +1,4 @@
-// pi Desktop browser bridge (MV3 service worker). A thin relay: pi drives the DevTools protocol
+// LiX browser bridge (MV3 service worker). A thin relay: pi drives the DevTools protocol
 // of tabs it opened in its own Agent window (or tabs the user lent it) through chrome.debugger,
 // over a WebSocket to 127.0.0.1 that only a paired pi (port + token) can open.
 

@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "pi Desktop",
+    "name": "LiX",
     "status": { "idle": "Đang nghỉ", "ready": "Sẵn sàng", "running": "Đang chạy", "failed": "Thất bại" }
   },
   "sidebar": {
