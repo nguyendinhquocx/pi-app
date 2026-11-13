@@ -90,10 +90,14 @@ app.whenReady().then(() => {
   if (!gotLock) return
   // The product rename changes the Windows executable path. Rebind persisted startup
   // preferences to this executable so an in-place upgrade does not leave autostart stale.
-  reconcileLoginItemSettings({
-    startOnLogin: configStore.get('startOnLogin'),
-    startHiddenInTray: configStore.get('startHiddenInTray'),
-  })
+  try {
+    reconcileLoginItemSettings({
+      startOnLogin: configStore.get('startOnLogin'),
+      startHiddenInTray: configStore.get('startHiddenInTray'),
+    })
+  } catch (error) {
+    console.warn('[login-item] startup reconciliation failed:', error)
+  }
   if (process.env.PI_AUDIO_TRACE === '1' || process.env.PI_ALERT_TRACE === '1') {
     void import('./audio-trace').then(({ getAudioTraceLogHint }) => {
       console.log('[audio-trace] enabled — log file:', getAudioTraceLogHint())
