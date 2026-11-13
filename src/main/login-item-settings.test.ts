@@ -33,6 +33,7 @@ import {
   HIDDEN_LAUNCH_ARG,
   isHiddenStartupLaunch,
   readLoginItemSettings,
+  reconcileLoginItemSettings,
 } from './login-item-settings'
 
 const EXEC_PATH = 'C:/apps/pi Desktop.exe'
@@ -92,6 +93,16 @@ describe('login-item-settings', () => {
     const state = readLoginItemSettings()
     expect(state.registered).toBe(true)
     expect(state.hidden).toBe(true)
+  })
+
+  it('re-registers persisted startup preferences for the renamed executable after upgrade', () => {
+    applyLoginItemSettings(true, false)
+    vi.stubGlobal('process', { ...process, platform: 'win32', execPath: 'C:/apps/LiX.exe', argv: ['C:/apps/LiX.exe'] })
+
+    reconcileLoginItemSettings({ startOnLogin: true, startHiddenInTray: true })
+
+    expect(readLoginItemSettings()).toEqual({ registered: true, hidden: true })
+    expect(electron.calls.at(-1)).toMatchObject({ path: 'C:/apps/LiX.exe', args: [HIDDEN_LAUNCH_ARG], openAtLogin: true })
   })
 
   it('detects hidden startup only from the --hidden argv marker', () => {

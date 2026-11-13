@@ -1,7 +1,7 @@
 {
   "name": "pi-desktop",
   "desktopName": "LiX",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "description": "LiX - 桌面端 AI Agent GUI",
   "repository": {
     "type": "git",

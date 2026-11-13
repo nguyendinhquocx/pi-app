@@ -37,6 +37,14 @@ export function applyLoginItemSettings(enabled: boolean, hidden: boolean): void 
  * Query both argv variants: an entry registered with `--hidden` reports openAtLogin=false
  * when looked up with empty args, and vice versa.
  */
+/** Reconcile persisted startup preferences to this executable after app updates rename its file. */
+export function reconcileLoginItemSettings(settings: {
+  startOnLogin: boolean
+  startHiddenInTray: boolean
+}): void {
+  applyLoginItemSettings(settings.startOnLogin, settings.startHiddenInTray)
+}
+
 export function readLoginItemSettings(): LoginItemState {
   if (process.platform !== 'win32') return { registered: false, hidden: false }
   const plain = app.getLoginItemSettings(itemOptions([]))

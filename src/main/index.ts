@@ -12,7 +12,7 @@ import { scheduleStartupWarmupFallback } from './startup-warmup'
 import { bindWslPersistence } from './wsl/wsl-env'
 import { is } from '@electron-toolkit/utils'
 import { destroyAppTray, ensureAppTray, focusMainWindow } from './tray'
-import { isHiddenStartupLaunch } from './login-item-settings'
+import { isHiddenStartupLaunch, reconcileLoginItemSettings } from './login-item-settings'
 import { uiText } from './ui-language'
 import {
   disposeCompletionNotifications,
@@ -88,6 +88,12 @@ if (!gotLock) {
 
 app.whenReady().then(() => {
   if (!gotLock) return
+  // The product rename changes the Windows executable path. Rebind persisted startup
+  // preferences to this executable so an in-place upgrade does not leave autostart stale.
+  reconcileLoginItemSettings({
+    startOnLogin: configStore.get('startOnLogin'),
+    startHiddenInTray: configStore.get('startHiddenInTray'),
+  })
   if (process.env.PI_AUDIO_TRACE === '1' || process.env.PI_ALERT_TRACE === '1') {
     void import('./audio-trace').then(({ getAudioTraceLogHint }) => {
       console.log('[audio-trace] enabled — log file:', getAudioTraceLogHint())
