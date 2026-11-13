@@ -130,7 +130,8 @@ export class RemoteGateway {
       uiRequest: (request) => this.ui.onDesktopRequest(request),
       uiResolved: (id, by) => this.ui.onResolved(id, by),
       settingsChanged: (key, sessionFile) => {
-        for (const c of this.conns) if (c.ready) c.sendEvent('settings.changed', { key, ...(sessionFile ? { sessionKey: sessionFile } : {}) })
+        const sessionKey = sessionFile ? normalizeSessionFileKey(sessionFile) : undefined
+        for (const c of this.conns) if (c.ready) c.sendEvent('settings.changed', { key, ...(sessionKey ? { sessionKey } : {}) })
       },
     }
   }

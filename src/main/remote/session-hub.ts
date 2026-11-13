@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { stat } from 'node:fs/promises'
+import { posix as posixPath, win32 as win32Path } from 'node:path'
 import type { AppEvent } from '@shared/app-events'
 import { normalizeSessionFileKey } from '@shared/session-file-key'
 import type { BranchInfo, Cursor, DiffFile, DiffLine, OpenResult, RemoteEvent, SessionSummary, Turn, TurnPatch, UiRequest } from '@shared/remote'
@@ -22,6 +23,14 @@ export interface HubClient {
 export const RING_MAX = 2000
 export const PAGE_SIZE = 20
 const LIST_PUSH_MS = 300
+
+/** Convert a canonical wire key to a filesystem path without changing path flavor. */
+function normalizeHostSessionPath(sessionFile: string): string {
+  if (process.platform === 'win32' && (/^[a-zA-Z]:[\\/]/.test(sessionFile) || sessionFile.startsWith('\\\\') || sessionFile.startsWith('//'))) {
+    return win32Path.normalize(sessionFile)
+  }
+  return posixPath.normalize(sessionFile)
+}
 const ENRICH_TOP = 10
 const OUTPUT_KEEP = 50
 const OUTPUT_MAX = 256 * 1024
@@ -103,8 +112,11 @@ export class SessionHub {
 
   /** Resolve the session's workspace and require it to be whitelisted. */
   async authorize(sessionKey: string): Promise<{ entry: Entry; projectId: string }> {
-    const row = this.rows.get(normalizeSessionFileKey(sessionKey))
-    const sessionFile = row?.sessionFile ?? sessionKey
+    const canonicalKey = normalizeSessionFileKey(sessionKey)
+    const row = this.rows.get(canonicalKey)
+    // A canonical wire key can resolve without a warm session-list row. Convert it to the
+    // host-native path form before filesystem/SDK calls; never persist wire spelling as I/O path.
+    const sessionFile = row?.sessionFile ?? normalizeHostSessionPath(sessionKey)
     const cwd = row?.projectId ?? (await this.port.sessionProject(sessionFile))
     const projectId = cwd ? this.allowedProjectFor(cwd) : undefined
     if (!projectId) throw new RpcFail('forbidden', 'session is not in an allowed project')
@@ -113,11 +125,12 @@ export class SessionHub {
 
   private entryFor(sessionFile: string): Entry {
     const key = normalizeSessionFileKey(sessionFile)
+    const rawSessionFile = this.rows.get(key)?.sessionFile ?? normalizeHostSessionPath(sessionFile)
     let e = this.entries.get(key)
     if (!e) {
       e = {
         key,
-        sessionFile,
+        sessionFile: rawSessionFile,
         projector: new LiveProjector((tool) => this.toolCard(tool, key), this.now),
         seq: 0,
         ring: [],
@@ -127,6 +140,10 @@ export class SessionHub {
         outputs: new Map(),
       }
       this.entries.set(key, e)
+    } else if (this.rows.has(key)) {
+      // Enrichment may have created the entry from the canonical wire key before an RPC arrived.
+      // Once the host row is known, restore the exact path spelling used by local host I/O.
+      e.sessionFile = rawSessionFile
     }
     return e
   }

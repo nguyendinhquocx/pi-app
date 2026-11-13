@@ -157,12 +157,56 @@ describe('sessions', () => {
 
     expect(summary.sessionKey).toBe(expected)
     expect(opened.sessionKey).toBe(expected)
+    expect(opened.turns).toHaveLength(2)
 
+    // A canonical client key must still resolve to the raw Windows path for host/SDK I/O.
+    host.capabilities[windowsFile] = ['pi-ui']
+    const caps = await c.call('capability.list', { sessionKey: expected })
+    expect(caps.capabilities.find((row) => row.id === 'pi-ui')?.enabled).toBe(true)
+
+    gw.sink.settingsChanged('capabilities', windowsFile)
+    const settings = await c.waitFor((event) => event.m === 'settings.changed')
+    expect((settings.p as { sessionKey: string }).sessionKey).toBe(expected)
+
+    await c.call('session.watchList', {})
     await host.playRun(windowsFile, 'live Windows run', { ask: true })
     const evt = await c.waitFor((event) => event.m === 'turn.patch')
     expect((evt.p as { sessionKey: string }).sessionKey).toBe(expected)
     const ui = await c.waitFor((event) => event.m === 'ui.request')
     expect((ui.p as { sessionKey: string }).sessionKey).toBe(expected)
+    await c.call('ui.respond', { id: (ui.p as { id: string }).id, result: { cancelled: false, answers: [] } })
+    const dismiss = await c.waitFor((event) => event.m === 'ui.dismiss')
+    expect((dismiss.p as { sessionKey: string }).sessionKey).toBe(expected)
+    const inboxUpdate = await c.waitFor((event) => event.m === 'sessions.update')
+    expect((inboxUpdate.p as { sessions: Array<{ sessionKey: string }> }).sessions[0].sessionKey).toBe(expected)
+  })
+
+  it.skipIf(process.platform !== 'win32')('resolves a canonical session key to its native path before rows are warm', async () => {
+    const existing = host.sessions.get(session)!
+    host.sessions.delete(session)
+    const windowsFile = 'C:\\Users\\quocn\\.pi\\agent\\sessions\\cold-session.jsonl'
+    existing.row = { ...existing.row, sessionFile: windowsFile }
+    host.sessions.set(windowsFile, existing)
+    session = windowsFile
+
+    const c = await pairNew()
+    const opened = (await c.call('session.open', { sessionKey: 'C:/Users/quocn/.pi/agent/sessions/cold-session.jsonl' })) as OpenResult
+    expect(opened.sessionKey).toBe('C:/Users/quocn/.pi/agent/sessions/cold-session.jsonl')
+    expect(opened.turns).toHaveLength(2)
+  })
+
+  it.skipIf(process.platform !== 'win32')('resolves a canonical Windows key to native host I/O before rows are warm', async () => {
+    const existing = host.sessions.get(session)!
+    host.sessions.delete(session)
+    const windowsFile = 'C:\\Users\\quocn\\.pi\\agent\\sessions\\cold-session.jsonl'
+    existing.row = { ...existing.row, sessionFile: windowsFile }
+    host.sessions.set(windowsFile, existing)
+    session = windowsFile
+
+    const c = await pairNew()
+    const opened = (await c.call('session.open', { sessionKey: 'C:/Users/quocn/.pi/agent/sessions/cold-session.jsonl' })) as OpenResult
+    expect(opened.sessionKey).toBe('C:/Users/quocn/.pi/agent/sessions/cold-session.jsonl')
+    expect(opened.turns).toHaveLength(2)
   })
 
   it('canonicalizes the session keys returned by create and fork on Windows', async () => {

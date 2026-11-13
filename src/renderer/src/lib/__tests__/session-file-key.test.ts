@@ -11,4 +11,13 @@ describe('session-file-key', () => {
   it('collapses duplicate slashes', () => {
     expect(normalizeSessionFileKey('/tmp//a//b.jsonl')).toBe('/tmp/a/b.jsonl')
   })
+
+  it('preserves UNC prefix and mirrors drive/UNC canonicalization', () => {
+    expect(normalizeSessionFileKey('\\\\server\\share\\s.jsonl')).toBe('//server/share/s.jsonl')
+    expect(normalizeSessionFileKey('//server//share')).toBe('//server/share')
+    expect(normalizeSessionFileKey('////server//share//')).toBe('///server/share/')
+    expect(normalizeSessionFileKey('//')).toBe('//')
+    expect(normalizeSessionFileKey('\\\\')).toBe('//')
+    expect(normalizeSessionFileKey('/Home//Quoc/Session.JSONL')).toBe('/Home/Quoc/Session.JSONL')
+  })
 })
