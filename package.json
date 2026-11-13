@@ -1,7 +1,12 @@
 {
   "name": "pi-desktop",
+  "desktopName": "LiX",
   "version": "0.7.10",
-  "description": "pi Desktop - 桌面端 AI Agent GUI",
+  "description": "LiX - 桌面端 AI Agent GUI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nguyendinhquocx/pi-app.git"
+  },
   "main": "./out/main/index.js",
   "author": "pi-desktop",
   "license": "MIT",

@@ -82,6 +82,7 @@ mac:
   category: public.app-category.developer-tools
 
 linux:
+  syncDesktopName: true
   target:
     - AppImage
     - deb
