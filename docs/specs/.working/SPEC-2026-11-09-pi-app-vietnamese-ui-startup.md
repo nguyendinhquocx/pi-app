@@ -18,6 +18,7 @@
 - Việt hóa toàn bộ UI built-in của Desktop và Android trong cùng một thay đổi source; mỗi platform vẫn build thành artifact riêng.
 - Thiết lập Vietnamese là locale cho cài mới, không ghi đè ngôn ngữ đã được lưu rõ ràng trên bản đang dùng.
 - Khi bật Windows startup, pi Desktop tự mở cùng user login; nếu bật thêm hidden thì cửa sổ không lóe lên, gateway vẫn hoạt động và có thể khôi phục từ tray.
+- Android pi Remote nhận session list, turn patches, thinking và answer trực tiếp, không cần thoát vào lại session để đồng bộ.
 
 ## Scope
 - In:
@@ -25,6 +26,7 @@
   - Giữ các lựa chọn English/Chinese; lưu ngôn ngữ độc lập theo từng thiết bị/cài đặt.
   - Windows-only: `Start with Windows` và `Start hidden in tray` trong Settings → General; hidden chỉ áp dụng khi Windows khởi động app, mở app thủ công vẫn hiện cửa sổ.
   - Đổi nguồn kiểm tra release mặc định sang fork để custom build không gợi ý cài bản upstream làm mất phần tùy chỉnh.
+  - Windows Desktop ↔ Android pi Remote: canonicalize session key xuyên wire/client; không drop turn/UI events do khác separator; bảo toàn live stream qua open/reopen, sequence gap và reconnect; trạng thái gửi không được treo vô hạn.
   - Build Windows installer và Android APK để test cục bộ; không tạo GitHub Release.
 - Out:
   - Đồng bộ language setting giữa desktop và Android; hai app lưu preference riêng.
@@ -53,6 +55,7 @@
   - Typecheck bắt buộc chạy với Electron `43.7.7` trong lockfile; nếu type/API khác docs thì sửa theo API của version đang khóa, không đoán.
 - Android artifact giữ `applicationId=dev.pi.remote` theo lựa chọn user: upstream APK ký bằng keystore mà fork không có, nên custom APK không thể cài đè trực tiếp. Cài bản Việt hóa sẽ cần gỡ app upstream trước; app-local preferences/host pairing sẽ mất và phải pair lại. Build local không set release-keystore env, ký bằng debug key của máy build; không phát hành APK public.
 - Custom Desktop build có một nguồn repo mặc định `nguyendinhquocx/pi-app` cho update checker và mọi link mở release. Giữ override `PI_DESKTOP_GITHUB_REPO` nếu cần test; build không env không được trỏ upstream. Trước release đầu tiên của fork, manual Check update có thể báo `no_release`; đây là trạng thái chuyển tiếp, không phải build failure.
+- Task 5 dùng canonical session identity ở biên protocol/client; `entry.sessionFile` raw chỉ dùng host I/O. Android sync tuần tự snapshot/live patches theo `(epoch, seq)`, buffer patch đến trước open response, dedupe overlap, bounded resync khi gap/overflow, bỏ open response cũ. `turn.send` ACK nghĩa host nhận lệnh, không đồng nghĩa model đã hoàn tất.
 
 ## Flow delta
 
@@ -186,6 +189,30 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
   - `README.md` — chỉ cập nhật capability summary liên quan.
   - `package.json`, `package-lock.json` — version `0.7.8` để artifacts được nhận diện.
 
+### Task 5: Android remote session identity + live timeline sync
+- Context: user reports on A55/Android 16 that a prompt reaches Windows Desktop/TUI and finishes, while Android keeps “Đang gửi...” and no thinking/answer until back/re-enter. Source review found a Windows path-key mismatch: session list/open use raw `sessionFile` while `turn.patch`/UI events use normalized `entry.key`; Android performs exact map lookup. Review also found dropped patches during hydration, stale open-response overwrite, replay-Gap cursor advancement, and single-string pending-send state.
+- Acceptance:
+  - All session identifiers on the wire and Android repository/nav/cache maps use one canonical path key (drive uppercase, slash `/`, UNC leading `//` preserved); raw `entry.sessionFile` stays raw for host filesystem and SDK calls.
+  - On Windows, `session.watchList`, `session.open`, `session.create`/`fork`, `turn.patch`, `ui.request`, and `ui.dismiss` for one session resolve to the same canonical key. Client also canonicalizes incoming keys for compatibility with older host payloads.
+  - Android never silently drops a live event when a timeline is absent/hydrating. Snapshot and patches reconcile by epoch/seq; duplicate overlap is ignored; gaps/overflow force a bounded resync; a stale open response cannot overwrite a newer timeline.
+  - A message sent from a new or existing session updates user turn, thinking/tool activity, answer, running/completed state live without back/re-enter. Initial empty session is distinct from “not loaded”; send is gated/queued until the first snapshot is installed.
+  - Pending sends are tracked per message, not as one string/session. Accepted ACK leaves no infinite “Đang gửi...” state; timeline echo reconciles the optimistic bubble; connection-lost/unknown remains explicit and any retry reuses the same `clientMessageId` for host dedupe.
+- Approach:
+  - Add one KMP `canonicalSessionKey()` mirroring `normalizeSessionFileKey`; normalize all Android session-key boundaries and all server wire outputs, never host I/O paths.
+  - Use a per-session serialized sync reducer with open generation + bounded patch buffer. On open response install snapshot/replay, drain only `seq > snapshot.seq`; do not advance cursor on Gap; stale generation responses are ignored.
+  - Keep the UI patch minimal: correct sync state first; only then adjust pending status copy/controls if needed. No periodic polling or timeout-only removal of user messages.
+- Verify:
+  - Gateway regression with a Windows path asserts list/open/create-or-fork/event key parity; this must fail on pre-fix code and pass after the server boundary fix.
+  - KMP tests cover Windows drive/backslash, drive-letter case, UNC, and POSIX key normalization.
+  - Android repository/sync barrier tests cover event before open response, null timeline, stale concurrent open, replay gap, duplicate/overlap, epoch reset, buffer bound, repeated/identical sends, accepted/unknown/failure and pending reconciliation.
+  - Run `npx vitest run src/main/remote/__tests__/gateway.test.ts`; run `cd apps/mobile && gradlew.bat --no-daemon :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleRelease`; run `npm run typecheck`.
+  - Manual A55 smoke while app stays foreground: new/existing session, live thinking + answer, repeated sends, temporary network drop/reconnect, no back/re-enter workaround.
+- Files:
+  - Parent-owned server wire contract/tests: `src/main/remote/session-hub.ts`, `src/main/remote/rpc.ts`, `src/main/remote/__tests__/gateway.test.ts`.
+  - GLM worker isolated slice: create KMP helper `apps/mobile/shared/src/commonMain/kotlin/dev/pi/remote/protocol/SessionKey.kt` and its normalization test only; do not touch Repository/TurnStore/server paths.
+  - Parent-owned Android integration/core: `apps/mobile/androidApp/src/main/kotlin/dev/pi/remote/app/data/RemoteRepository.kt`, `data/Storage.kt`, `ui/session/SessionScreen.kt`, `ui/session/TurnItem.kt`; `apps/mobile/shared/src/commonMain/kotlin/dev/pi/remote/sync/TurnStore.kt` and related tests.
+- Skills: `implement`, `test`.
+
 ## Checkpoints
 - Sau Task 1–2: desktop recursive locale parity + Android placeholder-multiset parity pass; first-run `vi` và saved System/en/zh/vi tests pass.
 - Sau Task 3: login-item state/args/rollback tests pass; Windows package mở bình thường, hidden startup không flash, manual/second-instance launch restore window.
@@ -198,6 +225,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 - Windows `--hidden` có race với `ready-to-show`/single-instance/tray hoặc làm gateway không chạy không?
 - Android locale persistence có giữ đúng `System` và Android 13 app locale không?
 - Updater có còn đường nào gọi nhầm upstream không?
+- Windows raw session path và canonical event key có cùng identity không; Android có buffer/reconcile patch đến trong lúc mở session không?
 
 ### Reviewer nên đọc trước
 - `src/renderer/src/lib/i18n.ts`, `src/main/default-language.ts`, desktop locale JSON.
@@ -219,6 +247,9 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 | Bật startup + hidden, đăng nhập Windows | App chạy, không lộ cửa sổ; Android vẫn kết nối được | Tray icon hiện; click tray mở app |
 | Giữ startup on nhưng tắt hidden, đăng nhập lại | App tự chạy và hiện cửa sổ | Không cần mở Start Menu thủ công |
 | Khi hidden preference on, mở app thủ công/nhấn Start Menu lần nữa | Cửa sổ được hiện/khôi phục, không tạo process thứ hai | `--hidden` chỉ thuộc login item, không áp vào manual/second-instance launch |
+| Mở session mới trên Android, gửi ngay khi màn vừa vào | Tin nhắn, thinking và answer tự cập nhật; không cần back/re-enter | Test với Windows Desktop host, giữ màn Android foreground |
+| Mở session cũ trên Android rồi gửi prompt | Turn mới và trạng thái completed hiện live | Không có bubble `Đang gửi...` treo sau khi host đã nhận |
+| Ngắt mạng ngắn khi đang gửi, kết nối lại | App resync đúng, không mất hoặc nhân đôi tin nhắn | Retry dùng cùng `clientMessageId`; status unknown hiển thị rõ |
 
 5 câu Y/N:
 1. Built-in strings trong các view đã liệt kê có vừa viewport và không bị cắt không?
@@ -230,6 +261,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 ## Completion Gates
 - [ ] Desktop unit tests, locale parity, notification tests, scripts tests, typecheck và Windows package pass.
 - [ ] Android Robolectric API 32/33 locale tests, resource/placeholder-multiset parity và APK build pass.
+- [ ] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter.
 - [ ] APK `applicationId`, versionCode, output path và debug signer fingerprint được xác nhận; không tự uninstall/install thiết bị.
 - [ ] UI evidence: representative built-in desktop views + Android API 32/33 locale menu; startup hidden/visible/manual/second-instance states trên packaged Windows.
 - [ ] Không ghi đè saved locale; Android replacement warning và re-pair requirement được hướng dẫn rõ.
