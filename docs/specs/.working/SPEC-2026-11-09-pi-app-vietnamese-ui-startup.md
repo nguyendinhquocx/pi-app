@@ -197,6 +197,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
   - Android never silently drops a live event when a timeline is absent/hydrating. Snapshot and patches reconcile by epoch/seq; duplicate overlap is ignored; gaps/overflow force a bounded resync; a stale open response cannot overwrite a newer timeline.
   - A message sent from a new or existing session updates user turn, thinking/tool activity, answer, running/completed state live without back/re-enter. Initial empty session is distinct from “not loaded”; send is gated/queued until the first snapshot is installed.
   - Pending sends are tracked per message, not as one string/session. Accepted ACK leaves no infinite “Đang gửi...” state; timeline echo reconciles the optimistic bubble; connection-lost/unknown remains explicit and any retry reuses the same `clientMessageId` for host dedupe.
+  - Custom local artifact version bumps from `0.7.8` to `0.7.9` so the repaired Android APK and Windows installer are distinguishable; build only, do not publish or install automatically.
 - Approach:
   - Add one KMP `canonicalSessionKey()` mirroring `normalizeSessionFileKey`; normalize all Android session-key boundaries and all server wire outputs, never host I/O paths.
   - Use a per-session serialized sync reducer with open generation + bounded patch buffer. On open response install snapshot/replay, drain only `seq > snapshot.seq`; do not advance cursor on Gap; stale generation responses are ignored.
@@ -206,6 +207,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
   - KMP tests cover Windows drive/backslash, drive-letter case, UNC, and POSIX key normalization.
   - Android repository/sync barrier tests cover event before open response, null timeline, stale concurrent open, replay gap, duplicate/overlap, epoch reset, buffer bound, repeated/identical sends, accepted/unknown/failure and pending reconciliation.
   - Run `npx vitest run src/main/remote/__tests__/gateway.test.ts`; run `cd apps/mobile && gradlew.bat --no-daemon :shared:jvmTest :androidApp:testDebugUnitTest :androidApp:assembleRelease`; run `npm run typecheck`.
+  - Run `npm run package:win`; verify output version `0.7.9`, Chromium `vi.pak`, Android `applicationId=dev.pi.remote`, versionCode `709`, release signer debug key; do not auto-install/publish.
   - Manual A55 smoke while app stays foreground: new/existing session, live thinking + answer, repeated sends, temporary network drop/reconnect, no back/re-enter workaround.
 - Files:
   - Parent-owned server wire contract/tests: `src/main/remote/session-hub.ts`, `src/main/remote/rpc.ts`, `src/main/remote/__tests__/gateway.test.ts`.
@@ -262,6 +264,7 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 - [ ] Desktop unit tests, locale parity, notification tests, scripts tests, typecheck và Windows package pass.
 - [ ] Android Robolectric API 32/33 locale tests, resource/placeholder-multiset parity và APK build pass.
 - [ ] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter.
+- [ ] Task 5 Windows installer + Android APK built as `0.7.9`; user UAT on A55 passes before archive.
 - [ ] APK `applicationId`, versionCode, output path và debug signer fingerprint được xác nhận; không tự uninstall/install thiết bị.
 - [ ] UI evidence: representative built-in desktop views + Android API 32/33 locale menu; startup hidden/visible/manual/second-instance states trên packaged Windows.
 - [ ] Không ghi đè saved locale; Android replacement warning và re-pair requirement được hướng dẫn rõ.
