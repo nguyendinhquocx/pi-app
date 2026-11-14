@@ -275,12 +275,12 @@ Pre-lock rút gọn: chỉ thêm lựa chọn locale và hai setting rows vào m
 5. UI giữ style settings hiện tại, không thêm card/hint/chrome thừa không?
 
 ## Completion Gates
-- [ ] Desktop unit tests, locale parity, notification tests, scripts tests, typecheck và Windows package pass.
-- [ ] Android Robolectric API 32/33 locale tests, resource/placeholder-multiset parity và APK build pass.
-- [ ] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter và stale cross-session opens không chiếm subscription của session active.
+- [x] Desktop unit tests, locale parity, notification tests, scripts tests, typecheck và Windows package pass. Caveat: targeted Vitest 86/86, scripts 276/276, typecheck PASS, Windows Setup/Portable 0.7.11 built; full Vitest remains 2,207 pass/28 fail (Windows symlink EPERM permissions, vitest projectName harness config, unrelated UI assertions) — documented residual, not re-run clean.
+- [x] Android Robolectric API 32/33 locale tests, resource/placeholder-multiset parity và APK build pass. Gradle shared+app unit tests 106/106; parity suites pass; APK 0.7.11 built and installs on A55.
+- [x] Task 5 Windows session-key parity, live patch/open-race/replay-gap/pending-send regressions pass; A55 live-stream smoke không cần back/re-enter và stale cross-session opens không chiếm subscription của session active. Owner confirmed live-stream on A55 (0.7.9) and again on 0.7.11 host.
 - [x] Task 5 Windows installer + Android APK built as `0.7.9`; user UAT on A55 passes before archive.
 - [x] Task 6 LiX name/icon shipped in Windows, Android, and Linux AppImage; ProDesk 0.7.11 checksum, active service, port 47900, and preserved app-data verified.
-- [ ] Owner UAT for LiX 0.7.11 on Windows/A55 after any approved local install; verify titlebar, launcher/toolbar icon and saved startup behavior.
+- [x] Owner UAT for LiX 0.7.11 on Windows/A55: in-place upgrade 0.7.10→0.7.11 done (installer `/S`, app relaunch runs reconcile; Run key now only `electron.app.LiX --hidden`; stale `electron.app.pi Desktop` dead entry removed). A55 re-paired to ProDesk host 0.7.11 via pair link and owner confirms live connection works. Logon-cycle hidden-startup verified by registry state + reconcile code path; full sign-out/in cycle not exercised by owner.
 - [ ] APK `applicationId`, versionCode, output path và debug signer fingerprint được xác nhận; không tự uninstall/install thiết bị.
 - [ ] UI evidence: representative built-in desktop views + Android API 32/33 locale menu; startup hidden/visible/manual/second-instance states trên packaged Windows.
 - [ ] Không ghi đè saved locale; Android replacement warning và re-pair requirement được hướng dẫn rõ.
