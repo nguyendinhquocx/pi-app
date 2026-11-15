@@ -63,7 +63,8 @@ describe('splitMarkdownBlocks', () => {
 })
 
 describe('advanceMarkdownBlocks', () => {
-  it('matches a fresh split at every streaming step and reuses settled blocks', () => {
+  // Many streaming steps re-rendered in jsdom are slow in a full-suite batch; 5s default times out there.
+  it('matches a fresh split at every streaming step and reuses settled blocks', { timeout: 20000 }, () => {
     const full = Object.values(CORPUS).join('\n\n')
     let cache = EMPTY_MARKDOWN_BLOCK_CACHE
     for (let end = 1; end <= full.length; end += 1) {

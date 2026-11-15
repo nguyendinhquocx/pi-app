@@ -268,6 +268,17 @@ export default function App() {
         }
         return
       }
+      if (event.type === 'session-file-changed') {
+        // External session (terminal TUI) file update: running label + slim reload of the visible
+        // session only — never reloadCurrentSessionData (it forces bottom / drops pages).
+        useUIStore.getState().setSessionRuntimeRunning(event.sessionFile, event.running)
+        const changed = event.sessionFile
+        void import('@renderer/lib/session-file-key').then(({ sessionFilesEqual }) => {
+          if (!sessionFilesEqual(useUIStore.getState().historySessionFile, changed)) return
+          void import('@renderer/lib/session-timeline-sync').then((m) => m.scheduleExternalSlimReload(changed))
+        })
+        return
+      }
       useUIStore.getState().processEvent(event)
     })
     void import('@renderer/lib/session-worker-sync').then(({ fetchWorkerLiveSnapshot }) => {

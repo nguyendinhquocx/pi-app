@@ -51,6 +51,7 @@ import dev.pi.remote.app.ui.Dot
 import dev.pi.remote.app.ui.Hairline
 import dev.pi.remote.app.ui.IconAction
 import dev.pi.remote.app.ui.PiSheet
+import dev.pi.remote.app.ui.QuietSwitch
 import dev.pi.remote.app.ui.SectionLabel
 import dev.pi.remote.app.ui.ShimmerText
 import dev.pi.remote.app.ui.Spinner
@@ -154,6 +155,7 @@ private fun InboxMenu(prefs: UiPrefs, onHosts: () -> Unit, onDismiss: () -> Unit
     val language by prefs.language.collectAsState()
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     val grouping by prefs.grouping.collectAsState()
+    val notifyComplete by prefs.notifyComplete.collectAsState()
     PiSheet(onDismiss) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.menu_theme), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(top = 6.dp))
@@ -163,6 +165,14 @@ private fun InboxMenu(prefs: UiPrefs, onHosts: () -> Unit, onDismiss: () -> Unit
             Segmented(listOf("system" to stringResource(R.string.theme_system), "vi" to "Tiếng Việt", "en" to "English", "zh" to "简体中文"), language, onSelect = { if (prefs.setLanguage(it)) activity?.recreate() })
             Text(stringResource(R.string.menu_grouping), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(top = 10.dp))
             Segmented(listOf("status" to stringResource(R.string.group_status), "project" to stringResource(R.string.group_project)), grouping, prefs::setGrouping)
+            Text(stringResource(R.string.menu_notifications), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(top = 10.dp))
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.notif_complete_title), style = Pi.t.body.copy(color = Pi.c.fg))
+                    Text(stringResource(R.string.notif_complete_desc), style = Pi.t.meta.copy(color = Pi.c.fg3))
+                }
+                QuietSwitch(notifyComplete, prefs::setNotifyComplete, stringResource(R.string.notif_complete_title))
+            }
             Hairline(Modifier.padding(top = 10.dp))
             Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button, onClick = onHosts), verticalAlignment = Alignment.CenterVertically) {
                 PiIcon(PiIcons.Monitor, Pi.c.fg2, 16.dp)

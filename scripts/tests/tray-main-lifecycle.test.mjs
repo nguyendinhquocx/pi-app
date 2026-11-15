@@ -34,6 +34,7 @@ describe('Main tray lifecycle contract', () => {
     const handlers = new Map()
     const exits = []
     let stopCalls = 0
+    let watcherStopCalls = 0
     let finishStop
     const stopping = new Promise((resolve) => { finishStop = resolve })
     const app = {
@@ -54,6 +55,7 @@ describe('Main tray lifecycle contract', () => {
       workerManager: { stop: () => { stopCalls += 1; return stopping } },
       sessionPreviewProcess: { stop() {} },
       disposeCompletionNotifications() {},
+      stopSessionFileWatcher() { watcherStopCalls += 1 },
       shutdownTerminals() {},
       setRunningTerminalsProbe() {},
       runningTerminalCount: () => 0,
@@ -71,5 +73,6 @@ describe('Main tray lifecycle contract', () => {
     await new Promise((resolve) => setImmediate(resolve))
     assert.ok(exits.length > 0, 'app exits after the shared shutdown completes')
     assert.ok(exits.every((code) => code === 0))
+    assert.ok(watcherStopCalls > 0, 'app-level session watcher stops during graceful quit')
   })
 })

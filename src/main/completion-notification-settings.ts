@@ -23,6 +23,7 @@ export function readCompletionNotificationSettings(now = Date.now()): Completion
     dndUntil: normalizeDndUntil(configStore.get('completionNotificationDndUntil'), now),
     delivery: normalizeCompletionDelivery(configStore.get('completionNotificationDelivery')),
     language,
+    alertOnExternalSessions: configStore.get('alertOnExternalSessions') !== false,
   }
 }
 

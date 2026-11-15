@@ -21,6 +21,8 @@ import {
 import { notifyForegroundChanged } from './completion-notification-events'
 import { disposeCompletionDelivery, focusCompletionNotificationHost } from './completion-notification-delivery'
 import { isCompletionNotificationShortcut } from './completion-notification-shortcut'
+import { startSessionFileWatcher, stopSessionFileWatcher, setExternalWatchTrace, externalWatchTrace } from './remote/session-file-watcher'
+import log from 'electron-log'
 // Prevent EPIPE / write errors from crashing the main process
 process.stdout?.on?.('error', () => {})
 process.stderr?.on?.('error', () => {})
@@ -106,6 +108,26 @@ app.whenReady().then(() => {
   createMenu()
   const closeToTray = ensureAppTray() !== null
   initializeCompletionNotifications()
+  // External sessions (li TUI in a terminal) have no slot events: poll their files and push
+  // slim-reload signals to the renderer, but only for the session it is currently showing.
+  if (process.env.PI_EXT_WATCH_TRACE === '1') {
+    setExternalWatchTrace((line) => log.info('[ext-watch]', line))
+    log.info('[ext-watch] tracing enabled (PI_EXT_WATCH_TRACE=1)')
+  }
+  startSessionFileWatcher((signal) => {
+    // The renderer keys the running label by session file: deliver EVERY signal so labels for
+    // non-visible external sessions settle too (a dropped `running:false` would stick forever and
+    // misroute the composer to steer when the user returns). Slim reload itself stays
+    // visibility-gated in session-timeline-sync (reason: not-visible).
+    externalWatchTrace('emit', `renderer signal running=${signal.running}`)
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send('ipc:events', {
+      type: 'session-file-changed',
+      sessionFile: signal.sessionFile,
+      running: signal.running,
+    })
+  })
 
   // Login-item hidden launch: keep the window hidden, gateway/tray still run.
   const hiddenStartup = isHiddenStartupLaunch()
@@ -229,6 +251,7 @@ app.on('before-quit', (event) => {
   destroyAppTray()
   event.preventDefault()
   void gracefulShutdownWorkers().finally(() => {
+    stopSessionFileWatcher()
     app.exit(0)
   })
 })

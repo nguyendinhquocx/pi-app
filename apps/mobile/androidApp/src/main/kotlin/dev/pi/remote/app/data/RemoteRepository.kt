@@ -53,6 +53,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Templates / components / dialog kinds this build renders natively (sent in host.hello). */
 val CLIENT_CAPS = ClientCaps(
@@ -74,6 +77,9 @@ sealed interface SendOutcome {
     data object Unknown : SendOutcome
     data class Failed(val message: String) : SendOutcome
 }
+
+/** Completions finished at most this long ago still notify on reconnect; older ones stay silent. */
+private const val CATCH_UP_WINDOW_MS = 120_000L
 
 /**
  * App-wide remote state for the active host: one [HostConnection], the inbox, and the
@@ -117,6 +123,21 @@ class RemoteRepository(
     private var api: RemoteApi? = null
     private var jobs = mutableListOf<Job>()
     private val activeSessionGate = ActiveSessionGate()
+
+    /** External-session fallback: debounced fresh-reopen decisions for the open session. */
+    private val externalRefreshGate = ExternalRefreshGate()
+
+    /** Completion/question notification decisions: transitions, open-screen suppression, dedupe. */
+    private val notifyGate = SessionNotifyGate()
+
+    /** Whether completion notifications are enabled (Settings → Notifications); questions always pass. */
+    var completionsEnabled: () -> Boolean = { true }
+
+    /** Per-session stamps feeding [externalRefreshGate]: last summary stamp, last live patch
+     *  time, last reset/resync trigger (spec: lastSnapshotUpdatedAt / lastPatchAt / lastResetAt). */
+    private val summaryStamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val patchStamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val resetStamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var stopJob: Job? = null
     private var hello: HelloResult? = null
     private var foreground = false
@@ -210,6 +231,11 @@ class RemoteRepository(
             _pendingSends.value = emptyMap()
             resyncing.clear()
             pendingResyncScheduled.clear()
+            externalRefreshGate.clear()
+            notifyGate.clear()
+            summaryStamps.clear()
+            patchStamps.clear()
+            resetStamps.clear()
             _inbox.value = InboxState(sessions = cache.loadInbox(hostId).map(::normalizeSummary))
         }
         _active.value = host
@@ -240,6 +266,11 @@ class RemoteRepository(
             _pendingSends.value = emptyMap()
             resyncing.clear()
             pendingResyncScheduled.clear()
+            externalRefreshGate.clear()
+            notifyGate.clear()
+            summaryStamps.clear()
+            patchStamps.clear()
+            resetStamps.clear()
         }
         hostStore.remove(hostId)
         cache.clearHost(hostId)
@@ -294,7 +325,7 @@ class RemoteRepository(
         conn = c
         api = RemoteApi(c)
         jobs += scope.launch { c.state.collect { s -> _connection.value = s; if (s is HostConnection.State.Ready) onReady(s) } }
-        jobs += scope.launch { c.events.collect { event -> onEvent(event) } }
+        jobs += scope.launch { c.events.collect { event -> onEventSafely(event) } }
         c.start()
     }
 
@@ -323,8 +354,10 @@ class RemoteRepository(
         runCatching {
             val projects = a.projects()
             val sessions = normalizeSummaries(a.watchList())
+            val cached = _inbox.value.sessions.associateBy { it.sessionKey }
             _inbox.value = InboxState(sessions, projects, loaded = true)
             persistInbox()
+            catchUpNotifications(cached, sessions)
         }.onFailure { _notices.tryEmit(it.message ?: "list failed") }
         activeOpenSnapshot().let { (key, generation) ->
             if (key != null) reopen(key, expectedOpenGeneration = generation)
@@ -351,12 +384,25 @@ class RemoteRepository(
                     inbox.copy(sessions = byKey.values.sortedByDescending { it.updatedAt })
                 }
                 persistInbox()
+                // Prune per-session bookkeeping so a long-running phone doesn't grow maps for
+                // every session that ever appeared in a summary.
+                removed.forEach { key ->
+                    summaryStamps.remove(key)
+                    patchStamps.remove(key)
+                    resetStamps.remove(key)
+                    externalRefreshGate.forget(key)
+                    notifyGate.forget(key)
+                }
                 noticeTransitions(before, updated)
+                maybeExternalRefresh(updated)
             }
             "turn.patch" -> {
                 val event = RemoteJson.decodeFromJsonElement(TurnPatchEvent.serializer(), e.payload)
                 val key = sessionKey(event.sessionKey)
+                val at = System.currentTimeMillis()
+                patchStamps[key] = at
                 val result = withTimelineSync(key) { it.onPatch(event, hello?.epoch) }
+                if (result is SessionSyncResult.NeedsResync) resetStamps[key] = at
                 handleSyncResult(key, result)
             }
             "ui.request" -> {
@@ -374,6 +420,56 @@ class RemoteRepository(
                 _settingsVersion.update { it + 1 }
             }
             "host.notice" -> _notices.tryEmit(e.payload.toString())
+        }
+    }
+
+    /**
+     * One malformed event must not kill the collector — a dead collector silently freezes every
+     * live update until reconnect. Decode failures usually mean payloads were dropped, so the
+     * affected session (or the visible one) resyncs instead.
+     */
+    private suspend fun onEventSafely(e: HostConnection.Event) {
+        try {
+            onEvent(e)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            val resyncKey = when (e.method) {
+                "sessions.update", "turn.patch", "ui.request", "ui.dismiss", "settings.changed" ->
+                    (e.payload as? JsonObject)?.get("sessionKey")?.jsonPrimitive?.contentOrNull
+                        ?.let(::sessionKey) ?: activeOpenSnapshot().first
+                else -> null
+            }
+            if (resyncKey != null) requestResync(resyncKey, fresh = true)
+        }
+    }
+
+    /**
+     * External-session fallback (spec T3): sessions running outside the LiX slot pool can change
+     * without a patch reaching the ring. When a fresh summary of the open session differs from
+     * what the local view last reflected and no live patch/reset covers it, [ExternalRefreshGate]
+     * debounces one `reopen(fresh = true)` — pending sends survive via the reconciler, older
+     * pages refetch through loadOlder. Runs after [noticeTransitions]: notification behavior is
+     * untouched by this path.
+     */
+    private fun maybeExternalRefresh(summaries: List<SessionSummary>) {
+        val (activeKey, _) = activeOpenSnapshot()
+        val key = activeKey ?: return
+        val summary = summaries.firstOrNull { it.sessionKey == key } ?: return
+        val known = summaryStamps[key]
+        summaries.forEach { summaryStamps[it.sessionKey] = it.updatedAt }
+        if (synchronized(timelineSyncLock) { timelineSync[key]?.current() } == null) return
+        if (externalRefreshGate.shouldReopen(
+                key = key,
+                fingerprint = ExternalRefreshGate.summaryFingerprint(summary.status, summary.preview),
+                updatedAt = summary.updatedAt,
+                knownUpdatedAt = known,
+                lastPatchAt = patchStamps[key],
+                lastResetAt = resetStamps[key],
+                running = summary.status == "running",
+            )
+        ) {
+            requestResync(key, fresh = true)
         }
     }
 
@@ -784,11 +880,35 @@ class RemoteRepository(
     /** Notify on running → done/failed and on a new question, unless the user is looking at it. */
     private fun noticeTransitions(before: Map<String, SessionSummary>, after: List<SessionSummary>) {
         val n = notifier ?: return
+        val completionsOn = completionsEnabled()
         for (s in after) {
-            val was = before[s.sessionKey]?.status ?: continue
-            val settled = was == "running" && s.status != "running"
-            val asks = s.status == "needsInput" && was != "needsInput"
-            if ((settled || asks) && !(foreground && isActiveOpen(sessionKey(s.sessionKey)))) n.notifySession(s)
+            val was = before[s.sessionKey]?.status
+            val openAndVisible = foreground && isActiveOpen(s.sessionKey)
+            if (notifyGate.shouldNotify(s.sessionKey, was, s.status, s.updatedAt, openAndVisible, completionsOn)) n.notifySession(s)
+        }
+        updateKeepAlive()
+    }
+
+    /**
+     * Reconnect catch-up: a run that finished while we were disconnected (phone asleep, app
+     * killed, past the 30 s background grace) never delivered its transition — the fresh list
+     * below replaces the inbox silently. Compare the persisted inbox ("running" as of the last
+     * sighting) against the fresh list and notify completions/questions that happened recently
+     * ([CATCH_UP_WINDOW_MS]); older completions stay silent so reopening the app in the morning
+     * does not replay the night. Shares [notifyGate] with the live path, so a completion already
+     * delivered never repeats, and honors the same open-screen + toggle rules.
+     */
+    private fun catchUpNotifications(cached: Map<String, SessionSummary>, fresh: List<SessionSummary>) {
+        val n = notifier ?: return
+        val completionsOn = completionsEnabled()
+        for (s in fresh) {
+            val prev = cached[s.sessionKey] ?: continue
+            // Relative window: both stamps are host-epoch, so phone-vs-host clock skew cancels
+            // out. Only transitions observed within [CATCH_UP_WINDOW_MS] of our last known state
+            // notify; a completion that happened while the app was dead for hours stays silent.
+            if (s.updatedAt - prev.updatedAt > CATCH_UP_WINDOW_MS) continue
+            val openAndVisible = foreground && isActiveOpen(s.sessionKey)
+            if (notifyGate.shouldNotify(s.sessionKey, prev.status, s.status, s.updatedAt, openAndVisible, completionsOn)) n.notifySession(s)
         }
         updateKeepAlive()
     }

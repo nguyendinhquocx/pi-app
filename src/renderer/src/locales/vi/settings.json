@@ -65,6 +65,8 @@
     "alertOnRunIdleDesc": "Khi lượt của phiên này kết thúc.",
     "alertOnBackgroundRunIdle": "Cũng cảnh báo cho các phiên chạy nền",
     "alertOnBackgroundRunIdleDesc": "Khi một phiên khác kết thúc ở chế độ nền.",
+    "alertOnExternalSessions": "Cảnh báo phiên chạy ngoài ứng dụng",
+    "alertOnExternalSessionsDesc": "Khi phiên đang chạy trong terminal (TUI) hoàn tất lượt.",
     "alertOnRunFailed": "Thông báo về các lượt chạy không thành công",
     "alertOnRunFailedDesc": "Không phải khi chính bạn hủy.",
     "alertOnlyUnfocused": "Chỉ khi không tập trung",

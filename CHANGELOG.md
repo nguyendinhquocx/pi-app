@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## [0.7.12] — 2026-11-15
+
+### Mới
+
+- **Đồng bộ session terminal**: session chạy trong terminal pi (Li TUI) giờ hiển thị live trên LiX Desktop và Android — timeline, trạng thái running/idle, model và completion notification đều cập nhật theo file session thật, kể cả khi turn được bắt đầu từ bên ngoài app
+- **Android**: model picker mới có tìm kiếm, danh sách gần đây và nhóm theo provider; bật/tắt notification hoàn tất turn cho session terminal; khi reconnect, app bắt kịp các turn hoàn tất trong cửa sổ 2 phút
+- **Desktop**: sidebar spinner running dừng đúng lúc khi turn terminal bên ngoài hoàn tất; session ẩn vẫn nhận tín hiệu trạng thái mà không bị kéo vị trí đọc
+
+### Sửa
+
+- **Android inbox**: danh sách session không còn đứng im khi session terminal đổi tên, cập nhật hoặc bị xóa; lỗi parse timestamp (`updatedAt` dạng số lẻ làm Kotlin `Long` từ chối decode) đã được chuẩn hóa về integer milliseconds ở gateway
+- **Session hub**: quan sát đầy đủ entries ∪ rows ∪ visible, refresh danh sách mỗi 30 giây, giới hạn 12 reconcile mỗi tick để tránh flood lúc khởi động
+
 ## [0.7.7] — 2026-10-25
 
 ### 修复

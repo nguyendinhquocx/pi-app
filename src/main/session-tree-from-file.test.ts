@@ -13,7 +13,8 @@ afterEach(() => {
 })
 
 describe('session tree leaf override', () => {
-  it('preserves explicit null as the root instead of falling back to the final disk entry', async () => {
+  // JSONL parse + tree walk over a real temp file can exceed the 5s default in a full-suite batch.
+  it('preserves explicit null as the root instead of falling back to the final disk entry', { timeout: 20000 }, async () => {
     const directory = mkdtempSync(join(tmpdir(), 'pi-session-tree-'))
     temporaryDirectories.push(directory)
     const sessionFile = join(directory, 'session.jsonl')

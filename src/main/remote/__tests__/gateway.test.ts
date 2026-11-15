@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { base64UrlDecode, decodePairLink, type OpenResult, type PairOffer, type TurnPatch } from '@shared/remote'
 import { HandshakeError, generateKeyPair } from '@shared/remote/crypto'
 import { RemoteGateway, hostAddresses, lanAddresses } from '../gateway'
@@ -139,6 +139,34 @@ describe('sessions', () => {
     const secret = [...host.sessions.keys()].find((k) => k.includes('secret'))!
     await expect(c.call('session.open', { sessionKey: secret })).rejects.toMatchObject({ err: { code: 'forbidden' } })
     await expect(c.call('session.watchList', { projectId: '/work/secret' })).rejects.toBeInstanceOf(RemoteRpcError)
+  })
+
+  it('serializes session summary updatedAt as integer milliseconds for Kotlin Long clients', async () => {
+    const existing = host.sessions.get(session)!
+    existing.row.updatedAt = 1_794_745_900_123.4568
+    const c = await pairNew()
+    const { sessions } = await c.call('session.watchList', {})
+    const summary = sessions.find((row) => row.title === '修复登录')
+    if (!summary) throw new Error('summary missing')
+    expect(Number.isInteger(summary.updatedAt)).toBe(true)
+    expect(summary.updatedAt).toBe(1_794_745_900_123)
+  })
+
+  it('pushes row-only rename and deletion updates to list watchers', async () => {
+    const c = await pairNew()
+    await c.call('session.watchList', {})
+    const row = host.sessions.get(session)!.row
+    host.sessions.get(session)!.row = { ...row, title: 'renamed session', updatedAt: row.updatedAt + 1 }
+    await gw.hub.listSummaries()
+    const renamed = await c.waitFor((event) => event.m === 'sessions.update' &&
+      ((event.p as { sessions?: Array<{ title: string }> }).sessions ?? []).some((s) => s.title === 'renamed session'))
+    expect((renamed.p as { sessions: Array<{ title: string }> }).sessions[0].title).toBe('renamed session')
+
+    host.sessions.delete(session)
+    await gw.hub.listSummaries()
+    const removed = await c.waitFor((event) => event.m === 'sessions.update' &&
+      ((event.p as { removed?: string[] }).removed ?? []).includes(session))
+    expect((removed.p as { removed: string[] }).removed).toContain(session)
   })
 
   it('uses one canonical session key across Windows inbox, open, and live patches', async () => {
@@ -374,9 +402,11 @@ describe('sessions', () => {
     const open = (await c.call('session.open', { sessionKey: session })) as { turns: { anchor: string; user: { text: string } }[] }
     const last = open.turns[open.turns.length - 1]
     expect(await c.call('turn.rewind', { sessionKey: session, anchor: last.anchor })).toEqual({ editorText: last.user.text })
-    await settle()
-    expect(patchesOf(c).map((p) => p.op)).toContain('timeline.reset')
-    expect(host.calls.settingsNotified).toContain('rewound')
+    // Broadcast is async; a fixed sleep races under full-suite batch load — poll for the patch instead.
+    await vi.waitFor(() => {
+      expect(patchesOf(c).map((p) => p.op)).toContain('timeline.reset')
+      expect(host.calls.settingsNotified).toContain('rewound')
+    })
     const again = (await c.call('session.open', { sessionKey: session })) as { turns: unknown[] }
     expect(again.turns).toHaveLength(open.turns.length - 1)
   })

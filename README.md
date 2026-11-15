@@ -125,6 +125,7 @@ The renderer never talks to the SDK directly: the main process routes each reque
 |---|---|
 | **Extensions, unchanged** | Extensions you installed for terminal pi load here. Their dialogs, tool cards, panels and `/commands` are mapped to native UI by declarative adapters — 36 ship built in. [List](./doc/guide/adapters.en.md) |
 | **Notifications** | A system notification and an in-app inbox when a turn finishes or needs input; the status bar shows what is running. |
+| **Terminal session sync** | Sessions run in terminal pi stay live in LiX Desktop and Android; optional completion alerts cover terminal runs too. |
 | **WSL runtime** (Windows) | Run the worker inside a chosen WSL distribution, with sessions, Git and previews resolved on the Linux side. |
 | **Vietnamese / Chinese / English UI** | Switch in Settings; a fresh install starts Vietnamese, a saved choice is kept. The phone app ships the same three languages. |
 | **Start with Windows** (Windows) | Optional launch at sign-in, with a “start hidden in tray” mode; a manual launch always shows the window. |

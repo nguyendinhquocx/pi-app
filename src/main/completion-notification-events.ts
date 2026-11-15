@@ -9,6 +9,8 @@ export type CompletionNotificationEventSink = {
 
 let sink: CompletionNotificationEventSink | null = null
 let visibleSessionFile: string | null = null
+/** Whether synthesized external completions should be produced at all (config `alertOnExternalSessions`). */
+let externalAlertsEnabled: () => boolean = () => true
 
 export function bindCompletionNotificationEvents(next: CompletionNotificationEventSink): () => void {
   sink = next
@@ -33,6 +35,15 @@ export function notifyForegroundChanged(): void {
 
 export function observeAppEventForCompletion(event: AppEvent): void {
   sink?.observeAppEvent(event)
+}
+
+/** Main binds this to the config store; the remote module stays electron-free. */
+export function setExternalCompletionAlertProvider(provider: () => boolean): void {
+  externalAlertsEnabled = provider
+}
+
+export function externalCompletionAlertsEnabled(): boolean {
+  return !!externalAlertsEnabled()
 }
 
 export function observeWorkerExitForCompletion(slot: {

@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import Store, { type Options as StoreOptions } from 'electron-store'
 import type { AsrConfig } from '@shared/asr-types'
 import type { BackgroundSettings } from '@shared/background'
 import type { CustomCssOverride, CustomTheme } from '@shared/custom-theme'
@@ -62,6 +62,8 @@ export interface StoreSchema {
   alertOnBackgroundRunIdle: boolean
   /** Agent 失败时提醒 */
   alertOnRunFailed: boolean
+  /** Hoàn tất phiên chạy NGOÀI app (terminal TUI) cũng báo — synthesize từ file watcher */
+  alertOnExternalSessions: boolean
   completionNotificationTimeoutSeconds: number
   completionNotificationPreview: 'response' | 'fixed'
   completionNotificationOnlyWhenUnfocused: boolean
@@ -103,8 +105,12 @@ export interface StoreSchema {
   wslSdkCache?: Record<string, { at: number; value: import('./wsl/sdk-resolve').WslSdkResolution | null }>
 }
 
-const store = new Store<StoreSchema>({
+// electron-store v10 excludes `projectName` from its public Options type (it is normally derived from
+// Electron's `app`), but the runtime still forwards it to `conf`, which needs it when there is no
+// Electron app — i.e. under vitest. Pinning it to the same value as `name` is inert in production.
+const storeOptions: StoreOptions<StoreSchema> & { projectName: string } = {
   name: 'pi-desktop',
+  projectName: 'pi-desktop',
   defaults: {
     recentProjects: [],
     recentProjectsFixedOrder: false,
@@ -143,6 +149,7 @@ const store = new Store<StoreSchema>({
     alertOnRunIdle: true,
     alertOnBackgroundRunIdle: false,
     alertOnRunFailed: true,
+    alertOnExternalSessions: true,
     completionNotificationTimeoutSeconds: 15,
     completionNotificationPreview: 'response',
     completionNotificationOnlyWhenUnfocused: true,
@@ -170,7 +177,9 @@ const store = new Store<StoreSchema>({
     browserDownloadConnections: 16,
     sessionCapabilities: {},
   },
-})
+}
+
+const store = new Store<StoreSchema>(storeOptions)
 
 bindSecretStoreBacking({
   get: (k) => store.get(k as keyof StoreSchema),

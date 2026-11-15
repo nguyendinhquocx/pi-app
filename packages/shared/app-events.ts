@@ -120,6 +120,8 @@ export interface CompletionEvent extends AppEventBase {
   promptPreview?: string
   responsePreview?: string
   durationMs?: number
+  /** Synthesized from disk by the external session watcher (not a slot run). */
+  source?: 'external-watcher'
 }
 
 export interface ExtensionWidgetEvent extends AppEventBase {
@@ -151,6 +153,19 @@ export interface AdapterCatalogChangedEvent {
   revision?: string
 }
 
+/**
+ * External session file changed on disk (SessionFileWatcher reconcile): the renderer
+ * slim-reloads the visible session. Not a slot event — no seq/workspace envelope needed.
+ */
+export interface SessionFileChangedEvent {
+  type: 'session-file-changed'
+  sessionFile: string
+  running: boolean
+  /** Optional routing metadata shared with other session-scoped events. */
+  sessionId?: string
+  workspaceId?: string
+}
+
 /** A remote (phone) client changed a setting the renderer caches; reload it. */
 export interface RemoteSettingsChangedEvent {
   type: 'remote-settings-changed'
@@ -176,5 +191,6 @@ export type AppEvent =
   | SdkRuntimeChangedEvent
   | AdapterCatalogChangedEvent
   | RemoteSettingsChangedEvent
+  | SessionFileChangedEvent
 
 export const APP_EVENT_CHANNEL = 'app:event'

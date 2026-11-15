@@ -9,6 +9,12 @@ import {
 } from '@shared/session-timeline-sync-plan'
 import { projectTimelineItems } from '@shared/timeline-projection'
 import { sanitizeHistoryTimeline } from '@renderer/lib/timeline-dedupe'
+import { spliceFreshDiskTail } from '@renderer/lib/merge-live-history-timeline'
+import { normalizeSessionFileKey, sessionFilesEqual } from '@renderer/lib/session-file-key'
+import { getSessionNavigationToken, isSessionNavigationCurrent } from '@renderer/lib/session-navigation'
+import { isTimelineNearBottom } from '@renderer/features/timeline/timeline-follow-scroll'
+import { getTimelineScrollEl } from '@renderer/features/timeline/timeline-scroll-bridge'
+import { requestTimelineBottomAnchor } from '@renderer/features/timeline/timeline-bottom-anchor'
 
 export type HistoryPage = {
   items: TimelineItem[]
@@ -132,4 +138,102 @@ export async function loadAuthoritativeForOpen(
     cursor: caught.cursor,
     error: caught.error,
   }
+}
+
+// ── External session slim reload ─────────────────────────────────────────────
+
+export type ExternalSlimReloadResult = {
+  applied: boolean
+  followed: boolean
+  reason?: 'not-visible' | 'local-turn-active' | 'error'
+  error?: string
+}
+
+/**
+ * A local/slot turn owns the timeline tail: an external merge would flash/duplicate it.
+ */
+function externalReloadSuppressed(store: {
+  historySessionFile: string | null
+  streamingAssistantId: string | null
+  optimisticPendingUserText: string | null
+  agentTurnBootstrapping: boolean
+  sessionRuntimeRunning: Record<string, boolean>
+  workerLiveSnapshot: { sessionFile: string | null; status: string }
+}): boolean {
+  if (store.streamingAssistantId != null || store.optimisticPendingUserText != null || store.agentTurnBootstrapping) return true
+  const file = store.historySessionFile
+  if (!file) return true
+  // `sessionRuntimeRunning` is also set from this external event for the UI label, so it cannot
+  // distinguish an external TUI turn from a local slot. Use slot-specific activity signals below.
+  const snap = store.workerLiveSnapshot
+  return !!(snap.sessionFile && snap.status === 'running' && sessionFilesEqual(snap.sessionFile, file))
+}
+
+/**
+ * External session update (file written outside the app): merge ONLY the fresh disk tail into
+ * the loaded timeline by entry anchor. Pages already loaded stay; the scroll anchor holds
+ * (near bottom → follow through the real anchor controller; mid-timeline → untouched); and
+ * runState / sidebar / session tree / composer are never touched. Deliberately NOT
+ * `reloadCurrentSessionData()` — that forces bottom, drops pages and resets runState.
+ */
+export async function slimReloadExternalUpdate(sessionFile: string): Promise<ExternalSlimReloadResult> {
+  // Generation token: an overlapping reload (fetch #1 still in flight when #2 fires) must not
+  // let the stale fetch win via last-finisher-wins ordering.
+  const gen = ++externalReloadGeneration
+  const store = useUIStore.getState()
+  if (!store.historySessionFile || !sessionFilesEqual(store.historySessionFile, sessionFile)) {
+    return { applied: false, followed: false, reason: 'not-visible' }
+  }
+  if (externalReloadSuppressed(store)) {
+    return { applied: false, followed: false, reason: 'local-turn-active' }
+  }
+  const navToken = getSessionNavigationToken()
+  try {
+    const { tail, cursor } = await syncAuthoritativeTail(sessionFile)
+    const now = useUIStore.getState()
+    if (gen !== externalReloadGeneration) return { applied: false, followed: false }
+    if (!isSessionNavigationCurrent(navToken) || !sessionFilesEqual(now.historySessionFile, sessionFile)) {
+      return { applied: false, followed: false, reason: 'not-visible' }
+    }
+    if (!tail.length) return { applied: false, followed: false }
+
+    const scrollEl = getTimelineScrollEl()
+    const nearBottom = scrollEl ? isTimelineNearBottom(scrollEl) : true
+    const merged = spliceFreshDiskTail(now.timelineItems, tail)
+    // A structural change (TUI rewind/branch switch) has no shared anchor: the merged list IS the
+    // whole loaded history now — carrying the old loadedCount would make items.length diverge.
+    const structural = merged.prefixCount === 0
+    const delta = Math.max(0, cursor.totalCount - now.historyTotalCount)
+    useUIStore.setState({
+      timelineItems: merged.items,
+      historyTotalCount: Math.max(now.historyTotalCount, cursor.totalCount),
+      historyLoadedCount: structural
+        ? merged.items.length
+        : Math.min(
+          Math.max(now.historyTotalCount, cursor.totalCount),
+          now.historyLoadedCount + delta,
+        ),
+    })
+    if (nearBottom) requestTimelineBottomAnchor('resume-stream')
+    return { applied: true, followed: nearBottom }
+  } catch (e: unknown) {
+    return { applied: false, followed: false, reason: 'error', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+const pendingExternalReloads = new Map<string, ReturnType<typeof setTimeout>>()
+let externalReloadGeneration = 0
+
+/** Coalesce bursts of external file events into one reload 1.5s after the last one. */
+export function scheduleExternalSlimReload(sessionFile: string, delayMs = 1500): void {
+  const key = normalizeSessionFileKey(sessionFile)
+  const existing = pendingExternalReloads.get(key)
+  if (existing) clearTimeout(existing)
+  pendingExternalReloads.set(
+    key,
+    setTimeout(() => {
+      pendingExternalReloads.delete(key)
+      void slimReloadExternalUpdate(sessionFile)
+    }, delayMs),
+  )
 }

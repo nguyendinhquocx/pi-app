@@ -186,6 +186,7 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
     val pickPhotos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { addAll(it) }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { addAll(it) }
     val prefs = dev.pi.remote.app.data.LocalUiPrefs.current
+    val recents by (prefs?.recentModels ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>()) }).collectAsState()
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     /** First send: ask for notifications so a finished run can reach the user in the background. */
     fun askNotificationsOnce() {
@@ -507,9 +508,13 @@ fun SessionScreen(repo: RemoteRepository, sessionKey: String, onBack: () -> Unit
         )
         "model" -> ModelSheet(
             models, repo.canWrite,
+            recents = recents,
             onModel = { id ->
+                prefs?.rememberModel(id)
                 models = models?.copy(current = id)
                 scope.launch { repo.setModel(sessionKey, id) }
+                // Single-choice action like the desktop picker: close immediately on pick.
+                sheet = null
             },
             onDismiss = { sheet = null },
         )

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.pi.remote.R
 import dev.pi.remote.app.theme.Pi
@@ -49,6 +53,7 @@ import dev.pi.remote.app.ui.piui.DiffRow
 import dev.pi.remote.app.ui.piui.display
 import dev.pi.remote.app.ui.verbFor
 import dev.pi.remote.protocol.CapabilityRow
+import dev.pi.remote.protocol.ModelInfo
 import dev.pi.remote.protocol.ModelListResult
 import dev.pi.remote.protocol.ToolStep
 import kotlinx.serialization.json.JsonPrimitive
@@ -193,16 +198,47 @@ fun ToolsSheet(caps: List<CapabilityRow>, cacheMode: String?, canWrite: Boolean,
     }
 }
 
+/** One selectable model line: primary id (without provider), secondary detail, check when current. */
+@Composable
+private fun ModelRow(m: ModelInfo, primary: String, secondary: String?, on: Boolean, canWrite: Boolean, indent: Boolean, onModel: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(if (on) Pi.c.surface else Color.Transparent).clickable(enabled = canWrite, role = Role.RadioButton) { onModel(m.id) }
+            .heightIn(min = 46.dp).padding(start = if (indent) 36.dp else 20.dp, end = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(primary, style = Pi.t.secondary.copy(color = Pi.c.fg))
+            secondary?.takeIf { it.isNotBlank() && it != primary }?.let { Text(it, style = Pi.t.small.copy(color = Pi.c.fg3)) }
+        }
+        if (on) PiIcon(PiIcons.Check, Pi.c.fg2, 14.dp)
+    }
+}
+
+private fun providerOf(m: ModelInfo): String = m.provider?.takeIf { it.isNotBlank() } ?: "unknown"
+
+private fun bareId(m: ModelInfo): String = m.id.substringAfter('/')
+
 /**
- * Model list grouped like the desktop picker sorts it: custom (models.json) first, then API-key
- * providers, then models from an OAuth sign-in. Thinking has its own sheet ([ThinkingSheet]).
+ * Model picker structured like the desktop one: search box, a "Recent" section (ids kept in
+ * [UiPrefs.recentModels], passed in by the caller), then "All models" grouped by provider with
+ * collapsible headers showing a count (all groups open while searching, like the desktop).
+ * Thinking has its own sheet ([ThinkingSheet]).
  */
 @Composable
-fun ModelSheet(models: ModelListResult?, canWrite: Boolean, onModel: (String) -> Unit, onDismiss: () -> Unit) {
-    var query by remember { mutableStateOf("") }
+fun ModelSheet(models: ModelListResult?, canWrite: Boolean, recents: List<String> = emptyList(), onModel: (String) -> Unit, onDismiss: () -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var openGroups by remember { mutableStateOf(setOf<String>()) }
     val all = models?.models.orEmpty()
-    val shown = if (query.isBlank()) all else all.filter { m -> listOfNotNull(m.id, m.name, m.provider).any { it.contains(query.trim(), ignoreCase = true) } }
-    val groups = listOf("custom" to R.string.model_group_custom, "apiKey" to R.string.model_group_key, "login" to R.string.model_group_login)
+    val searching = query.isNotBlank()
+    val shown = if (!searching) all else all.filter { m -> listOfNotNull(m.id, m.name, m.provider).any { it.contains(query.trim(), ignoreCase = true) } }
+    val groups = remember(shown) {
+        shown.groupBy(::providerOf)
+            .map { (provider, rows) -> provider to rows.sortedBy { bareId(it).lowercase() } }
+            .sortedBy { it.first.lowercase() }
+    }
+    // Recents resolve against the full list (ids may have fallen out of the catalog); hidden while searching.
+    val recentRows = if (searching) emptyList() else recents.mapNotNull { id -> all.firstOrNull { it.id == id } }
+    val current = models?.current
     PiSheet(onDismiss) {
         Column(Modifier.padding(bottom = 18.dp).heightIn(max = 600.dp).verticalScroll(rememberScrollState())) {
             if (models == null) {
@@ -211,26 +247,42 @@ fun ModelSheet(models: ModelListResult?, canWrite: Boolean, onModel: (String) ->
             }
             if (all.size > 8) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(10.dp)).background(Pi.c.surface).padding(horizontal = 12.dp, vertical = 9.dp)) {
-                    if (query.isEmpty()) Text(stringResource(R.string.piui_search), style = Pi.t.secondary.copy(color = Pi.c.fg3))
+                    if (query.isEmpty()) Text(stringResource(R.string.model_search), style = Pi.t.secondary.copy(color = Pi.c.fg3))
                     BasicTextField(query, { query = it }, textStyle = Pi.t.secondary.copy(color = Pi.c.fg), cursorBrush = SolidColor(Pi.c.fg), singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
             }
-            for ((g, title) in groups) {
-                val list = shown.filter { (it.group ?: "apiKey") == g }
-                if (list.isEmpty()) continue
-                Text(stringResource(title), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp))
-                for (m in list) {
-                    val on = m.id == models.current
-                    Row(
-                        Modifier.fillMaxWidth().background(if (on) Pi.c.surface else Color.Transparent).clickable(enabled = canWrite, role = Role.RadioButton) { onModel(m.id) }.heightIn(min = 46.dp).padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(m.name ?: m.id.substringAfter('/'), style = Pi.t.secondary.copy(color = Pi.c.fg))
-                            m.provider?.let { Text(it, style = Pi.t.small.copy(color = Pi.c.fg3)) }
-                        }
-                        if (on) PiIcon(PiIcons.Check, Pi.c.fg2, 14.dp)
-                    }
+            if (shown.isEmpty()) {
+                // Distinguish an empty catalog (nothing loaded) from a search miss.
+                val emptyMessage = if (searching) R.string.model_no_match else R.string.model_none
+                Text(stringResource(emptyMessage), style = Pi.t.secondary.copy(color = Pi.c.fg3), modifier = Modifier.padding(20.dp))
+                return@Column
+            }
+            if (recentRows.isNotEmpty()) {
+                Text(stringResource(R.string.model_recent), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp))
+                for (m in recentRows) {
+                    ModelRow(m, bareId(m), m.provider ?: m.name, m.id == current, canWrite, indent = false, onModel = onModel)
+                }
+                Hairline(Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+                Text(stringResource(R.string.model_all), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(start = 20.dp, top = 4.dp, bottom = 4.dp))
+            }
+            for ((provider, rows) in groups) {
+                val open = searching || provider in openGroups
+                Row(
+                    // Header clicks only toggle collapse outside search (search forces every group
+                    // open; a click there would silently dirty openGroups for after the search).
+                    Modifier.fillMaxWidth().clickable(enabled = !searching, role = Role.Button) { openGroups = if (provider in openGroups) openGroups - provider else openGroups + provider }
+                        .heightIn(min = 40.dp).padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PiIcon(PiIcons.ChevronRight, Pi.c.fg3, 14.dp, Modifier.rotate(if (open) 90f else 0f))
+                    Spacer(Modifier.width(8.dp))
+                    Text(provider, style = Pi.t.body.copy(color = Pi.c.fg), modifier = Modifier.weight(1f))
+                    if (!open && rows.any { it.id == current }) Box(Modifier.size(6.dp).clip(CircleShape).background(Pi.c.fg2))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.model_count, rows.size), style = Pi.t.small.copy(color = Pi.c.fg3))
+                }
+                if (open) for (m in rows) {
+                    ModelRow(m, bareId(m), m.name, m.id == current, canWrite, indent = true, onModel = onModel)
                 }
             }
         }

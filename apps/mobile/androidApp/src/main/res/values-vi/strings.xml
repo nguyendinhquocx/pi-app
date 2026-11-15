@@ -89,9 +89,12 @@
     <string name="cache_streaming_hint">Giữ cache luôn sẵn sàng khi phiên đang chạy. Đây là mặc định của pi.</string>
     <string name="cache_idle_hint">Cũng làm mới giữa các lần chạy. Chỉ bật khi tiết kiệm được ít nhất $0.05; lượng dùng để làm mới được tính vào phiên.</string>
     <string name="model">Mô hình</string>
-    <string name="model_group_custom">Tùy chỉnh</string>
-    <string name="model_group_key">Khóa API</string>
-    <string name="model_group_login">Tài khoản đã đăng nhập</string>
+    <string name="model_search">Tìm mô hình</string>
+    <string name="model_recent">Gần đây</string>
+    <string name="model_all">Tất cả mô hình</string>
+    <string name="model_count">%1$d mô hình</string>
+    <string name="model_no_match">Không có mô hình phù hợp</string>
+    <string name="model_none">Chưa có mô hình nào</string>
     <string name="think_off">Trả lời trực tiếp</string>
     <string name="think_minimal">Hầu như không suy luận</string>
     <string name="think_low">Yêu cầu đơn giản</string>
@@ -171,6 +174,9 @@
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
     <string name="menu_grouping">Nhóm phiên</string>
+    <string name="menu_notifications">Thông báo</string>
+    <string name="notif_complete_title">Phiên hoàn tất</string>
+    <string name="notif_complete_desc">Thông báo khi một phiên đang chạy ở nơi khác hoàn tất</string>
     <string name="group_status">Theo trạng thái</string>
     <string name="group_project">Theo dự án</string>
     <string name="bucket_today">Hôm nay</string>

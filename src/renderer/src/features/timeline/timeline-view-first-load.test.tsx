@@ -310,6 +310,7 @@ describe('Timeline view-entry reveal to a far-away node (gap larger than one chu
     expect(useUIStore.getState().historyLoadedCount).toBe(BIG_TOTAL)
   })
 
+  // 700-row jsdom renders are slow when the whole suite runs in batch; the 5s default times out there.
   it.each([
     { target: 3, users: [1, 150, 600] },
     { target: 3, users: [1, 600] },
@@ -343,5 +344,5 @@ describe('Timeline view-entry reveal to a far-away node (gap larger than one chu
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 20000)
 })

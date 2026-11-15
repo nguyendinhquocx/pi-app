@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { canCreateSymlinks } from './__tests__/symlink-privilege'
 
 const roots: string[] = []
 afterEach(() => {
@@ -57,7 +58,7 @@ describe('R3 Windows workspace containment (path.win32 semantics)', () => {
   })
 })
 
-describe('R3 symlink containment (real file system)', () => {
+describe.skipIf(!canCreateSymlinks)('R3 symlink containment (real file system)', () => {
   function fixture() {
     const base = mkdtempSync(join(tmpdir(), 'pi-ws-boundary-'))
     roots.push(base)

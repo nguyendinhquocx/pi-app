@@ -14,6 +14,9 @@ const uiState = vi.hoisted(() => ({
   currentSessionId: null as string | null,
   currentWorkspace: '/proj/current',
   sessionAttention: {} as Record<string, string>,
+  // removeSessionState (fired after a successful delete) reads the session map off the root state.
+  sessionStates: {} as Record<string, unknown>,
+  viewSessionKey: null as string | null,
   setCurrentSession: () => {},
   clearTimeline: () => {},
   loadHistoryItems: () => {},

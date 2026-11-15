@@ -53,6 +53,8 @@ export type SettingsDraft = {
   alertOnRunIdle: boolean
   alertOnBackgroundRunIdle: boolean
   alertOnRunFailed: boolean
+  /** Optional for older/in-memory drafts; omitted means the default-on behavior. */
+  alertOnExternalSessions?: boolean
   completionNotificationTimeoutSeconds: number
   completionNotificationPreview: CompletionPreviewMode
   completionNotificationOnlyWhenUnfocused: boolean
@@ -130,6 +132,7 @@ export function draftSignature(d: SettingsDraft): string {
     alertOnRunIdle: d.alertOnRunIdle,
     alertOnBackgroundRunIdle: d.alertOnBackgroundRunIdle,
     alertOnRunFailed: d.alertOnRunFailed,
+    alertOnExternalSessions: d.alertOnExternalSessions,
     completionNotificationTimeoutSeconds: d.completionNotificationTimeoutSeconds,
     completionNotificationPreview: d.completionNotificationPreview,
     completionNotificationOnlyWhenUnfocused: d.completionNotificationOnlyWhenUnfocused,
@@ -175,6 +178,7 @@ export async function loadSettingsDraftFromDisk(i18nLanguage: string): Promise<S
     alertOnRunIdle: s.alertOnRunIdle !== false,
     alertOnBackgroundRunIdle: s.alertOnBackgroundRunIdle === true,
     alertOnRunFailed: s.alertOnRunFailed !== false,
+    alertOnExternalSessions: s.alertOnExternalSessions !== false,
     completionNotificationTimeoutSeconds: normalizeCompletionTimeoutSeconds(s.completionNotificationTimeoutSeconds),
     completionNotificationPreview: normalizeCompletionPreviewMode(s.completionNotificationPreview),
     completionNotificationOnlyWhenUnfocused: s.completionNotificationOnlyWhenUnfocused !== false,
@@ -299,6 +303,7 @@ export async function commitSettingsDraft(draft: SettingsDraft, i18n: I18n): Pro
     value: draft.alertOnBackgroundRunIdle,
   })
   await ipcClient.invoke('settings.set', { key: 'alertOnRunFailed', value: draft.alertOnRunFailed })
+  await ipcClient.invoke('settings.set', { key: 'alertOnExternalSessions', value: draft.alertOnExternalSessions !== false })
   await ipcClient.invoke('settings.set', {
     key: 'completionNotificationTimeoutSeconds',
     value: normalizeCompletionTimeoutSeconds(draft.completionNotificationTimeoutSeconds),

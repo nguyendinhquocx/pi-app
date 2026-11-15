@@ -65,6 +65,8 @@
     "alertOnRunIdleDesc": "When this session's turn ends.",
     "alertOnBackgroundRunIdle": "Also alert for background sessions",
     "alertOnBackgroundRunIdleDesc": "When another session finishes in the background.",
+    "alertOnExternalSessions": "Alert for sessions running outside the app",
+    "alertOnExternalSessionsDesc": "When a session running in a terminal (TUI) finishes a turn.",
     "alertOnRunFailed": "Alert on failed runs",
     "alertOnRunFailedDesc": "Not when you cancel it yourself.",
     "alertOnlyUnfocused": "Only when unfocused",

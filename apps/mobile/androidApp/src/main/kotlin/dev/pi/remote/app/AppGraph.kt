@@ -29,7 +29,10 @@ class AppGraph(context: Context) {
         appVersion = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "0",
     )
     val prefs = UiPrefs(context.applicationContext)
-    val notifier = RunNotifier(context.applicationContext).also { repository.notifier = it }
+    val notifier = RunNotifier(context.applicationContext).also {
+        repository.notifier = it
+        repository.completionsEnabled = { prefs.notifyComplete.value }
+    }
     val images = AttachmentStore(context.applicationContext, File(context.cacheDir, "attachments")) { path -> repository.downloadAttachment(path) }
         .also { repository.attachmentStore = it }
 }

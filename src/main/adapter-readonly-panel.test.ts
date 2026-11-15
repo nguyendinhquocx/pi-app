@@ -8,6 +8,7 @@ vi.mock('../extension-compat/active-dirs', () => ({ getActiveDesktopDir: () => j
 vi.mock('./config-store', () => ({ configStore: { getExtensionConfig: () => ({}) } }))
 import { resolveSidePanelState } from './side-panel-registry'
 import { invalidateAdapterCatalog } from '../extension-compat/adapter-loader'
+import { canCreateSymlinks } from './__tests__/symlink-privilege'
 let cwd: string
 async function declaration(path: string) {
   await writeFile(join(cwd, '.pi/desktop/adapters/tasks.json'), JSON.stringify({ id: 'local.tasks', kind: 'desktop', tier: 'native', sidePanel: { panelComponent: 'list', source: { type: 'json', path, itemsPath: 'items', fields: { title: '$.name', description: '$.state' } } } }))
@@ -27,7 +28,7 @@ describe('independent readonly panel', () => {
     await declaration('../outside.json')
     await expect(resolveSidePanelState('local.tasks', cwd, cwd)).resolves.toMatchObject({ ok: false, error: 'outside_workspace' })
   })
-  it('should_reject_symlink_when_data_file_points_outside_project', async () => {
+  it.skipIf(!canCreateSymlinks)('should_reject_symlink_when_data_file_points_outside_project', async () => {
     await writeFile(join(dirs.root, 'outside.json'), '{}')
     await symlink(join(dirs.root, 'outside.json'), join(cwd, 'linked.json'))
     await declaration('linked.json')

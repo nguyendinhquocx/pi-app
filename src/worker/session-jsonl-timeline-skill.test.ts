@@ -21,7 +21,8 @@ afterEach(() => {
 })
 
 describe('session JSONL skill fixture', () => {
-  it('projects the persisted expanded skill block without rewriting disk JSONL', async () => {
+  // Real worker import chain is slow under a full-suite batch; the 5s default is not enough there.
+  it('projects the persisted expanded skill block without rewriting disk JSONL', { timeout: 20000 }, async () => {
     const directory = mkdtempSync(join(tmpdir(), 'pi-skill-timeline-'))
     tempDirectories.push(directory)
     const sessionFile = join(directory, 'session.jsonl')

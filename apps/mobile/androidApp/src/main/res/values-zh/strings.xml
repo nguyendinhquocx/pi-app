@@ -89,9 +89,12 @@
     <string name="cache_streaming_hint">会话运行期间保持缓存，这是 pi 的默认值。</string>
     <string name="cache_idle_hint">两次运行之间也续期，离开一阵回来仍能命中缓存。只在预计至少省下 $0.05 时才续期，续期用量计入会话统计。</string>
     <string name="model">模型</string>
-    <string name="model_group_custom">自定义</string>
-    <string name="model_group_key">API Key</string>
-    <string name="model_group_login">登录账号</string>
+    <string name="model_search">搜索模型</string>
+    <string name="model_recent">最近使用</string>
+    <string name="model_all">全部模型</string>
+    <string name="model_count">%1$d 个模型</string>
+    <string name="model_no_match">没有匹配的模型</string>
+    <string name="model_none">暂无可用模型</string>
     <string name="think_off">直接回答</string>
     <string name="think_minimal">极少推理</string>
     <string name="think_low">简单问题</string>
@@ -171,6 +174,9 @@
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
     <string name="menu_grouping">会话分组</string>
+    <string name="menu_notifications">通知</string>
+    <string name="notif_complete_title">会话完成</string>
+    <string name="notif_complete_desc">在其他地方运行的会话完成时通知</string>
     <string name="group_status">按状态</string>
     <string name="group_project">按项目</string>
     <string name="bucket_today">今天</string>

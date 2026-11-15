@@ -21,6 +21,7 @@ export type CompletionNotificationSettings = {
   dndUntil: number | null
   delivery: CompletionDeliveryMode
   language: 'zh' | 'en' | 'vi'
+  alertOnExternalSessions?: boolean
 }
 
 export type CompletionCard = {
@@ -99,6 +100,9 @@ export function createCompletionNotificationController(deps: CompletionControlle
 
   /** Outcomes the user switched off are not notifications at all. */
   function isTracked(event: CompletionEvent, settings: CompletionNotificationSettings): boolean {
+    // External-watcher completions are synthesized only while `alertOnExternalSessions` is on:
+    // toggled off they must not reach the inbox/timers at all.
+    if (event.source === 'external-watcher' && settings.alertOnExternalSessions === false) return false
     if (event.outcome === 'cancelled' && !settings.alertOnCancelled) return false
     if (event.outcome === 'failed' && !settings.alertOnRunFailed) return false
     if (event.outcome === 'success' && !settings.alertOnRunIdle) return false
@@ -117,8 +121,12 @@ export function createCompletionNotificationController(deps: CompletionControlle
     const win = deps.getWindowState()
     const visible = sessionFilePathsEqual(deps.getVisibleSessionFile(), event.sessionFile)
     const appForeground = win.visible && !win.minimized && win.focused
+    // Looking at the session in a focused window: no popup for ANY source (UX baseline).
     if (settings.onlyWhenUnfocused && appForeground && visible) return false
-    if (!visible && !settings.alertOnBackgroundRunIdle) return false
+    // External session completions must reach the user while LiX is minimized or showing another
+    // session — the background gate below exists for slot runs the user left behind.
+    const external = event.source === 'external-watcher' && settings.alertOnExternalSessions !== false
+    if (!external && !visible && !settings.alertOnBackgroundRunIdle) return false
     return true
   }
 

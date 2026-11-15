@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { canCreateSymlinks } from './symlink-privilege'
 
 const userData = mkdtempSync(join(tmpdir(), 'pi-remote-att-'))
 vi.mock('electron', () => ({ app: { getPath: () => userData } }))
@@ -15,7 +16,7 @@ describe('readRemoteAttachment', () => {
     expect(readRemoteAttachment(path)!.bytes.toString()).toBe('jpeg')
   })
 
-  it('refuses paths outside the attachment dir, symlinks out of it and non pi-clipboard names', () => {
+  it.skipIf(!canCreateSymlinks)('refuses paths outside the attachment dir, symlinks out of it and non pi-clipboard names', () => {
     const outside = join(userData, 'secret.txt')
     writeFileSync(outside, 'secret')
     expect(readRemoteAttachment(outside)).toBeNull()

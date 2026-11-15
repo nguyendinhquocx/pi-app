@@ -95,10 +95,11 @@ describe('Markdown file links', () => {
     fireEvent.click(screen.getByRole('link', { name: 'schedule_service.py' }))
     expect(useUIStore.getState().workspaceFileToOpen).toEqual({ workspaceRoot: root, rel: 'plugins/schedule_service.py', line: 128 })
     view.rerender(<><MarkdownView>{`[schedule_service.py](${sourcePath}:128)`}</MarkdownView><WorkspaceFilesPanel /></>)
-    await waitFor(() => expect(view.container.querySelector('[data-source-line="128"]')).toHaveTextContent('schedule_link_regression_128 = True'))
+    // Shiki highlight is async; under a full-suite batch it can exceed waitFor's 1s default.
+    await waitFor(() => expect(view.container.querySelector('[data-source-line="128"]')).toHaveTextContent('schedule_link_regression_128 = True'), { timeout: 10000 })
     expect(screen.getByRole('tab')).toHaveTextContent('schedule_service.py')
     expect(ipcClient.invoke).toHaveBeenCalledWith('workspace.fs.readText', expect.objectContaining({ path: 'plugins/schedule_service.py' }))
-    await waitFor(() => expect(view.container.querySelector('.native-code-shiki [data-source-line="128"]')).toHaveClass('bg-accent/15'))
+    await waitFor(() => expect(view.container.querySelector('.native-code-shiki [data-source-line="128"]')).toHaveClass('bg-accent/15'), { timeout: 10000 })
     scrollIntoView.mockClear()
     const readCount = vi.mocked(ipcClient.invoke).mock.calls.filter(([method]) => method === 'workspace.fs.readText').length
     fireEvent.click(screen.getByRole('link', { name: 'schedule_service.py' }))

@@ -90,9 +90,12 @@
     <string name="cache_streaming_hint">Keeps the cache warm while a run is active. This is pi’s default.</string>
     <string name="cache_idle_hint">Also refreshes between runs. Only when it saves at least $0.05; refresh usage counts toward the session.</string>
     <string name="model">Model</string>
-    <string name="model_group_custom">Custom</string>
-    <string name="model_group_key">API key</string>
-    <string name="model_group_login">Signed-in accounts</string>
+    <string name="model_search">Search models</string>
+    <string name="model_recent">Recent</string>
+    <string name="model_all">All models</string>
+    <string name="model_count">%1$d models</string>
+    <string name="model_no_match">No matching models</string>
+    <string name="model_none">No models available</string>
     <string name="think_off">Answer directly</string>
     <string name="think_minimal">Barely reasons</string>
     <string name="think_low">Simple asks</string>
@@ -172,6 +175,9 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="menu_grouping">Group sessions</string>
+    <string name="menu_notifications">Notifications</string>
+    <string name="notif_complete_title">Session completion</string>
+    <string name="notif_complete_desc">Notify when a session running elsewhere finishes</string>
     <string name="group_status">By status</string>
     <string name="group_project">By project</string>
     <string name="bucket_today">Today</string>

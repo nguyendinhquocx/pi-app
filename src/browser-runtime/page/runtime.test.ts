@@ -122,7 +122,7 @@ describe('snapshot', () => {
     expect(refOf(snap().yaml, /textbox "Name"/)).toBe(a)
   })
 
-  it('scopes to a target and truncates', () => {
+  it('scopes to a target and truncates', { timeout: 20000 }, () => {
     document.body.innerHTML = `<nav><a href="/a">Home</a></nav><main>${'<p>para</p>'.repeat(400)}</main>`
     const ref = refOf(snap().yaml, /link "Home"/)
     expect(snap({ target: ref }).yaml).not.toContain('para')

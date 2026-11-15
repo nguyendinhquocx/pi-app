@@ -35,9 +35,33 @@ class UiPrefs(private val context: Context) {
         get() = sp.getBoolean("askedNotif", false)
         set(v) { sp.edit().putBoolean("askedNotif", v).apply() }
 
+    private val _recentModels = MutableStateFlow(
+        sp.getString("recentModels", null).orEmpty().split('\n').filter { it.isNotBlank() },
+    )
+
+    /** Recently picked models (full `provider/id` ids), newest first — mirrors the desktop picker. */
+    val recentModels: StateFlow<List<String>> = _recentModels
+
+    /** Moves [id] to the front of the recents list, capped at [RECENT_MODELS_LIMIT]. */
+    fun rememberModel(id: String) {
+        val next = (listOf(id) + _recentModels.value.filter { it != id }).take(RECENT_MODELS_LIMIT)
+        _recentModels.value = next
+        sp.edit().putString("recentModels", next.joinToString("\n")).apply()
+    }
+
+    private val _notifyComplete = MutableStateFlow(sp.getBoolean("notifyComplete", true))
+
+    /** Post a notification when a session finishes outside the app (Settings toggle, default on). */
+    val notifyComplete: StateFlow<Boolean> = _notifyComplete
+    fun setNotifyComplete(v: Boolean) { _notifyComplete.value = v; sp.edit().putBoolean("notifyComplete", v).apply() }
+
     var lastProject: String?
         get() = sp.getString("lastProject", null)
         set(v) { sp.edit().putString("lastProject", v).apply() }
+
+    companion object {
+        const val RECENT_MODELS_LIMIT = 5
+    }
 }
 
 val LocalUiPrefs = staticCompositionLocalOf<UiPrefs?> { null }

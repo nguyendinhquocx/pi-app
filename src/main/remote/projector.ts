@@ -273,6 +273,15 @@ export class LiveProjector {
     this.state = { ...this.state, ...state }
   }
 
+  /**
+   * External watcher override: replace the FULL state (mobile `session.state` is replace-all —
+   * publishing a partial state would drop model/todo/queue from the phone's composer).
+   */
+  setExternalState(next: SessionState): PatchBody {
+    this.state = structuredClone(next)
+    return { op: 'session.state', state: this.sessionState }
+  }
+
   private startTurn(userText: string): PatchBody[] {
     const out: PatchBody[] = []
     if (this.builder && this.builder.turn.status === 'running') {

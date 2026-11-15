@@ -95,6 +95,7 @@ export function GeneralSettings() {
     setAlertOnRunIdle,
     setAlertOnBackgroundRunIdle,
     setAlertOnRunFailed,
+    setAlertOnExternalSessions,
     setCompletionNotificationTimeoutSeconds,
     setCompletionNotificationPreview,
     setCompletionNotificationOnlyWhenUnfocused,
@@ -324,6 +325,12 @@ export function GeneralSettings() {
           description={t('settings:general.alertOnBackgroundRunIdleDesc')}
         >
           <Switch checked={draft.alertOnBackgroundRunIdle} onCheckedChange={setAlertOnBackgroundRunIdle} />
+        </SettingRow>
+        <SettingRow
+          label={t('settings:general.alertOnExternalSessions')}
+          description={t('settings:general.alertOnExternalSessionsDesc')}
+        >
+          <Switch checked={draft.alertOnExternalSessions !== false} onCheckedChange={setAlertOnExternalSessions} />
         </SettingRow>
         <SettingRow label={t('settings:general.alertOnRunFailed')} description={t('settings:general.alertOnRunFailedDesc')}>
           <Switch checked={draft.alertOnRunFailed} onCheckedChange={setAlertOnRunFailed} />

@@ -68,6 +68,7 @@ type SettingsDraftContextValue = {
   setAlertOnRunIdle: (v: boolean) => void
   setAlertOnBackgroundRunIdle: (v: boolean) => void
   setAlertOnRunFailed: (v: boolean) => void
+  setAlertOnExternalSessions: (v: boolean) => void
   setCompletionNotificationTimeoutSeconds: (n: number) => void
   setCompletionNotificationPreview: (v: CompletionPreviewMode) => void
   setCompletionNotificationOnlyWhenUnfocused: (v: boolean) => void
@@ -281,6 +282,7 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
       setAlertOnRunIdle: (v) => patch((d) => ({ ...d, alertOnRunIdle: v })),
       setAlertOnBackgroundRunIdle: (v) => patch((d) => ({ ...d, alertOnBackgroundRunIdle: v })),
       setAlertOnRunFailed: (v) => patch((d) => ({ ...d, alertOnRunFailed: v })),
+      setAlertOnExternalSessions: (v) => patch((d) => ({ ...d, alertOnExternalSessions: v })),
       setCompletionNotificationTimeoutSeconds: (n) =>
         patch((d) => ({
           ...d,

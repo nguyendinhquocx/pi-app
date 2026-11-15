@@ -5,6 +5,7 @@ import { getPendingWorkerSessionFile } from './session-bind-state'
 import {
   bindCompletionNotificationEvents,
   currentVisibleSessionFile,
+  setExternalCompletionAlertProvider,
 } from './completion-notification-events'
 import {
   createCompletionNotificationController,
@@ -71,6 +72,9 @@ function handleWorkerExit(slot: {
 
 export function initializeCompletionNotifications(): void {
   if (unbindEvents) return
+  // The remote module synthesizes external completions through this provider without
+  // importing the electron-bound config store.
+  setExternalCompletionAlertProvider(() => readCompletionNotificationSettings().alertOnExternalSessions !== false)
   unbindEvents = bindCompletionNotificationEvents({
     observeAppEvent: handleAppEvent,
     observeWorkerExit: handleWorkerExit,

@@ -180,7 +180,9 @@ export class RemoteGateway {
     setRemoteTapSink(null)
     for (const c of [...this.conns]) c.close(1001, 'gateway stopped')
     this.conns.clear()
-    this.hub.dispose()
+    // suspend, NOT dispose: the hub (and its app-level rows-refresh + watcher target) must survive
+    // disable/enable and port changes — only final teardown may dispose.
+    this.hub.suspend()
     this.auth.clearPairing()
     const server = this.server
     const wss = this.wss

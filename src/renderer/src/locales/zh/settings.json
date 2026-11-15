@@ -65,6 +65,8 @@
     "alertOnRunIdleDesc": "当前会话这一轮结束时。",
     "alertOnBackgroundRunIdle": "后台会话完成时也提醒",
     "alertOnBackgroundRunIdleDesc": "其他会话在后台跑完时。",
+    "alertOnExternalSessions": "应用外会话完成时提醒",
+    "alertOnExternalSessionsDesc": "终端（TUI）里运行的会话完成一轮时。",
     "alertOnRunFailed": "运行失败时提醒",
     "alertOnRunFailedDesc": "主动取消的不提醒。",
     "alertOnlyUnfocused": "仅在未聚焦时提醒",

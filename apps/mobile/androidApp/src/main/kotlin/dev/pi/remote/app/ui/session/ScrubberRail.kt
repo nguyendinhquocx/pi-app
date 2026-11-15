@@ -1,6 +1,5 @@
 package dev.pi.remote.app.ui.session
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -54,10 +53,11 @@ private val TRACK_PAD = 16.dp
 private val TRACK_W = 30.dp
 
 /**
- * Desktop-style timeline scrubber: one mark per user message on a translucent track at the right
- * edge. Touch and drag right away (the track is excluded from the system back gesture); a tap
- * jumps to the nearest mark. Marks magnify like a dock, and a bubble shows "n / N · time" plus the
- * message. Jumps happen while dragging, so the list follows the finger.
+ * Desktop-style timeline scrubber: one mark per user message on an invisible rail at the right
+ * edge (thumb-like marks only — no track background, matching the desktop scrollbar). Touch and
+ * drag right away (the rail is excluded from the system back gesture); a tap jumps to the nearest
+ * mark. Marks magnify like a dock, and a bubble shows "n / N · time" plus the message. Jumps
+ * happen while dragging, so the list follows the finger.
  */
 @Composable
 fun ScrubberRail(marks: List<ScrubMark>, active: Int, onJump: (Int) -> Unit, modifier: Modifier = Modifier) {
@@ -70,7 +70,6 @@ fun ScrubberRail(marks: List<ScrubMark>, active: Int, onJump: (Int) -> Unit, mod
     val list by rememberUpdatedState(marks)
     val fg = Pi.c.fg
     val label = stringResource(R.string.scrubber)
-    val engaged by animateFloatAsState(if (hover != null) 1f else 0f, label = "rail")
     BoxWithConstraints(modifier.fillMaxHeight()) {
         val n = marks.size
         val pad = with(density) { TRACK_PAD.toPx() }
@@ -85,7 +84,6 @@ fun ScrubberRail(marks: List<ScrubMark>, active: Int, onJump: (Int) -> Unit, mod
             Modifier.align(Alignment.CenterEnd).padding(end = 4.dp).width(TRACK_W).height(with(density) { trackH.toDp() })
                 .systemGestureExclusion()
                 .clip(RoundedCornerShape(TRACK_W / 2))
-                .background(fg.copy(alpha = 0.05f + 0.05f * engaged))
                 .semantics { contentDescription = label }
                 .pointerInput(n) {
                     awaitEachGesture {
