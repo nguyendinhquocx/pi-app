@@ -166,6 +166,7 @@
     <string name="notif_done">Đã hoàn thành</string>
     <string name="notif_needs">Cần bạn trả lời: %1$s</string>
     <string name="notif_failed">Thất bại: %1$s</string>
+    <string name="notif_cancelled">Đã hủy</string>
     <string name="notif_keepalive">Đang chờ %1$d tác vụ hoàn thành</string>
     <string name="menu_language">Ngôn ngữ</string>
     <string name="session_untitled">Trò chuyện mới</string>

@@ -78,9 +78,6 @@ sealed interface SendOutcome {
     data class Failed(val message: String) : SendOutcome
 }
 
-/** Completions finished at most this long ago still notify on reconnect; older ones stay silent. */
-private const val CATCH_UP_WINDOW_MS = 120_000L
-
 /**
  * App-wide remote state for the active host: one [HostConnection], the inbox, and the
  * timeline of the open session. Survives screen changes; connects only while the app is in
@@ -129,6 +126,8 @@ class RemoteRepository(
 
     /** Completion/question notification decisions: transitions, open-screen suppression, dedupe. */
     private val notifyGate = SessionNotifyGate()
+    /** Keep the socket alive briefly when the host's file-silence backstop says idle without proof. */
+    private val backstopKeepAliveGate = BackstopKeepAliveGate()
 
     /** Whether completion notifications are enabled (Settings → Notifications); questions always pass. */
     var completionsEnabled: () -> Boolean = { true }
@@ -139,6 +138,7 @@ class RemoteRepository(
     private val patchStamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val resetStamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var stopJob: Job? = null
+    private var backstopGraceJob: Job? = null
     private var hello: HelloResult? = null
     private var foreground = false
 
@@ -233,6 +233,9 @@ class RemoteRepository(
             pendingResyncScheduled.clear()
             externalRefreshGate.clear()
             notifyGate.clear()
+            backstopKeepAliveGate.clear()
+            backstopGraceJob?.cancel()
+            backstopGraceJob = null
             summaryStamps.clear()
             patchStamps.clear()
             resetStamps.clear()
@@ -268,6 +271,9 @@ class RemoteRepository(
             pendingResyncScheduled.clear()
             externalRefreshGate.clear()
             notifyGate.clear()
+            backstopKeepAliveGate.clear()
+            backstopGraceJob?.cancel()
+            backstopGraceJob = null
             summaryStamps.clear()
             patchStamps.clear()
             resetStamps.clear()
@@ -882,50 +888,67 @@ class RemoteRepository(
         val n = notifier ?: return
         val completionsOn = completionsEnabled()
         for (s in after) {
-            val was = before[s.sessionKey]?.status
+            val previous = before[s.sessionKey]
             val openAndVisible = foreground && isActiveOpen(s.sessionKey)
-            if (notifyGate.shouldNotify(s.sessionKey, was, s.status, s.updatedAt, openAndVisible, completionsOn)) n.notifySession(s)
+            if (notifyGate.shouldNotify(s.sessionKey, previous?.status, s.status, s.updatedAt, s.settledOutcome, s.settledAt, previous?.settledAt, openAndVisible, completionsOn)) n.notifySession(s)
+            backstopKeepAliveGate.observe(s.sessionKey, previous?.status, s.status, s.settledOutcome, System.currentTimeMillis())
         }
         updateKeepAlive()
     }
 
     /**
-     * Reconnect catch-up: a run that finished while we were disconnected (phone asleep, app
-     * killed, past the 30 s background grace) never delivered its transition — the fresh list
-     * below replaces the inbox silently. Compare the persisted inbox ("running" as of the last
-     * sighting) against the fresh list and notify completions/questions that happened recently
-     * ([CATCH_UP_WINDOW_MS]); older completions stay silent so reopening the app in the morning
-     * does not replay the night. Shares [notifyGate] with the live path, so a completion already
-     * delivered never repeats, and honors the same open-screen + toggle rules.
+     * Reconnect catch-up: a run that finished while we were disconnected never delivered its
+     * transition. The host attaches `settledOutcome` only for the bounded freshness window, so
+     * trust that proof rather than subtracting summary updatedAt stamps: their delta includes
+     * the entire run duration and would discard every long build even when it finished moments ago.
+     * Pending questions remain catch-up eligible until answered. Shares [notifyGate] with the live
+     * path, so cached status/timestamp and dedupe prevent replaying an already-delivered outcome.
      */
     private fun catchUpNotifications(cached: Map<String, SessionSummary>, fresh: List<SessionSummary>) {
         val n = notifier ?: return
         val completionsOn = completionsEnabled()
         for (s in fresh) {
             val prev = cached[s.sessionKey] ?: continue
-            // Relative window: both stamps are host-epoch, so phone-vs-host clock skew cancels
-            // out. Only transitions observed within [CATCH_UP_WINDOW_MS] of our last known state
-            // notify; a completion that happened while the app was dead for hours stays silent.
-            if (s.updatedAt - prev.updatedAt > CATCH_UP_WINDOW_MS) continue
             val openAndVisible = foreground && isActiveOpen(s.sessionKey)
-            if (notifyGate.shouldNotify(s.sessionKey, prev.status, s.status, s.updatedAt, openAndVisible, completionsOn)) n.notifySession(s)
+            if (notifyGate.shouldNotify(s.sessionKey, prev.status, s.status, s.updatedAt, s.settledOutcome, s.settledAt, prev.settledAt, openAndVisible, completionsOn)) n.notifySession(s)
+            backstopKeepAliveGate.observe(s.sessionKey, prev.status, s.status, s.settledOutcome, System.currentTimeMillis())
         }
         updateKeepAlive()
     }
 
-    /** In the background, stay connected while something is still running; drop 30 s after the last run ends. */
+    /** In the background, stay connected while running or while a backstop-idle session may still settle. */
     private fun updateKeepAlive() {
+        val now = System.currentTimeMillis()
         val running = _inbox.value.sessions.count { it.status == "running" }
-        val want = !foreground && running > 0
+        val uncertain = backstopKeepAliveGate.activeCount(now)
+        val watched = running + uncertain
+        val want = !foreground && watched > 0
         if (want) {
             stopJob?.cancel()
             stopJob = null
-            notifier?.keepAlive(running)
+            notifier?.keepAlive(watched)
             keptAlive = true
         } else if (keptAlive) {
             notifier?.keepAlive(0)
             keptAlive = false
             if (!foreground) scheduleDisconnect()
+        }
+        scheduleBackstopGraceExpiry(now)
+    }
+
+    /** Re-evaluate keep-alive when an uncertain backstop grace expires, even without new wire events. */
+    private fun scheduleBackstopGraceExpiry(now: Long) {
+        val expiresAt = backstopKeepAliveGate.nextExpiry(now)
+        if (expiresAt == null) {
+            backstopGraceJob?.cancel()
+            backstopGraceJob = null
+            return
+        }
+        backstopGraceJob?.cancel()
+        backstopGraceJob = scope.launch {
+            delay((expiresAt - System.currentTimeMillis()).coerceAtLeast(0))
+            backstopGraceJob = null
+            updateKeepAlive()
         }
     }
 

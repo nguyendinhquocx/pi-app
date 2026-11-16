@@ -23,6 +23,13 @@ import dev.pi.remote.protocol.SessionSummary
  * while runs are still going and the app is in the background, [KeepAliveService] holds the
  * connection (the app otherwise disconnects 30 s after leaving the screen) so the result arrives.
  */
+internal fun notificationText(context: Context, s: SessionSummary): String = when {
+    s.status == "needsInput" -> context.getString(R.string.notif_needs, s.preview.orEmpty()).trimEnd('：', ':', ' ')
+    s.status == "failed" || s.settledOutcome == "failed" -> context.getString(R.string.notif_failed, s.preview.orEmpty()).trimEnd('：', ':', ' ')
+    s.settledOutcome == "cancelled" -> context.getString(R.string.notif_cancelled)
+    else -> s.preview?.takeIf { it.isNotBlank() } ?: context.getString(R.string.notif_done)
+}
+
 class RunNotifier(private val context: Context) {
     init {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -37,11 +44,7 @@ class RunNotifier(private val context: Context) {
 
     private fun post(s: SessionSummary) {
         if (!allowed()) return
-        val text = when (s.status) {
-            "needsInput" -> context.getString(R.string.notif_needs, s.preview.orEmpty()).trimEnd('：', ':', ' ')
-            "failed" -> context.getString(R.string.notif_failed, s.preview.orEmpty()).trimEnd('：', ':', ' ')
-            else -> s.preview?.takeIf { it.isNotBlank() } ?: context.getString(R.string.notif_done)
-        }
+        val text = notificationText(context, s)
         val n = NotificationCompat.Builder(context, CHANNEL_RUNS)
             .setSmallIcon(R.drawable.ic_stat_pi)
             .setContentTitle(s.title.ifBlank { "pi" })

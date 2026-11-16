@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [0.7.13] — 2026-11-16
+
+### Sửa
+
+- **Thông báo Android**: chỉ báo khi host xác nhận turn thực sự kết thúc; lệnh terminal chạy lâu không báo xong sớm, và reconnect không bỏ sót chỉ vì thời lượng turn quá 2 phút
+- **Câu hỏi tương tác**: `needsInput` vẫn báo khi tắt toggle thông báo hoàn tất; turn lỗi hoặc bị hủy hiện đúng trạng thái, không báo “Hoàn thành”
+- **Trả lời trên Android**: lựa chọn đơn trong `ask_user` không còn bị gửi thành câu trả lời rỗng
+
 ## [0.7.12] — 2026-11-15
 
 ### Mới

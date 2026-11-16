@@ -5,16 +5,16 @@ package dev.pi.remote.app.data
  * [ExternalRefreshGate]: no Android types, and time comes from [now] so tests drive the clock.
  *
  * Rules (mirrors the desktop's external-completion watcher):
- * - Only observed transitions notify: `running → terminal` (completion) or `→ needsInput`
- *   (question). The first sighting of a session only seeds the baseline — no notify.
+ * - A completion requires a fresh [settledOutcome] and a new host [settledAt] identity. The 90s
+ *   file-silence backstop can flip status to idle mid-tool; the real completion then arrives
+ *   idle→idle with a new outcome timestamp.
+ * - `needsInput` is never treated as completion, even if a stale outcome accompanies it; questions
+ *   notify independently of the completion toggle. First sighting only seeds the baseline.
  * - The open, on-screen session is the user's live view; the in-app timeline already covers it,
  *   so it never notifies ([openAndVisible]).
- * - Completions honor the Settings toggle ([completionsEnabled]); questions always pass through
- *   (they block the run, and the pre-toggle path delivered them too).
+ * - Completions honor the Settings toggle ([completionsEnabled]); questions always pass through.
  * - Dedupe by `status@updatedAt` per session: every observed transition is consumed once — the
- *   same summary row replayed (reconnect refresh, hub re-push) never fires twice, whether it
- *   notified or was suppressed (live view / toggle off). A genuinely new completion carries a
- *   new stamp and notifies again.
+ *   same summary row replayed (reconnect refresh, hub re-push) never fires twice.
  */
 internal class SessionNotifyGate {
     private val notified = HashMap<String, String>()
@@ -25,17 +25,22 @@ internal class SessionNotifyGate {
         wasStatus: String?,
         status: String,
         updatedAt: Long,
+        settledOutcome: String?,
+        settledAt: Long?,
+        wasSettledAt: Long?,
         openAndVisible: Boolean,
         completionsEnabled: Boolean,
     ): Boolean {
-        val settled = wasStatus == "running" && status != "running"
         val asks = wasStatus != null && status == "needsInput" && wasStatus != "needsInput"
-        if (!settled && !asks) return false
-        val signature = "$status@$updatedAt"
+        val isTerminal = status != "running" && status != "needsInput"
+        val newOutcome = wasStatus != null && settledOutcome != null && settledAt != null && isTerminal &&
+            (wasStatus == "running" || wasSettledAt != settledAt)
+        if (!newOutcome && !asks) return false
+        val signature = if (asks) "$status@$updatedAt" else "$status@$settledOutcome@$settledAt"
         if (notified[key] == signature) return false
         notified[key] = signature
         if (openAndVisible) return false
-        if (settled && !completionsEnabled) return false
+        if (newOutcome && !completionsEnabled) return false
         return true
     }
 

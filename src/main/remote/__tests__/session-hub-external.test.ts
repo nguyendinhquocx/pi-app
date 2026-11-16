@@ -474,4 +474,127 @@ describe('SessionHub external reconcile', () => {
       stopSessionFileWatcher()
     }
   })
+
+  it('long tool call: the 90s backstop idle flip carries no settledOutcome, the terminal tail does (fresh only)', async () => {
+    // Mid-turn: user + tool-call tail; the agent is inside a long terminal command so the file
+    // gets no writes for >90s — the backstop flips status to idle but this is NOT a completion.
+    const file = await addSession(mkItems([{ user: 'run the build', tools: ['terminal_request'] }]), 1000)
+    const client = new FakeClient('c1')
+    await hub.open(client, file)
+    const key = normalizeSessionFileKey(file)
+
+    clock = 1000 + 91_000
+    await reconcile(file)
+    let summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.status).toBe('idle')
+    expect(summary?.settledOutcome).toBeUndefined()
+
+    // The command finishes: terminal tail lands fresh (mtime = now).
+    clock += 1_000
+    await touch(file, mkItems([{ user: 'run the build', tools: ['terminal_request'] }, { user: '', answer: 'build done' }]), clock)
+    await reconcile(file)
+    summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.status).toBe('idle')
+    expect(summary?.settledOutcome).toBe('success')
+
+    // After the 2-minute reconnect window the outcome ages out (rename/refresh replays stay silent).
+    clock += 121_000
+    summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.settledOutcome).toBeUndefined()
+    expect(summary?.settledAt).toBeUndefined()
+  })
+
+  it('a new external turn retires the previous success before a later backstop idle flip', async () => {
+    const first = mkItems([{ user: 'turn A', answer: 'done A' }])
+    const file = await addSession(first, 1000)
+    const key = normalizeSessionFileKey(file)
+    await hub.listSummaries()
+    await reconcile(file)
+    let summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.settledOutcome).toBe('success')
+
+    // TUI starts turn B with a long-running command; no terminal tail yet.
+    clock = 5_000
+    await touch(file, mkItems([{ user: 'turn A', answer: 'done A' }, { user: 'turn B', tools: ['terminal_request'] }]), clock)
+    await reconcile(file)
+    summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.status).toBe('running')
+    expect(summary?.settledOutcome).toBeUndefined()
+
+    // The file stays quiet through the 90s backstop. It may flip idle, but must not reuse A's
+    // still-fresh success as B's completion proof.
+    clock = 96_000
+    await reconcile(file)
+    summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.status).toBe('idle')
+    expect(summary?.settledOutcome).toBeUndefined()
+  })
+
+  it('needsInput summary never carries a stale completion outcome', async () => {
+    const file = await addSession(mkItems([{ user: 'turn A', answer: 'done A' }]), 1000)
+    const key = normalizeSessionFileKey(file)
+    await hub.listSummaries()
+    await reconcile(file)
+    const completed = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(completed?.settledOutcome).toBe('success')
+
+    ui.onDesktopRequest({
+      id: 'ask-1', sessionFile: file, method: 'custom', kind: 'ask_user_question',
+      questions: [{ question: 'choose', options: [{ label: 'A' }, { label: 'B' }] }],
+    })
+    const waiting = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(waiting?.status).toBe('needsInput')
+    expect(waiting?.settledOutcome).toBeUndefined()
+    expect(waiting?.settledAt).toBeUndefined()
+  })
+
+  it('external failed tail marks the inbox summary failed with the failure preview', async () => {
+    const items = mkItems([{ user: 'run command', answer: 'exit code 1' }])
+    items.at(-1)!.stopReason = 'error'
+    const file = await addSession(items, 1000)
+    const key = normalizeSessionFileKey(file)
+    await hub.listSummaries()
+    await reconcile(file)
+    const summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+    expect(summary?.status).toBe('failed')
+    expect(summary?.settledOutcome).toBe('failed')
+    expect(summary?.preview).toBe('exit code 1')
+  })
+
+  it('worker slot settle stamps settledOutcome on summaries', async () => {
+    const file = await addSession(mkItems([{ user: 'hi', answer: 'hello' }]), 1000)
+    const client = new FakeClient('c1')
+    await hub.open(client, file)
+    const key = normalizeSessionFileKey(file)
+    const w = startSessionFileWatcher(() => {})
+    try {
+      clock = 1500
+      hub.onAppEvent(slotEvent(file, { type: 'run', phase: 'running' }))
+      hub.onAppEvent(slotEvent(file, { type: 'message', role: 'user', phase: 'start', text: 'live' }))
+      hub.onAppEvent(slotEvent(file, { type: 'message', role: 'assistant', phase: 'delta', text: 'pending', contentKind: 'text' }))
+      let summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+      expect(summary?.status).toBe('running')
+      expect(summary?.settledOutcome).toBeUndefined()
+
+      hub.onAppEvent(slotEvent(file, { type: 'run', phase: 'idle', settled: true }))
+      summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+      expect(summary?.status).toBe('idle')
+      expect(summary?.settledOutcome).toBe('success')
+
+      // A second slot turn starts before the first outcome ages out, then crashes mid-tool.
+      clock = 2_000
+      hub.onAppEvent(slotEvent(file, { type: 'run', phase: 'running' }))
+      hub.onAppEvent(slotEvent(file, { type: 'message', role: 'user', phase: 'start', text: 'turn B' }))
+      hub.onAppEvent(slotEvent(file, { type: 'message', role: 'user', phase: 'end', sessionEntryId: 'turn-b' }))
+      hub.onAppEvent(slotEvent(file, { type: 'message', role: 'assistant', phase: 'delta', text: 'working', contentKind: 'text' }))
+      await touch(file, mkItems([{ user: 'hi', answer: 'hello' }, { user: 'turn B', tools: ['terminal_request'] }]), clock)
+      clock = 93_000 // >90s since file activity and >60s since slot event, still <180s since A settled
+      await reconcile(file)
+      summary = (await hub.listSummaries(dir)).find((s) => s.sessionKey === key)
+      expect(summary?.status).toBe('idle')
+      expect(summary?.settledOutcome).toBeUndefined()
+    } finally {
+      stopSessionFileWatcher()
+    }
+  })
 })

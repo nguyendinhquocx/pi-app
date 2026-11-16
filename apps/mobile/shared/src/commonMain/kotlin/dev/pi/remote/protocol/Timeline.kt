@@ -223,6 +223,10 @@ data class SessionSummary(
     val startedAt: Long? = null,
     val counts: ActivityCounts? = null,
     val filesChanged: Int? = null,
+    /** Terminal outcome at settle (worker slot settle / fresh external tail). Null on the 90s
+     *  backstop flip: a long tool call flips status to idle while the turn still runs. */
+    val settledOutcome: String? = null,
+    val settledAt: Long? = null,
 )
 
 @Serializable

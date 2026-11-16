@@ -31,6 +31,8 @@ const SLOT_QUIET_MS = 60_000
 const ROWS_REFRESH_MS = 30_000
 /** Non-terminal tail + no file activity for this long ⇒ the external run is dead: go idle. */
 const EXTERNAL_RUNNING_BACKSTOP_MS = 90_000
+/** Completion metadata is a 2-minute reconnect proof, then it ages out. */
+const SETTLED_OUTCOME_FRESH_MS = 120_000
 
 /** Convert a canonical wire key to a filesystem path without changing path flavor. */
 function normalizeHostSessionPath(sessionFile: string): string {
@@ -69,6 +71,11 @@ type Entry = {
   lastObservedTailTurnAnchor?: string
   /** Anchor of the turn whose completion was already synthesized (one notification per turn). */
   lastNotifiedTurnAnchor?: string
+  /** Terminal outcome of the last settle (worker slot settle, or external terminal tail) + when.
+   *  summaryFor exposes it as `settledOutcome` while fresh so remote clients can tell a real
+   *  completion from the 90s backstop flip (long tool call, status idle but still running). */
+  lastSettledOutcome?: 'success' | 'failed' | 'cancelled'
+  lastSettledOutcomeAt?: number
 }
 
 type HistoryCache = { stamp: string; turns: Turn[] }
@@ -266,11 +273,19 @@ export class SessionHub {
     if (!bodies.length) return
     entry.updatedAt = this.now()
     for (const b of bodies) {
-      if (b.op === 'turn.upsert' && b.turn.status === 'running') entry.lastFailure = undefined
+      if (b.op === 'turn.upsert' && b.turn.status === 'running') {
+        entry.lastFailure = undefined
+        // A fresh turn invalidates the previous turn's completion proof. Otherwise a later
+        // 90s backstop idle flip after a crash could reuse the old success outcome.
+        entry.lastSettledOutcome = undefined
+        entry.lastSettledOutcomeAt = undefined
+      }
       if (b.op === 'turn.settle') {
         const live = entry.projector.liveTurn
         if (b.status === 'done' && live) entry.lastAnswer = firstLine(live.answer) || entry.lastAnswer
         entry.lastFailure = b.status === 'failed' ? b.error?.text || 'failed' : undefined
+        entry.lastSettledOutcome = b.status === 'done' ? 'success' : b.status === 'failed' ? 'failed' : 'cancelled'
+        entry.lastSettledOutcomeAt = this.now()
       }
     }
     this.publish(entry, bodies)
@@ -461,6 +476,18 @@ export class SessionHub {
 
     const current = this.mergedTurns(entry, turns)
     const baseline = entry.lastPublishedTurns
+    const tailOutcome = externalTerminalOutcome(h.items.at(-1))
+    const currentTailAnchor = current.at(-1)?.anchor
+    const previousTailAnchor = entry.lastObservedTailTurnAnchor ?? baseline?.at(-1)?.anchor
+    const previousTailTerminal = entry.lastObservedTailTerminal
+    const externalTailAnchorChanged = !!currentTailAnchor && currentTailAnchor !== previousTailAnchor
+    if (externalTailAnchorChanged) {
+      // External TUI turn started. Retire the previous turn's result now; if this new turn later
+      // hits the 90s file-silence backstop, Android must not reuse the old success/failure.
+      entry.lastSettledOutcome = undefined
+      entry.lastSettledOutcomeAt = undefined
+      entry.lastFailure = undefined
+    }
     // Structural change: the history shrank or a published anchor vanished — only a reset
     // represents it. An absent baseline (fresh epoch) is NOT structural: upsert everything once.
     const structuralChange = Boolean(
@@ -499,10 +526,26 @@ export class SessionHub {
       }
     }
     entry.updatedAt = stampEpochMs(stamp) || this.now()
-    this.markDirty(entry.key)
     const running = this.deriveExternalRunning(entry, stamp)
     this.applyExternalRunningState(entry, running)
     this.observeExternalCompletion(entry, projectId, current, baseline, structuralChange)
+
+    const outcomeAt = stampEpochMs(stamp) ?? this.now()
+    const outcomeAge = this.now() - outcomeAt
+    const freshFirstSeenTerminal = previousTailTerminal === undefined && tailOutcome !== null &&
+      outcomeAge >= 0 && outcomeAge <= SETTLED_OUTCOME_FRESH_MS
+    const newlyObservedTerminal = tailOutcome !== null && !structuralChange &&
+      (previousTailTerminal === false || externalTailAnchorChanged || freshFirstSeenTerminal)
+    if (tailOutcome === 'failed') {
+      entry.lastFailure = clampPreview(h.items.at(-1)?.text) || current.at(-1)?.error?.text || 'failed'
+    } else if (tailOutcome === 'success' || tailOutcome === 'cancelled') {
+      entry.lastFailure = undefined
+    }
+    if (newlyObservedTerminal && (entry.lastSettledOutcomeAt === undefined || outcomeAt >= entry.lastSettledOutcomeAt)) {
+      entry.lastSettledOutcome = tailOutcome
+      entry.lastSettledOutcomeAt = outcomeAt
+    }
+    this.markDirty(entry.key)
     return { status: 'processed', signal: { sessionFile: entry.sessionFile, running } }
   }
 
@@ -650,7 +693,12 @@ export class SessionHub {
     const ask = pending.get(key)
     const extra = this.enriched.get(key)
     const running = !!state?.running
-    const status: SessionSummary['status'] = ask ? 'needsInput' : running ? 'running' : e?.lastFailure ? 'failed' : 'idle'
+    const settledFresh = e?.lastSettledOutcome && e.lastSettledOutcomeAt !== undefined &&
+      this.now() - e.lastSettledOutcomeAt <= SETTLED_OUTCOME_FRESH_MS
+    const settledAt = !running && !ask && settledFresh ? e.lastSettledOutcomeAt : undefined
+    const settledOutcome = settledAt !== undefined ? e?.lastSettledOutcome : undefined
+    const status: SessionSummary['status'] = ask ? 'needsInput' : running ? 'running' :
+      e?.lastFailure || settledOutcome === 'failed' ? 'failed' : 'idle'
     const out: SessionSummary = {
       // Session identity crosses the wire; keep it canonical even though host I/O uses the raw path.
       sessionKey: key,
@@ -661,6 +709,10 @@ export class SessionHub {
     }
     const preview = ask ? uiPreview(ask) : status === 'failed' ? e?.lastFailure : e?.lastAnswer ?? extra?.preview ?? (row.firstMessage ? firstLine(row.firstMessage) : undefined)
     if (preview) out.preview = preview
+    if (settledOutcome && settledAt !== undefined) {
+      out.settledOutcome = settledOutcome
+      out.settledAt = Math.floor(settledAt)
+    }
     const turn = running && live ? live : (live ?? extra?.turn)
     if (turn) {
       out.counts = turn.activity.counts

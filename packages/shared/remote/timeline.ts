@@ -171,6 +171,12 @@ export const SessionSummarySchema = z
     startedAt: z.number().optional(),
     counts: ActivityCountsSchema.optional(),
     filesChanged: count.optional(),
+    /** Terminal turn outcome at the settle moment (worker slot settle, or a fresh external
+     *  terminal tail). The 90s backstop flips status to idle while a long tool call still runs —
+     *  that flip carries NO outcome and must not be treated as a completion. */
+    settledOutcome: z.enum(['success', 'failed', 'cancelled']).optional(),
+    /** Host timestamp for this outcome; stable identity for reconnect catch-up/dedupe. */
+    settledAt: z.number().optional(),
   })
   .strict()
 export type SessionSummary = z.infer<typeof SessionSummarySchema>
