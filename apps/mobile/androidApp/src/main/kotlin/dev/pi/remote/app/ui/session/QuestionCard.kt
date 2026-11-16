@@ -260,7 +260,8 @@ private fun AskBody(req: UiAskQuestions, enabled: Boolean, onAnswer: (UiResponse
                     }
                     else -> {
                         put("kind", "option")
-                        d.selected.firstOrNull()?.let { put("answer", it) } ?: put("answer", JsonNull)
+                        val picked = d.selected.firstOrNull()
+                        if (picked != null) put("answer", picked) else put("answer", JsonNull)
                     }
                 }
             }
