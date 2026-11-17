@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["vite/client"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "paths": {
+      "@shared/*": ["packages/shared/*"],
+      "@web/*": ["apps/web/src/*"]
+    }
+  },
+  "include": ["src/**/*", "vite.config.ts", "../../packages/shared/remote/**/*"],
+  "exclude": ["src/sw.ts"]
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "lib": ["ES2022", "WebWorker"],
+    "types": [],
+    "noEmit": true,
+    "paths": {
+      "@shared/*": ["packages/shared/*"]
+    }
+  },
+  "include": ["src/sw.ts", "../../packages/shared/remote/frames.ts"]
+}

@@ -20,6 +20,7 @@ export default defineConfig({
       'packages/shared/**/*.test.ts',
       'src/browser-runtime/**/*.test.ts',
       'src/extension-compat/**/*.test.ts',
+      'apps/web/src/**/*.test.{ts,tsx}',
     ],
     exclude: ['node_modules/**', 'out/**', 'dist/**', 'e2e/**'],
     // The SDK fork's workspace packages (@earendil-works/pi-ai and siblings) live behind
@@ -37,6 +38,7 @@ export default defineConfig({
       '@renderer': resolve('src/renderer/src'),
       '@shared': resolve('packages/shared'),
       '@extension-compat': resolve('src/extension-compat'),
+      '@web': resolve('apps/web/src'),
     },
   },
 })

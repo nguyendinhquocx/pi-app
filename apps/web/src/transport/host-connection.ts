@@ -1,0 +1,398 @@
+import { parseFrame, makeReq, makePing, makePong, type Frame, type RpcError, type Role } from '@shared/remote'
+import { REMOTE_EVENTS, REMOTE_METHODS, type RemoteEvent, type EventPayload, type RemoteMethod, type MethodParams, type MethodResult } from '@shared/remote'
+import type { ZodTypeAny } from 'zod'
+import { prepareHs1, type HandshakeOutcome } from './handshake'
+import { ReconnectBackoff, type BackoffOptions } from './reconnect'
+import type { DeviceKeyRecord } from './device-keys'
+
+/**
+ * One host connection from the browser PWA (spec T3).
+ *
+ * Lifecycle: CONNECTING → HANDSHAKING → ONLINE → (drop) → backoff → CONNECTING…
+ * - Typed RPC via `REMOTE_METHODS` schemas; every call is scoped to this host instance, so host
+ *   identity is never ambiguous across connections.
+ * - Server events dispatch typed via `REMOTE_EVENTS`.
+ * - Keepalive ping every 30s (host idle timeout is 75s).
+ * - Reconnect: exponential backoff + jitter; after a successful handshake every watched session
+ *   is re-opened with its last cursor; `resync: epoch_changed` surfaces as onResync so the UI
+ *   reloads the snapshot (forced resync, spec envelope contract).
+ * - No queued writes when delivery is ambiguous: calling an RPC while offline rejects
+ *   immediately with a DisconnectedError; nothing is buffered.
+ */
+
+export type ConnState = 'idle' | 'connecting' | 'handshaking' | 'online' | 'reconnecting' | 'closed' | 'error'
+
+export class DisconnectedError extends Error {
+  readonly code = 'disconnected'
+  constructor(message = 'host connection is not online') {
+    super(message)
+    this.name = 'DisconnectedError'
+  }
+}
+
+export class RpcRejectedError extends Error {
+  constructor(
+    readonly rpcError: RpcError,
+    readonly method: string,
+  ) {
+    super(`${method} failed: ${rpcError.code} ${rpcError.message}`)
+    this.name = 'RpcRejectedError'
+  }
+}
+
+export type HostConnectionEvents = {
+  onState?: (state: ConnState, detail?: string) => void
+  onEvent?: (event: RemoteEvent, payload: EventPayload<RemoteEvent>) => void
+  onResync?: (sessionKey: string, reason: NonNullable<import('@shared/remote').OpenResult['resync']>) => void
+  onHello?: (hello: MethodResult<'host.hello'>) => void
+}
+
+export type SocketLike = {
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void
+  close(code?: number, reason?: string): void
+  readonly readyState: number
+}
+
+/** Event-handler surface shared by the browser WebSocket and the test FakeSocket. */
+type SocketHandlers = {
+  onopen: (() => void) | null
+  onmessage: ((ev: MessageEvent) => void) | null
+  onclose: ((ev: CloseEvent) => void) | null
+  onerror: (() => void) | null
+}
+
+export type HostConnectionOptions = {
+  endpoint: string
+  device: DeviceKeyRecord
+  /** Pair token only for the first pairing; absent for established keys. */
+  pairToken?: string
+  socketFactory?: (url: string) => SocketLike
+  backoff?: BackoffOptions
+  pingIntervalMs?: number
+  requestTimeoutMs?: number
+  /** Re-open watched sessions after reconnect. Default true. */
+  resumeSessions?: boolean
+  events?: HostConnectionEvents
+}
+
+/** Events the connection re-opens automatically after a reconnect. */
+type WatchedSession = { sessionKey: string; cursor?: { epoch: string; seq: number } }
+
+const PING_INTERVAL = 30_000
+const REQUEST_TIMEOUT = 20_000
+
+export class HostConnection {
+  readonly hostId: string
+  state: ConnState = 'idle'
+  role: Role | null = null
+  hello: MethodResult<'host.hello'> | null = null
+
+  private ws: SocketLike | null = null
+  private channel: import('@shared/remote/crypto').SecureChannel | null = null
+  private readonly opts: HostConnectionOptions & {
+    pingIntervalMs: number
+    requestTimeoutMs: number
+    resumeSessions: boolean
+  }
+  private readonly backoff: ReconnectBackoff
+  private reqId = 0
+  private pending = new Map<string, { resolve: (f: Frame) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout>; method: string }>()
+  private watched = new Map<string, WatchedSession>()
+  private pingTimer: ReturnType<typeof setInterval> | null = null
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private handshakeTimeout: ReturnType<typeof setTimeout> | null = null
+  private stopped = false
+  private lastError: string | null = null
+  private readonly events: HostConnectionEvents
+
+  constructor(options: HostConnectionOptions) {
+    this.hostId = options.device.hostId
+    this.opts = {
+      pingIntervalMs: PING_INTERVAL,
+      requestTimeoutMs: REQUEST_TIMEOUT,
+      resumeSessions: true,
+      ...options,
+    }
+    this.backoff = new ReconnectBackoff(options.backoff ?? {})
+    this.events = options.events ?? {}
+  }
+
+  get online(): boolean {
+    return this.state === 'online' && this.channel !== null
+  }
+
+  get errorDetail(): string | null {
+    return this.lastError
+  }
+
+  /** Begin connecting (idempotent). */
+  start(): void {
+    if (this.stopped) return
+    if (this.state !== 'idle' && this.state !== 'reconnecting') return
+    this.setState('connecting')
+    const ws = (this.opts.socketFactory ?? ((url: string) => new WebSocket(url)))(this.opts.endpoint)
+    this.ws = ws
+    const handlers = ws as unknown as SocketHandlers
+    handlers.onopen = () => this.onSocketOpen()
+    handlers.onmessage = (ev) => void this.onSocketMessage(ev)
+    handlers.onclose = (ev) => this.onSocketClose(`socket closed (${ev.code})`)
+    handlers.onerror = () => this.onSocketClose('socket error')
+  }
+
+  /** Stop for good: no more reconnects, pending RPCs reject, socket closes. */
+  stop(): void {
+    this.stopped = true
+    this.clearTimers()
+    this.failPending(new DisconnectedError('connection stopped'))
+    this.setState('closed')
+    try {
+      this.ws?.close(1000, 'client stop')
+    } catch {
+      /* already gone */
+    }
+    this.ws = null
+    this.channel = null
+  }
+
+  /** Forget volatile state (e.g. after the device key was deleted). */
+  dispose(): void {
+    this.stop()
+    this.watched.clear()
+  }
+
+  async request<M extends RemoteMethod>(method: M, params: MethodParams<M>): Promise<MethodResult<M>> {
+    if (!this.online || !this.channel) throw new DisconnectedError()
+    const schema = REMOTE_METHODS[method]
+    const id = `w${++this.reqId}`
+    const frame = makeReq(id, method, schema.params.parse(params))
+    const promise = new Promise<Frame>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`${method} timed out`))
+      }, this.opts.requestTimeoutMs)
+      this.pending.set(id, { resolve, reject, timer, method })
+    })
+    this.sendEncrypted(frame)
+    const res = await promise
+    if (res.k === 'res' && res.ok) return schema.result.parse(res.p) as MethodResult<M>
+    if (res.k === 'res') throw new RpcRejectedError(res.err, method)
+    throw new Error(`unexpected frame kind for ${method}: ${res.k}`)
+  }
+
+  /**
+   * Open a session and start watching it across reconnects. Cursor replay/resync handled here:
+   * `resync: epoch_changed` (or gap/evicted) triggers onResync so the UI reloads the snapshot.
+   */
+  async openSession(sessionKey: string, cursor?: { epoch: string; seq: number }): Promise<MethodResult<'session.open'>> {
+    const result = await this.request('session.open', { sessionKey, ...(cursor ? { cursor } : {}) })
+    const effectiveCursor = cursor && result.kind === 'replay' && !result.resync ? cursor : undefined
+    const current: WatchedSession = { sessionKey, ...(effectiveCursor ?? { epoch: result.epoch, seq: result.seq }) }
+    this.watched.set(sessionKey, current)
+    if (result.resync) this.events.onResync?.(sessionKey, result.resync)
+    return result
+  }
+
+  /** Stop watching a session (also stops auto re-open on reconnect). */
+  closeSession(sessionKey: string): Promise<MethodResult<'session.close'>> {
+    this.watched.delete(sessionKey)
+    return this.request('session.close', { sessionKey })
+  }
+
+  /** Forget a watched session without an RPC (local state only). */
+  unwatch(sessionKey: string): void {
+    this.watched.delete(sessionKey)
+  }
+
+  watchList(): string[] {
+    return [...this.watched.keys()]
+  }
+
+  // ── internals ──────────────────────────────────────────────────────────────
+
+  private setState(s: ConnState, detail?: string): void {
+    if (this.state !== s) {
+      this.state = s
+      this.events.onState?.(s, detail)
+    } else if (detail) {
+      this.events.onState?.(s, detail)
+    }
+  }
+
+  private clearTimers(): void {
+    if (this.pingTimer) clearInterval(this.pingTimer)
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    if (this.handshakeTimeout) clearTimeout(this.handshakeTimeout)
+    this.pingTimer = this.reconnectTimer = this.handshakeTimeout = null
+  }
+
+  private failPending(err: Error): void {
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer)
+      p.reject(err)
+    }
+    this.pending.clear()
+  }
+
+  private onSocketOpen(): void {
+    if (this.stopped) return
+    this.setState('handshaking')
+    this.handshakeTimeout = setTimeout(() => this.onSocketClose('handshake timeout'), 10_000)
+    const prepared = prepareHs1({
+      ws: this.ws as unknown as WebSocket,
+      device: this.opts.device,
+      hostPub: this.opts.device.hostPub,
+      ...(this.opts.pairToken ? { pairToken: this.opts.pairToken } : {}),
+    })
+    // Install the finisher BEFORE the bytes hit the socket: a same-process host can answer
+    // hs2 synchronously inside `send` (see prepareHs1 doc).
+    this.finisher = prepared.finish
+    this.ws?.send(JSON.stringify(prepared.msg))
+  }
+
+  private finisher: ((hs2: unknown) => HandshakeOutcome) | null = null
+
+  private async onSocketMessage(ev: MessageEvent): Promise<void> {
+    if (this.stopped || !this.ws) return
+    // Handshake phase: plaintext JSON text frames (hs2 / hs_err).
+    if (!this.channel) {
+      if (typeof ev.data !== 'string') return
+      let raw: unknown
+      try {
+        raw = JSON.parse(ev.data)
+      } catch {
+        return this.onSocketClose('bad handshake frame')
+      }
+      if (this.handshakeTimeout) clearTimeout(this.handshakeTimeout)
+      this.handshakeTimeout = null
+      const outcome = this.finisher?.(raw) ?? { ok: false as const, code: 'bad' as const }
+      if (!outcome.ok) {
+        const detail = outcome.code === 'hs_err' ? `handshake refused: ${outcome.code_detail}` : 'handshake failed (wrong host key?)'
+        return this.onSocketClose(detail)
+      }
+      this.channel = outcome.channel
+      this.role = outcome.role
+      this.backoff.reset()
+      this.setState('online')
+      this.startPing()
+      await this.afterOnline()
+      return
+    }
+    // Online phase: encrypted binary frames only.
+    let bytes: Uint8Array
+    if (typeof ev.data === 'string') return this.onSocketClose('plaintext after handshake')
+    if (ev.data instanceof ArrayBuffer) bytes = new Uint8Array(ev.data)
+    else if (ArrayBuffer.isView(ev.data)) bytes = new Uint8Array(ev.data.buffer, ev.data.byteOffset, ev.data.byteLength)
+    else return this.onSocketClose('unsupported frame type')
+    let raw: unknown
+    try {
+      raw = this.channel.decrypt(bytes)
+    } catch {
+      return this.onSocketClose('decrypt failed')
+    }
+    const frame = parseFrame(raw)
+    if (!frame) return this.onSocketClose('bad frame')
+    if (frame.k === 'ping') return this.sendEncrypted(makePong(frame.id))
+    if (frame.k === 'pong') return
+    if (frame.k === 'res') {
+      const p = this.pending.get(frame.id)
+      if (p) {
+        this.pending.delete(frame.id)
+        clearTimeout(p.timer)
+        p.resolve(frame)
+      }
+      return
+    }
+    if (frame.k === 'evt') this.dispatchEvt(frame)
+  }
+
+  private dispatchEvt(frame: Extract<Frame, { k: 'evt' }>): void {
+    const def = REMOTE_EVENTS[frame.m as RemoteEvent]
+    if (!def) return
+    const parsed = (def as ZodTypeAny).safeParse(frame.p)
+    if (!parsed.success) return
+    const name = frame.m as RemoteEvent
+    if (name === 'turn.patch') {
+      const p = parsed.data as EventPayload<'turn.patch'>
+      const w = this.watched.get(p.sessionKey)
+      if (w) {
+        const maxSeq = p.patches.reduce((m, x) => {
+          const to = x.op === 'text.append' && x.seqTo !== undefined ? x.seqTo : x.seq
+          return Math.max(m, to)
+        }, w.cursor?.seq ?? 0)
+        this.watched.set(p.sessionKey, { ...w, cursor: { epoch: w.cursor?.epoch ?? this.hello?.epoch ?? '', seq: maxSeq } })
+      }
+    }
+    this.events.onEvent?.(name, parsed.data as EventPayload<RemoteEvent>)
+  }
+
+  private startPing(): void {
+    if (this.pingTimer) clearInterval(this.pingTimer)
+    this.pingTimer = setInterval(() => {
+      if (!this.online) return
+      try {
+        // Protocol-level ping frame (k:'ping'); the host answers pong and the 75s idle timer resets.
+        this.sendEncrypted(makePing(`p${++this.reqId}`))
+      } catch {
+        /* socket dying; close handler will fire */
+      }
+    }, this.opts.pingIntervalMs)
+  }
+
+  private async afterOnline(): Promise<void> {
+    try {
+      this.hello = await this.request('host.hello', {
+        app: { name: 'Li Web', version: '1.0.0', platform: 'browser' },
+        caps: { templates: [], piUi: [], uiKinds: [] },
+      })
+      this.events.onHello?.(this.hello)
+      if (!this.opts.resumeSessions) return
+      for (const [key, w] of this.watched) {
+        try {
+          await this.openSession(key, w.cursor)
+        } catch (e) {
+          // Session may have been deleted on the host; drop it from the watch set but stay online.
+          if (e instanceof RpcRejectedError && e.rpcError.code === 'not_found') this.watched.delete(key)
+        }
+      }
+    } catch (e) {
+      this.onSocketClose(`hello failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  private onSocketClose(detail: string): void {
+    if (this.stopped) return
+    // Close handlers can fire twice (hs_err text then socket close, or error + close). Only the
+    // first one reconnects; subsequent calls are no-ops.
+    if (!this.ws) return
+    this.lastError = detail
+    this.finisher = null
+    const wasOnline = this.online
+    this.channel = null
+    this.clearTimers()
+    this.failPending(new DisconnectedError(detail))
+    try {
+      this.ws?.close()
+    } catch {
+      /* already gone */
+    }
+    this.ws = null
+    if (this.stopped) return
+    this.setState('reconnecting', detail)
+    const delay = this.backoff.nextDelay()
+    if (delay === null) {
+      this.setState('error', `reconnect budget exhausted: ${detail}`)
+      return
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      if (!this.stopped) this.start()
+    }, delay)
+  }
+
+  private sendEncrypted(frame: Frame): void {
+    if (!this.channel || !this.ws) throw new DisconnectedError()
+    this.ws.send(this.channel.encrypt(frame))
+  }
+}
+
+export type { BackoffOptions }

@@ -2,8 +2,14 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "composite": true,
-    "types": ["node"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
     "noEmit": true
@@ -14,6 +20,10 @@
     "src/browser-runtime/**/*",
     "src/extension-compat/adapter-schema.ts",
     "src/extension-compat/json-path.ts",
-    "src/extension-compat/renderer/**/*"
+    "src/extension-compat/renderer/**/*",
+    "apps/web/src/**/*"
+  ],
+  "exclude": [
+    "apps/web/src/sw.ts"
   ]
 }

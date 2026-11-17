@@ -12,14 +12,27 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["src/renderer/src/*"],
-      "@shared/*": ["packages/shared/*"],
-      "@extension-compat/*": ["src/extension-compat/*"]
+      "@renderer/*": [
+        "src/renderer/src/*"
+      ],
+      "@shared/*": [
+        "packages/shared/*"
+      ],
+      "@extension-compat/*": [
+        "src/extension-compat/*"
+      ],
+      "@web/*": [
+        "apps/web/src/*"
+      ]
     }
   },
   "references": [
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.web.json" }
+    {
+      "path": "./tsconfig.node.json"
+    },
+    {
+      "path": "./tsconfig.web.json"
+    }
   ],
   "files": []
 }

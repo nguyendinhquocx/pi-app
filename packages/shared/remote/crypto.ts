@@ -33,12 +33,8 @@ export const HKDF_SALT = new TextEncoder().encode('pi-remote/v1')
 export const DEFLATE_THRESHOLD = 1024
 export const MAX_FRAME_PLAINTEXT = 16 * 1024 * 1024
 
-const PKCS8_PREFIX = Uint8Array.from(Buffer.from('302e020100300506032b656e04220420', 'hex'))
-const SPKI_PREFIX = Uint8Array.from(Buffer.from('302a300506032b656e032100', 'hex'))
-// DER prefixes were only needed by the old node:crypto key objects; kept as dead constants
-// would be confusing — drop them entirely.
-void PKCS8_PREFIX
-void SPKI_PREFIX
+// DER prefixes from the old node:crypto key objects were dropped entirely: dead top-level
+// `Buffer.from(...)` constants would crash browser imports (no Node Buffer in the PWA).
 
 /** Reused 16 MiB inflation cap (replaces zlib maxOutputLength without per-frame allocation). */
 const INFLATE_OUT_BUF = new Uint8Array(MAX_FRAME_PLAINTEXT)

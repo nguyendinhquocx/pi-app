@@ -35,7 +35,11 @@
     "postinstall": "node scripts/link-local-sdk.mjs && electron-builder install-app-deps && electron-vite build",
     "rebuild:native": "npx @electron/rebuild -f -w better-sqlite3",
     "regress:composer-undo": "node scripts/regression/composer-undo.mjs",
-    "sync:local-sdk": "node scripts/link-local-sdk.mjs"
+    "sync:local-sdk": "node scripts/link-local-sdk.mjs",
+    "web:dev": "vite apps/web",
+    "web:build": "vite build apps/web",
+    "web:preview": "vite preview apps/web",
+    "web:typecheck": "tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.sw.json --noEmit"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.0.2",
@@ -106,6 +110,7 @@
     "electron-vite": "^6.0.0-beta.1",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",
+    "fake-indexeddb": "^6.2.8",
     "jsdom": "^25.0.1",
     "postcss": "^8.5.28",
     "sharp": "^0.35.5",
