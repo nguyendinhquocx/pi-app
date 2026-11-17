@@ -8,15 +8,31 @@ import { normalizeSessionFileKey } from '@shared/session-file-key'
 import { normalizeCapabilities } from '@shared/capabilities'
 import { wslPathToWindows } from '@shared/wsl-path'
 import { findAdapterByTool } from '../extension-compat/adapter-loader'
+import type { ExtensionProbeResult } from '../extension-compat/extension-probe'
 import { capabilityCatalog, capabilitySectionMap, capabilityToolFamilies } from './capabilities/catalog'
 import { readRemoteAttachment, writeRemoteAttachment } from './clipboard-temp-images'
 import { configStore } from './config-store'
 import { getSessionLeafOverride, setSessionLeafOverride } from './session-leaf-override'
-import { workspaceFsListDir } from './workspace-fs'
+import { workspaceFsCreate, workspaceFsListDir, workspaceFsReadText, workspaceFsRename } from './workspace-fs'
 import { workspaceFsSearch } from './workspace-file-search'
 import { scanStaticSlashCommands } from './commands-catalog'
 import { probeExtensionsShared } from './extension-probe-cache'
-import { getDesktopSkillOverrides, isSkillEnabled } from './pi-skill-overrides'
+import { getDesktopSkillOverrides, isSkillEnabled, setSkillEnabledInGlobal } from './pi-skill-overrides'
+import { readBuiltinSdkVersion, resolveActiveSdk } from './sdk-loader'
+import { getActiveAgentDir } from '../extension-compat/active-dirs'
+
+/** Small mime guess for file previews (the remote client only uses it as a rendering hint). */
+function guessMime(path: string): string {
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
+  const table: Record<string, string> = {
+    md: 'text/markdown', markdown: 'text/markdown', txt: 'text/plain', json: 'application/json',
+    ts: 'text/typescript', tsx: 'text/typescript', js: 'text/javascript', mjs: 'text/javascript', cjs: 'text/javascript',
+    py: 'text/x-python', rs: 'text/x-rust', go: 'text/x-go', kt: 'text/x-kotlin', java: 'text/x-java',
+    css: 'text/css', html: 'text/html', xml: 'application/xml', yaml: 'text/yaml', yml: 'text/yaml',
+    toml: 'text/plain', csv: 'text/csv', sh: 'text/x-shellscript', ps1: 'text/x-powershell',
+  }
+  return table[ext] ?? 'text/plain'
+}
 import { awaitWslVm } from './wsl/wsl-env'
 import { isSandboxWorkspacePath, sandboxLabel } from './sandbox-workspaces'
 import { invokeHandler } from './ipc/registry'
@@ -28,6 +44,7 @@ import { readGitDiffVsHead } from './git-workspace'
 import { sessionUsage } from './usage-scan'
 import { getMainWindow } from './window'
 import { workerManager } from './worker-manager'
+import { remoteTerminals } from './terminal/remote-terminal-bridge'
 import { getAgentRuntimeConfig } from './wsl/runtime-config'
 import { noteBrowserTarget } from './browser/targets'
 
@@ -199,6 +216,25 @@ export function createElectronRemoteHost(): RemoteHostPort {
       return { sessionFile: file, ...(editorText ? { editorText } : {}) }
     },
 
+    async renameSession(sessionFile: string, title: string, projectId: string): Promise<string> {
+      const r = await invokeHandler<{ ok?: boolean; title?: string; error?: string }>('ipc:session.rename', { sessionFile, title, workspaceId: projectId })
+      if (!r.ok) throw new Error(r.error || 'rename failed')
+      return r.title || title
+    },
+
+    async deleteSession(sessionFile: string, projectId: string): Promise<void> {
+      const r = await invokeHandler<{ ok?: boolean; error?: string }>('ipc:session.delete', { sessionFile, workspaceId: projectId })
+      if (!r.ok) throw new Error(r.error || 'delete failed')
+    },
+
+    async cloneSession(sessionFile: string, projectId: string): Promise<string> {
+      if (!workerManager.hasLiveSessionWorker(sessionFile)) await workerManager.loadSession(sessionFile, { cwd: projectId })
+      const r = await workerManager.cloneSession({ sessionFile })
+      if (!r.sessionFile) throw new Error(r.error || 'clone failed')
+      void sessionPreviewProcess.invalidateListSessions(projectId).catch(() => {})
+      return r.sessionFile
+    },
+
     async clearQueue(sessionFile: string): Promise<string[]> {
       // Never spawn a worker just to read an empty queue.
       if (!workerManager.hasLiveSessionWorker(sessionFile)) return []
@@ -312,6 +348,86 @@ export function createElectronRemoteHost(): RemoteHostPort {
     async searchFiles(projectId: string, query: string) {
       const r = await workspaceFsSearch({ workspaceRoot: projectId, query, maxResults: 60 })
       return r.ok ? r.entries.map((e) => ({ name: e.name, path: e.path, dir: e.isDirectory })) : []
+    },
+
+    async readFilePreview(projectId: string, path: string): Promise<{ content: string; size: number; truncated: boolean; mime: string } | null> {
+      const r = await workspaceFsReadText({ workspaceRoot: projectId, path })
+      if (!r.ok) return null
+      return { content: r.content, size: r.size, truncated: !!r.truncated, mime: guessMime(path) }
+    },
+
+    async createFile(projectId: string, path: string, dir?: boolean): Promise<string> {
+      const r = await workspaceFsCreate({ workspaceRoot: projectId, relativePath: path, isDirectory: dir === true })
+      if (!r.ok) throw new Error(r.error)
+      return path
+    },
+
+    async renameFile(projectId: string, path: string, newName: string): Promise<string> {
+      const r = await workspaceFsRename({ workspaceRoot: projectId, relativePath: path, newName })
+      if (!r.ok) throw new Error(r.error)
+      return r.newRelativePath
+    },
+
+    async listSkills(projectId: string): Promise<Array<{ name: string; description?: string; enabled: boolean; source?: 'global' | 'project' }>> {
+      await awaitWslVm()
+      const overrides = getDesktopSkillOverrides()
+      return scanStaticSlashCommands(projectId, await probeExtensionsShared(projectId))
+        .filter((c) => c.category === 'skill')
+        .map((c) => ({
+          name: String(c.id || c.name).replace(/^\/?skill:/, ''),
+          ...(c.description ? { description: c.description.slice(0, 400) } : {}),
+          enabled: isSkillEnabled(String(c.id || c.name).replace(/^\/?skill:/, ''), c.source?.path || c.source?.filePath, overrides),
+          source: c.source?.filePath && getActiveAgentDir() && !c.source.filePath.startsWith(getActiveAgentDir()) ? ('project' as const) : ('global' as const),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    },
+
+    async setSkillEnabled(name: string, on: boolean): Promise<boolean> {
+      const overrides = setSkillEnabledInGlobal(name, undefined, on)
+      return overrides[name] !== false
+    },
+
+    async listExtensions(): Promise<Array<{ name: string; version?: string; loaded: boolean }>> {
+      await awaitWslVm()
+      const probes: ExtensionProbeResult[] = []
+      for (const project of trustedProjects()) {
+        try {
+          probes.push(...(await probeExtensionsShared(project)))
+        } catch {
+          /* advisory only */
+        }
+      }
+      const seen = new Map<string, { name: string; version?: string; loaded: boolean }>()
+      for (const p of probes) {
+        if (!p.name || seen.has(p.id)) continue
+        seen.set(p.id, { name: p.name, ...(p.version ? { version: p.version } : {}), loaded: p.runtimeLoaded === true || p.enabled === true })
+      }
+      return [...seen.values()].slice(0, 200)
+    },
+
+    hostStatus(): { appVersion: string; platform: string; sdkVersion: string; sdkPath?: string; ownerProtocol?: number } {
+      const active = resolveActiveSdk(app.getPath('userData'), { skipSpawn: true })
+      return {
+        appVersion: app.getVersion(),
+        platform: `${process.platform}-${process.arch}`,
+        sdkVersion: active.version || readBuiltinSdkVersion(),
+        ...(active.kind !== 'builtin' ? { sdkPath: active.entryPath } : {}),
+      }
+    },
+
+    // Remote PTY lane: dedicated bridge so its output routes only back through the
+    // gateway connection that opened the terminal (never the renderer channels).
+    terminalOpen(projectId: string, opts: { cols: number; rows: number }, handlers: { data(id: string, data: string): void; exit(id: string, code: number): void }): string {
+      return remoteTerminals.open(projectId, opts, handlers)
+    },
+    terminalWrite(id: string, data: string): void {
+      remoteTerminals.write(id, data)
+    },
+    terminalResize(id: string, cols: number, rows: number): void {
+      remoteTerminals.resize(id, cols, rows)
+    },
+    terminalClose(id: string): void {
+      remoteTerminals.close(id)
     },
 
     capabilityCatalog,

@@ -1,8 +1,9 @@
-import { ATTACHMENT_MAX_BYTES, REMOTE_METHODS, isRemoteMethod, roleAllows, type MethodParams, type MethodResult, type RemoteMethod, type Role } from '@shared/remote'
+import { ATTACHMENT_MAX_BYTES, REMOTE_METHODS, encodeWebPairLink, isRemoteMethod, roleAllows, type MethodParams, type MethodResult, type RemoteMethod, type Role } from '@shared/remote'
 import { normalizeSessionFileKey } from '@shared/session-file-key'
 import type { AssetInfo } from './assets'
 import { RpcFail } from './errors'
 import type { RemoteHostPort } from './host-port'
+import { WorkerOwnerConflictError } from '../worker-owner-conflict'
 import type { HubClient, SessionHub } from './session-hub'
 import type { UiRouter } from './ui-router'
 
@@ -23,7 +24,14 @@ export type RpcContext = {
   assets: () => AssetInfo[]
   features: string[]
   endpoints?: () => string[]
+  /** Owner protocol version the host SDK enforces (absent on pre-T1 builds). */
+  ownerProtocol?: () => number | null
+  /** Browser pair link (https://li.quoc.app/#pair=…) for the current pairing, if any. */
+  webPairLink?: () => string | null
 }
+
+/** Per-connection remote terminals: only the opener drives them; closed on disconnect. */
+export type RemoteTerminalEntry = { connId: string; close(): void }
 
 type Handler<M extends RemoteMethod> = (caller: RpcCaller, params: MethodParams<M>) => Promise<MethodResult<M>>
 type HandlerTable = { [M in RemoteMethod]: Handler<M> }
@@ -36,6 +44,7 @@ const SEND_DEDUPE_MAX = 500
  */
 export class RemoteRpc {
   private readonly sent = new Map<string, Promise<MethodResult<'turn.send'>>>()
+  private readonly terminals = new Map<string, RemoteTerminalEntry>()
   private readonly handlers: HandlerTable
 
   constructor(private readonly ctx: RpcContext) {
@@ -51,6 +60,8 @@ export class RemoteRpc {
         features: ctx.features,
         assets: ctx.assets(),
         ...(ctx.endpoints ? { endpoints: ctx.endpoints() } : {}),
+        ...(ctx.ownerProtocol?.() ? { ownerProtocol: ctx.ownerProtocol()! } : {}),
+        ...(ctx.webPairLink?.() ? { webPairLink: ctx.webPairLink()! } : {}),
       }),
       'project.list': async () => ({
         projects: port
@@ -94,8 +105,10 @@ export class RemoteRpc {
         const { entry } = await hub.authorize(p.sessionKey)
         // The worker's abort drops its queue: take the texts first so they are not lost.
         const restored = await port.clearQueue(entry.sessionFile).catch(() => [])
-        await port.abort(entry.sessionFile)
-        return { aborted: true, restored }
+        const r = await port.abort(entry.sessionFile)
+        // Truthful: `aborted` is only true when a run was running and actually stopped.
+        const aborted = r.wasRunning && r.stopped
+        return { aborted, wasRunning: r.wasRunning, stopped: r.stopped, restored }
       },
       'turn.rewind': async (_c, p) => hub.rewind(p.sessionKey, p.anchor),
       'session.branches': async (_c, p) => hub.branches(p.sessionKey),
@@ -192,8 +205,125 @@ export class RemoteRpc {
         port.notifySettingsChanged('cacheWarming')
         return { mode }
       },
+      'session.rename': async (_c, p) => {
+        const { entry, projectId } = await hub.authorize(p.sessionKey)
+        const title = await port.renameSession(entry.sessionFile, p.title, projectId)
+        port.notifySessionsChanged(projectId)
+        return { title }
+      },
+      'session.delete': async (_c, p) => {
+        const { entry, projectId } = await hub.authorize(p.sessionKey)
+        await port.deleteSession(entry.sessionFile, projectId)
+        port.notifySessionsChanged(projectId)
+        return { deleted: true }
+      },
+      'session.clone': async (_c, p) => {
+        const { entry, projectId } = await hub.authorize(p.sessionKey)
+        if (entry.projector.sessionState.running) throw new RpcFail('busy', 'stop the run before cloning')
+        const file = await port.cloneSession(entry.sessionFile, projectId)
+        hub.announceSession(file, projectId)
+        return { sessionKey: normalizeSessionFileKey(file) }
+      },
+      'file.read': async (_c, p) => {
+        const { projectId } = await hub.authorize(p.sessionKey)
+        const r = await port.readFilePreview(projectId, p.path)
+        if (!r) throw new RpcFail('not_found', 'file not found in the project')
+        return r
+      },
+      'file.create': async (_c, p) => {
+        const { projectId } = await hub.authorize(p.sessionKey)
+        const path = await port.createFile(projectId, p.path, p.dir === true)
+        return { path }
+      },
+      'file.rename': async (_c, p) => {
+        const { projectId } = await hub.authorize(p.sessionKey)
+        const path = await port.renameFile(projectId, p.path, p.newName)
+        return { path }
+      },
+      'terminal.open': async (caller, p) => {
+        const { projectId } = await hub.authorize(p.sessionKey)
+        const id = port.terminalOpen(projectId, { cols: p.cols ?? 120, rows: p.rows ?? 30 }, {
+          data: (tid, data) => {
+            const conn = this.connById(caller, tid)
+            if (conn) conn.sendEvent('terminal.data', { terminalId: tid, data })
+          },
+          exit: (tid, code) => {
+            this.terminals.get(tid)?.close()
+            this.terminals.delete(tid)
+            const conn = this.connById(caller, tid)
+            if (conn) conn.sendEvent('terminal.exit', { terminalId: tid, code })
+          },
+        })
+        this.terminals.set(id, {
+          connId: caller.id,
+          close: () => port.terminalClose(id),
+        })
+        return { terminalId: id }
+      },
+      'terminal.input': async (caller, p) => {
+        this.assertTerminalOwner(caller, p.terminalId)
+        port.terminalWrite(p.terminalId, p.data)
+        return {}
+      },
+      'terminal.resize': async (caller, p) => {
+        this.assertTerminalOwner(caller, p.terminalId)
+        port.terminalResize(p.terminalId, p.cols, p.rows)
+        return {}
+      },
+      'terminal.close': async (caller, p) => {
+        this.assertTerminalOwner(caller, p.terminalId)
+        const t = this.terminals.get(p.terminalId)
+        t?.close()
+        this.terminals.delete(p.terminalId)
+        return {}
+      },
+      'host.status': async () => {
+        const st = port.hostStatus()
+        const serve = port.serveConfig?.()
+        return {
+          appVersion: st.appVersion,
+          platform: st.platform,
+          sdkVersion: st.sdkVersion,
+          ...(st.sdkPath ? { sdkPath: st.sdkPath } : {}),
+          ...(st.ownerProtocol ? { ownerProtocol: st.ownerProtocol } : {}),
+          ...(serve ? { serve: { configured: true, hostname: serve } } : {}),
+        }
+      },
+      'skills.list': async (_c, p) => {
+        const { projectId } = await hub.authorize(p.sessionKey)
+        return { skills: await port.listSkills(projectId) }
+      },
+      'skills.setEnabled': async (_c, p) => {
+        const enabled = await port.setSkillEnabled(p.name, p.on)
+        return { enabled }
+      },
+      'extensions.list': async () => ({ extensions: await port.listExtensions() }),
       'ui.respond': async (_c, p) => ({ accepted: ui.respond(p) }),
       'ui.cancel': async (_c, p) => ({ accepted: ui.cancel(p.id) }),
+    }
+  }
+
+  /** The connection that opened `terminalId` — events only ever go back to that connection. */
+  private connById(caller: RpcCaller, terminalId: string): RpcCaller | null {
+    const t = this.terminals.get(terminalId)
+    if (!t || t.connId !== caller.id) return null
+    return caller
+  }
+
+  /** Terminal control is owner-only: a viewer connection cannot drive another connection's PTY. */
+  private assertTerminalOwner(caller: RpcCaller, terminalId: string): void {
+    const t = this.terminals.get(terminalId)
+    if (!t) throw new RpcFail('not_found', 'terminal not found')
+    if (t.connId !== caller.id) throw new RpcFail('forbidden', 'terminal belongs to another connection')
+  }
+
+  /** Connection gone: kill its terminals so no host PTY outlives its client. */
+  detachTerminals(connId: string): void {
+    for (const [id, t] of this.terminals) {
+      if (t.connId === connId) {
+        t.close()
+        this.terminals.delete(id)
+      }
     }
   }
 
@@ -204,6 +334,14 @@ export class RemoteRpc {
     const parsed = def.params.safeParse(rawParams ?? {})
     if (!parsed.success) throw new RpcFail('bad_request', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '))
     const handler = this.handlers[method] as Handler<typeof method>
-    return handler(caller, parsed.data as never)
+    try {
+      return await handler(caller, parsed.data as never)
+    } catch (error) {
+      // Owner-protocol failures surface as typed codes, not generic internal errors.
+      if (error instanceof WorkerOwnerConflictError) {
+        throw new RpcFail(error.code, error.message, error.code === 'owner_unavailable')
+      }
+      throw error
+    }
   }
 }

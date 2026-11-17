@@ -14,6 +14,10 @@ export const ERROR_CODES = [
   'busy',
   'internal',
   'timeout',
+  /** Another live process owns the session file (owner protocol T1): viewer-only until handoff/death. */
+  'writer_conflict',
+  /** Strict lease registry unavailable: ownership cannot be proven, writes are refused. */
+  'owner_unavailable',
 ] as const
 export type ErrorCode = (typeof ERROR_CODES)[number]
 

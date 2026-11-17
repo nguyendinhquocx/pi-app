@@ -54,6 +54,10 @@ export const HelloResultSchema = z
     assets: z.array(AssetInfoSchema),
     /** Current LAN endpoints, so a paired phone follows DHCP changes without scanning again. */
     endpoints: z.array(z.string()).max(16).optional(),
+    /** Owner protocol version the host's SDK enforces (absent on pre-T1 SDKs). */
+    ownerProtocol: z.number().int().optional(),
+    /** Browser pairing link (https://li.quoc.app/#pair=…) alongside the native pidesk:// one. */
+    webPairLink: z.string().optional(),
   })
   .strict()
 
@@ -184,10 +188,19 @@ export const REMOTE_METHODS = {
     z.object({ accepted: z.literal(true), duplicate: z.boolean().optional() }).strict(),
     'operator',
   ),
-  /** Stop the run. Queued steer/follow-up texts are pulled back (`restored`) so the phone can put them in its composer. */
+  /** Stop the run. Queued steer/follow-up texts are pulled back (`restored`) so the phone can put them in its composer.
+   *  `aborted` is truthful: it only reports true when the owned run was actually running and stopped.
+   *  `wasRunning`/`stopped` carry the same facts explicitly for newer clients. */
   'turn.abort': method(
     z.object({ sessionKey }).strict(),
-    z.object({ aborted: z.boolean(), restored: z.array(z.string()).optional() }).strict(),
+    z
+      .object({
+        aborted: z.boolean(),
+        restored: z.array(z.string()).optional(),
+        wasRunning: z.boolean().optional(),
+        stopped: z.boolean().optional(),
+      })
+      .strict(),
     'operator',
   ),
   /**
@@ -288,6 +301,132 @@ export const REMOTE_METHODS = {
   'file.search': method(
     z.object({ sessionKey, query: z.string().max(512) }).strict(),
     z.object({ entries: z.array(FileEntrySchema) }).strict(),
+    'viewer',
+  ),
+  /** Read a bounded text preview of a project file (realpath-contained, binary refused). */
+  'file.read': method(
+    z.object({ sessionKey, path: z.string().max(4096) }).strict(),
+    z
+      .object({
+        content: z.string(),
+        size: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        mime: z.string(),
+      })
+      .strict(),
+    'viewer',
+  ),
+  /** Create an empty file or folder inside the project (never overwrites). */
+  'file.create': method(
+    z.object({ sessionKey, path: z.string().max(4096), dir: z.boolean().optional() }).strict(),
+    z.object({ path: z.string() }).strict(),
+    'operator',
+  ),
+  /** Rename a file/folder within its current folder (name only, no path traversal). */
+  'file.rename': method(
+    z.object({ sessionKey, path: z.string().max(4096), newName: z.string().max(255) }).strict(),
+    z.object({ path: z.string() }).strict(),
+    'operator',
+  ),
+  /** Rename a session (title). Refused while an external writer owns it. */
+  'session.rename': method(
+    z.object({ sessionKey, title: z.string().min(1).max(200) }).strict(),
+    z.object({ title: z.string() }).strict(),
+    'operator',
+  ),
+  /** Delete a session file (host moves it aside first when a worker is live). Operator-only. */
+  'session.delete': method(
+    z.object({ sessionKey }).strict(),
+    z.object({ deleted: z.boolean() }).strict(),
+    'operator',
+  ),
+  /** Clone a session file to a new independent session (pi `clone`). Refused while running. */
+  'session.clone': method(
+    z.object({ sessionKey }).strict(),
+    z.object({ sessionKey: z.string() }).strict(),
+    'operator',
+  ),
+  /** Interactive host terminal (PTY). Operator-only; lifecycle is per connection and closed on disconnect. */
+  'terminal.open': method(
+    z.object({ sessionKey, cols: z.number().int().min(2).max(500).optional(), rows: z.number().int().min(2).max(300).optional() }).strict(),
+    z.object({ terminalId: z.string(), profile: z.string().optional() }).strict(),
+    'operator',
+  ),
+  'terminal.input': method(
+    z.object({ terminalId: z.string().min(1), data: z.string().max(64 * 1024) }).strict(),
+    z.object({}).strict(),
+    'operator',
+  ),
+  'terminal.resize': method(
+    z.object({ terminalId: z.string().min(1), cols: z.number().int().min(2).max(500), rows: z.number().int().min(2).max(300) }).strict(),
+    z.object({}).strict(),
+    'operator',
+  ),
+  'terminal.close': method(
+    z.object({ terminalId: z.string().min(1) }).strict(),
+    z.object({}).strict(),
+    'operator',
+  ),
+  /** Host status: versions + owner protocol support (masked, no credentials). */
+  'host.status': method(
+    empty,
+    z
+      .object({
+        appVersion: z.string(),
+        platform: z.string(),
+        sdkVersion: z.string(),
+        sdkPath: z.string().optional(),
+        ownerProtocol: z.number().int().optional(),
+        serve: z.object({ configured: z.boolean(), hostname: z.string().optional() }).strict().optional(),
+      })
+      .strict(),
+    'viewer',
+  ),
+  /** Skills catalog for the session project (desktop composer list, names + enabled state only). */
+  'skills.list': method(
+    z.object({ sessionKey }).strict(),
+    z
+      .object({
+        skills: z
+          .array(
+            z
+              .object({
+                name: z.string(),
+                description: z.string().max(400).optional(),
+                enabled: z.boolean(),
+                source: z.enum(['global', 'project']).optional(),
+              })
+              .strict(),
+          )
+          .max(500),
+      })
+      .strict(),
+    'viewer',
+  ),
+  /** Enable/disable one skill (desktop global settings overrides). Operator-only. */
+  'skills.setEnabled': method(
+    z.object({ sessionKey, name: z.string().min(1), on: z.boolean() }).strict(),
+    z.object({ enabled: z.boolean() }).strict(),
+    'operator',
+  ),
+  /** Installed extensions inventory (names/versions/status only — never config values). */
+  'extensions.list': method(
+    empty,
+    z
+      .object({
+        extensions: z
+          .array(
+            z
+              .object({
+                name: z.string(),
+                version: z.string().optional(),
+                loaded: z.boolean(),
+              })
+              .strict(),
+          )
+          .max(200),
+      })
+      .strict(),
     'viewer',
   ),
   'capability.list': method(z.object({ sessionKey }).strict(), z.object({ capabilities: z.array(CapabilityRowSchema) }).strict(), 'viewer'),

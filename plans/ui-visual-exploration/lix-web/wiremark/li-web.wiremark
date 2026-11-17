@@ -1,0 +1,115 @@
+Flow LR
+
+Wireframe #hosts landscape
+  AppBar
+    Toolbar
+      Typography h6 "Li Web"
+      Spacer
+      Button "Thêm máy" to=#pair
+  Stack row 100% *
+    Box 250px *
+      Typography h6 "Máy"
+      List
+        ListItem "Laptop · Tailscale" to=#sessions
+        ListItem "ProDesk · Tailscale" to=#sessions
+      Button "Ghép host" to=#pair
+    Stack column *
+      Typography h4 "Session của mày"
+      Typography "Mỗi máy giữ dữ liệu riêng. Chọn máy để xem session."
+      Grid cols=2 gap=2
+        Card
+          Typography h5 "Laptop"
+          Typography "Đang kết nối"
+          Button "Mở Laptop" to=#sessions
+        Card
+          Typography h5 "ProDesk"
+          Typography "Đang kết nối"
+          Button "Mở ProDesk" to=#sessions
+
+Wireframe #pair mobile
+  Stack column gap=2
+    Typography h4 "Ghép host"
+    Card
+      Typography h6 "Quét QR của LiX"
+      Typography "Hoặc dán link pairing một lần."
+      TextField "Link pairing"
+      Button "Kết nối" contained to=#hosts
+    Button "Hủy" to=#hosts
+
+Wireframe #sessions landscape
+  AppBar
+    Toolbar
+      Button "Máy" to=#hosts
+      Typography h6 "Laptop · Sessions"
+      Spacer
+      Button "Mở session mới"
+  Stack row 100% *
+    Box 250px *
+      TextField "Tìm session"
+      List
+        ListItem "Session mẫu · trạng thái" to=#workbench
+        ListItem "Session khác · trạng thái" to=#workbench
+    Stack column *
+      Typography h4 "Chọn session"
+      Typography "Session chỉ thuộc host đang chọn."
+
+Wireframe #workbench landscape
+  AppBar
+    Toolbar
+      Button "Laptop" to=#hosts
+      Typography h6 "Session · project"
+      Spacer
+      Button "Li TUI đang giữ"
+  Stack row 100% *
+    Box 230px *
+      List
+        ListItem "Timeline"
+        ListItem "Files"
+        ListItem "Review"
+        ListItem "Context"
+        ListItem "Tree"
+        ListItem "Terminal"
+    Stack column *
+      Card
+        Typography "Owner: Li TUI · Web đang xem"
+        Button "Yêu cầu handoff" contained
+      List
+        ListItem "User · prompt"
+        ListItem "Assistant · tools và tiến trình"
+        ListItem "Assistant · kết quả"
+      TextField "Gửi prompt" multiline
+      Stack row
+        Button "Đính kèm file"
+        Spacer
+        Button "Gửi" contained
+    Box 310px *
+      Typography h6 "Review · Files · Context"
+      Card
+        Typography "Diff và file của host này"
+      Card
+        Typography "Session owner / usage"
+
+Wireframe #workbench-mobile mobile
+  AppBar
+    Toolbar
+      Button "Máy" to=#hosts
+      Typography h6 "Session"
+      Spacer
+      Button "Owner"
+  Stack column 100% *
+    Card
+      Typography "Li TUI đang giữ · chỉ xem"
+      Button "Yêu cầu handoff" contained
+    List
+      ListItem "Prompt"
+      ListItem "Assistant · đang chạy"
+    Stack row
+      Button "Chat"
+      Button "Review"
+      Button "Files"
+      Button "Context"
+    TextField "Gửi prompt" multiline
+    Stack row
+      Button "Đính kèm"
+      Spacer
+      Button "Gửi" contained

@@ -48,6 +48,10 @@ data class HelloResult(
     val features: List<String>,
     val assets: List<AssetInfo>,
     val endpoints: List<String> = emptyList(),
+    // T2 owner protocol: version the host SDK enforces (absent on pre-T1 hosts).
+    val ownerProtocol: Int? = null,
+    // Browser pairing link (https://li.quoc.app/#pair=…) alongside the native pidesk:// one.
+    val webPairLink: String? = null,
 )
 
 @Serializable data class ProjectList(val projects: List<ProjectInfo>)
@@ -77,7 +81,7 @@ data class OpenResult(
 @Serializable data class ToolDetailResult(val node: RenderNode, val output: String? = null)
 @Serializable data class SendParams(val sessionKey: String, val text: String, val mode: String, val clientMessageId: String)
 @Serializable data class SendResult(val accepted: Boolean, val duplicate: Boolean? = null)
-@Serializable data class AbortResult(val aborted: Boolean, val restored: List<String>? = null)
+@Serializable data class AbortResult(val aborted: Boolean, val restored: List<String>? = null, val wasRunning: Boolean? = null, val stopped: Boolean? = null)
 @Serializable data class DequeueResult(val restored: List<String>)
 @Serializable data class RoleTokens(val role: String, val tokens: Long)
 @Serializable data class ContextStats(val tokens: Long, val window: Long? = null, val messages: Int, val breakdown: List<RoleTokens>)
@@ -144,6 +148,40 @@ data class CapabilityRow(
 @Serializable data class SettingsChanged(val key: String, val sessionKey: String? = null)
 @Serializable data class HostNotice(val level: String, val text: String)
 
+// ── T2: files, session ops, terminal, host status, skills/extensions ──
+
+@Serializable data class FileReadParams(val sessionKey: String, val path: String)
+@Serializable data class FileReadResult(val content: String, val size: Long, val truncated: Boolean, val mime: String)
+@Serializable data class FileCreateParams(val sessionKey: String, val path: String, val dir: Boolean? = null)
+@Serializable data class FilePathResult(val path: String)
+@Serializable data class FileRenameParams(val sessionKey: String, val path: String, val newName: String)
+@Serializable data class SessionRenameParams(val sessionKey: String, val title: String)
+@Serializable data class SessionTitleResult(val title: String)
+@Serializable data class SessionDeleteResult(val deleted: Boolean)
+@Serializable data class SessionCloneResult(val sessionKey: String)
+@Serializable data class TerminalOpenParams(val sessionKey: String, val cols: Int? = null, val rows: Int? = null)
+@Serializable data class TerminalOpenResult(val terminalId: String, val profile: String? = null)
+@Serializable data class TerminalInputParams(val terminalId: String, val data: String)
+@Serializable data class TerminalResizeParams(val terminalId: String, val cols: Int, val rows: Int)
+@Serializable data class TerminalIdParams(val terminalId: String)
+@Serializable data class ServeStatus(val configured: Boolean, val hostname: String? = null)
+@Serializable data class HostStatusResult(
+    val appVersion: String,
+    val platform: String,
+    val sdkVersion: String,
+    val sdkPath: String? = null,
+    val ownerProtocol: Int? = null,
+    val serve: ServeStatus? = null,
+)
+@Serializable data class SkillInfo(val name: String, val description: String? = null, val enabled: Boolean, val source: String? = null)
+@Serializable data class SkillsListResult(val skills: List<SkillInfo>)
+@Serializable data class SkillSetEnabledParams(val sessionKey: String, val name: String, val on: Boolean)
+@Serializable data class SkillSetEnabledResult(val enabled: Boolean)
+@Serializable data class ExtensionInfo(val name: String, val version: String? = null, val loaded: Boolean)
+@Serializable data class ExtensionsListResult(val extensions: List<ExtensionInfo>)
+@Serializable data class TerminalData(val terminalId: String, val data: String)
+@Serializable data class TerminalExit(val terminalId: String, val code: Int? = null)
+
 /** Method name → (params, result) serializers; also drives the fixture round-trip tests. */
 object RemoteMethods {
     val table: Map<String, Pair<KSerializer<*>, KSerializer<*>>> = mapOf(
@@ -179,6 +217,21 @@ object RemoteMethods {
         "settings.cacheWarming.set" to (CacheWarmingValue.serializer() to CacheWarmingValue.serializer()),
         "ui.respond" to (UiResponse.serializer() to Accepted.serializer()),
         "ui.cancel" to (UiCancelParams.serializer() to Accepted.serializer()),
+        // T2 additions (owner protocol surface + files/terminal/session ops).
+        "file.read" to (FileReadParams.serializer() to FileReadResult.serializer()),
+        "file.create" to (FileCreateParams.serializer() to FilePathResult.serializer()),
+        "file.rename" to (FileRenameParams.serializer() to FilePathResult.serializer()),
+        "session.rename" to (SessionRenameParams.serializer() to SessionTitleResult.serializer()),
+        "session.delete" to (SessionKeyParams.serializer() to SessionDeleteResult.serializer()),
+        "session.clone" to (SessionKeyParams.serializer() to SessionCloneResult.serializer()),
+        "terminal.open" to (TerminalOpenParams.serializer() to TerminalOpenResult.serializer()),
+        "terminal.input" to (TerminalInputParams.serializer() to Empty.serializer()),
+        "terminal.resize" to (TerminalResizeParams.serializer() to Empty.serializer()),
+        "terminal.close" to (TerminalIdParams.serializer() to Empty.serializer()),
+        "host.status" to (Empty.serializer() to HostStatusResult.serializer()),
+        "skills.list" to (SessionKeyParams.serializer() to SkillsListResult.serializer()),
+        "skills.setEnabled" to (SkillSetEnabledParams.serializer() to SkillSetEnabledResult.serializer()),
+        "extensions.list" to (Empty.serializer() to ExtensionsListResult.serializer()),
     )
 
     val events: Map<String, KSerializer<*>> = mapOf(
@@ -188,5 +241,7 @@ object RemoteMethods {
         "ui.dismiss" to UiDismiss.serializer(),
         "settings.changed" to SettingsChanged.serializer(),
         "host.notice" to HostNotice.serializer(),
+        "terminal.data" to TerminalData.serializer(),
+        "terminal.exit" to TerminalExit.serializer(),
     )
 }

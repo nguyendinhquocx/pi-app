@@ -1,0 +1,7 @@
+{
+  "schema": "terminal.input/params",
+  "value": {
+    "terminalId": "rt1",
+    "data": "ls\n"
+  }
+}

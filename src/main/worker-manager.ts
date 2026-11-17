@@ -43,11 +43,13 @@ import {
   applySessionEventToSessionLeafOverride,
   clearSessionLeafOverride,
   getSessionLeafOverride,
+  noteSessionOwnerEpoch,
   setSessionLeafOverride,
 } from './session-leaf-override'
 import { observeAppEventForCompletion, observeWorkerExitForCompletion } from './completion-notification-events'
 import { remoteTap } from './remote/tap'
 import { uiText } from './ui-language'
+import { isWorkerOwnerConflict, throwIfWorkerReplyError, workerOwnerConflictFromReply } from './worker-owner-conflict'
 
 interface InitResult extends WorkerInitResult {}
 
@@ -486,26 +488,37 @@ export class WorkerManager {
   }
 
   async sendPrompt(text: string, sessionFile?: string): Promise<void> {
-    await this.request('prompt', { text, sessionFile })
+    const r = await this.request('prompt', { text, sessionFile })
+    throwIfWorkerReplyError(r, 'prompt failed')
   }
   /**
    * Abort agent turn on the session's existing worker only.
    * Never ensure/create a worker just to abort (would race F1 / wrong cwd).
+   * Truthful result: `aborted` is only true when a run was running and actually stopped.
    */
-  async abort(sessionFile: string): Promise<void> {
+  async abort(sessionFile: string): Promise<{ wasRunning: boolean; stopped: boolean }> {
     const sk = normalizeSessionKey(sessionFile)
     const slot = this.pool.get(sk)
     if (!slot || slot.stopping) {
       // No live worker for this session — already idle from UI's perspective.
-      return
+      return { wasRunning: false, stopped: true }
     }
-    await this.requestOnSlot(slot, 'abort', { sessionFile: sk })
+    const r = await this.requestOnSlot(slot, 'abort', { sessionFile: sk })
+    throwIfWorkerReplyError(r, 'abort failed')
+    return {
+      wasRunning: r.wasRunning === true,
+      stopped: r.stopped !== false,
+    }
   }
-  async steer(text: string, sessionFile?: string): Promise<void> {
-    await this.request('steer', { text, sessionFile })
+  async steer(text: string, sessionFile?: string): Promise<{ disposition: 'handled' | 'queued' }> {
+    const r = await this.request('steer', { text, sessionFile })
+    throwIfWorkerReplyError(r, 'steer failed')
+    return { disposition: r.disposition === 'handled' ? 'handled' : 'queued' }
   }
-  async followUp(text: string, sessionFile?: string): Promise<void> {
-    await this.request('followUp', { text, sessionFile })
+  async followUp(text: string, sessionFile?: string): Promise<{ disposition: 'handled' | 'queued' }> {
+    const r = await this.request('followUp', { text, sessionFile })
+    throwIfWorkerReplyError(r, 'followUp failed')
+    return { disposition: r.disposition === 'handled' ? 'handled' : 'queued' }
   }
   async clearPromptQueue(sessionFile?: string): Promise<{ steering: string[]; followUp: string[] }> {
     const r = await this.request('clearQueue', sessionFile ? { sessionFile } : {})
@@ -936,6 +949,26 @@ export class WorkerManager {
       force: opts?.force === true,
       ...(leafId !== undefined ? { leafId } : {}),
     })
+    // Strict open refused (another live writer owns the file, or the lease registry is
+    // unavailable): surface the typed owner conflict instead of a generic load error.
+    if (isWorkerOwnerConflict(r)) throw workerOwnerConflictFromReply(r)
+    throwIfWorkerReplyError(r, 'loadSession failed')
+    // Handoff tracking: a NEWER owner epoch means another process claimed the session through
+    // the T1 handoff — this host's in-memory leaf tip belongs to the previous writer's view,
+    // so drop it and reload the canonical disk leaf instead of trusting the stale override.
+    const ownerEpoch = typeof r.ownerEpoch === 'number' ? r.ownerEpoch : undefined
+    if (noteSessionOwnerEpoch(sessionFile, ownerEpoch)) {
+      const again = await this.request('loadSession', { sessionFile, force: true })
+      if (isWorkerOwnerConflict(again)) throw workerOwnerConflictFromReply(again)
+      throwIfWorkerReplyError(again, 'loadSession failed')
+      return {
+        sessionId: String(again.sessionId ?? ''),
+        model: again.model as string | undefined,
+        leafId: (again.leafId as string | null | undefined) ?? null,
+        thinkingLevel: again.thinkingLevel as string | undefined,
+        modelFallbackMessage: again.modelFallbackMessage as string | undefined,
+      }
+    }
     const sk = normalizeSessionKey(sessionFile)
     const slot = this.pool.get(sk)
     if (slot) slot.sessionFile = sk

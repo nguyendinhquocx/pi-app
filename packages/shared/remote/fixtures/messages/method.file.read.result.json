@@ -1,0 +1,9 @@
+{
+  "schema": "file.read/result",
+  "value": {
+    "content": "export const a = 1\n",
+    "size": 22,
+    "truncated": false,
+    "mime": "text/typescript"
+  }
+}

@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { dirname, join, isAbsolute } from 'node:path'
 import { errorMessage } from './error-message'
@@ -23,14 +24,26 @@ type SessionManagerOpen = {
 async function loadSessionManagerModule(activeSdkPath?: string | null): Promise<{
   SessionManager: { open: (sessionFile: string) => SessionManagerOpen }
 }> {
-  let pkgRoot: string
   if (activeSdkPath && isAbsolute(activeSdkPath)) {
-    pkgRoot = dirname(dirname(activeSdkPath))
-  } else {
-    const mainUrl = import.meta.resolve('@earendil-works/pi-coding-agent')
-    const resolved = fileURLToPath(mainUrl)
-    pkgRoot = dirname(dirname(resolved))
+    // Non-builtin runtime (global/user/WSL SDK): load that exact copy by path.
+    const pkgRoot = dirname(dirname(activeSdkPath))
+    const smPath = join(pkgRoot, 'dist', 'core', 'session-manager.js')
+    return (await import(pathToFileURL(smPath).href)) as {
+      SessionManager: { open: (sessionFile: string) => SessionManagerOpen }
+    }
   }
+  // Builtin SDK: import through the package entry. The entry exports the same SessionManager
+  // class the old dist/core deep import used, and a bare specifier works in every runtime
+  // (Electron main/worker, vitest module-runner) without native file:// imports that loaders
+  // may refuse for symlinked or out-of-root SDK copies.
+  const mod = (await import('@earendil-works/pi-coding-agent')) as unknown as {
+    SessionManager: { open: (sessionFile: string) => SessionManagerOpen }
+  }
+  if (mod?.SessionManager) return mod
+  // Pre-1.x SDKs without the entry export: fall back to the deep dist path.
+  const mainUrl = import.meta.resolve('@earendil-works/pi-coding-agent')
+  const resolved = fileURLToPath(mainUrl)
+  const pkgRoot = dirname(dirname(resolved))
   const smPath = join(pkgRoot, 'dist', 'core', 'session-manager.js')
   return (await import(pathToFileURL(smPath).href)) as {
     SessionManager: { open: (sessionFile: string) => SessionManagerOpen }

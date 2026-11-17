@@ -1,0 +1,13 @@
+{
+  "schema": "host.status/result",
+  "value": {
+    "appVersion": "0.7.13",
+    "platform": "win32-x64",
+    "sdkVersion": "1.3.0",
+    "ownerProtocol": 1,
+    "serve": {
+      "configured": true,
+      "hostname": "pc.tail1234.ts.net"
+    }
+  }
+}

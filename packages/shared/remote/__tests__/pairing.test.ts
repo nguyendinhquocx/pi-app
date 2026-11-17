@@ -41,11 +41,14 @@ describe('private hosts', () => {
   it.each(['8.8.8.8', '172.32.0.1', '100.128.0.1', '192.169.1.1', 'example.com', '2001:db8::1', '999.1.1.1', 'ts.net', 'evil.ts.net.example.com', '-x.ts.net'])('rejects %s', (h) =>
     expect(isPrivateHost(h)).toBe(false),
   )
-  it('endpoint must be ws:// with a port and private host', () => {
+  it('endpoint must be ws/wss with a private host; ws keeps its explicit port, wss defaults to 443', () => {
     expect(isAllowedEndpoint('ws://192.168.1.23:47900')).toBe(true)
-    expect(isAllowedEndpoint('wss://192.168.1.23:47900')).toBe(false)
+    // wss is now accepted (Tailscale Serve terminates TLS on 443) — same private-host rule.
+    expect(isAllowedEndpoint('wss://192.168.1.23:47900')).toBe(true)
+    expect(isAllowedEndpoint('wss://pc.tail1234.ts.net')).toBe(true)
     expect(isAllowedEndpoint('ws://192.168.1.23')).toBe(false)
     expect(isAllowedEndpoint('ws://8.8.8.8:47900')).toBe(false)
+    expect(isAllowedEndpoint('wss://8.8.8.8')).toBe(false)
     expect(isAllowedEndpoint('ws://pc.tail1234.ts.net:47900')).toBe(true)
   })
 })

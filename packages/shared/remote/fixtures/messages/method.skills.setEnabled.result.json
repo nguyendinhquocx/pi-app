@@ -1,0 +1,6 @@
+{
+  "schema": "skills.setEnabled/result",
+  "value": {
+    "enabled": true
+  }
+}

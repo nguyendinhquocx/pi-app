@@ -1,0 +1,7 @@
+{
+  "schema": "terminal.data/event",
+  "value": {
+    "terminalId": "rt1",
+    "data": "$ ls\nsrc\n"
+  }
+}

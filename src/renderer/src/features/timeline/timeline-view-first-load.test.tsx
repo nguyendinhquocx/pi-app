@@ -2,10 +2,16 @@ import { act, render, waitFor } from '@testing-library/react'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildTimelinePageFromSessionFile } from '@shared/session-jsonl-timeline'
 import { Timeline } from './timeline'
 import { useUIStore } from '@renderer/stores/ui-store'
+
+// Warm the SDK entry (owner protocol T1 build) once: first import inside jsdom costs several
+// seconds of module graph and would otherwise blow the per-test timeout mid-test.
+beforeAll(async () => {
+  await import('@earendil-works/pi-coding-agent')
+}, 60_000)
 import { requestTimelineViewEntry } from './timeline-view-jump'
 import { ipcClient } from '@renderer/lib/ipc-client'
 import type { TimelineItem } from '@renderer/stores/ui-store-types'

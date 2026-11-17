@@ -1,0 +1,6 @@
+{
+  "schema": "file.create/result",
+  "value": {
+    "path": "notes/new.md"
+  }
+}

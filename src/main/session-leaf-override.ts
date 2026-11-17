@@ -8,6 +8,32 @@ import { normalizeSessionKey } from './worker-session-key'
  * can re-branch without spawning a worker just for preview.
  */
 const leafBySession = new Map<string, string | null>()
+/** Last owner epoch seen per session key: an epoch change means a handoff happened elsewhere. */
+const ownerEpochBySession = new Map<string, number>()
+
+/**
+ * Host-side handoff tracking (spec T2): when a worker reports a session owner epoch that is
+ * NEWER than the one this host process recorded, another process claimed the session via the
+ * T1 handoff protocol. The in-memory leaf tip belongs to the previous writer's branch view —
+ * drop it and re-read the canonical leaf from disk/tree on the next history read.
+ */
+export function noteSessionOwnerEpoch(sessionFile: string, ownerEpoch: number | undefined | null): boolean {
+  const key = normalizeSessionKey(sessionFile || '')
+  if (!key || typeof ownerEpoch !== 'number') return false
+  const previous = ownerEpochBySession.get(key)
+  ownerEpochBySession.set(key, ownerEpoch)
+  if (previous !== undefined && previous !== ownerEpoch) {
+    leafBySession.delete(key)
+    return true
+  }
+  return false
+}
+
+/** Forget the recorded epoch (session closed/deleted) so a fresh session starts clean. */
+export function clearSessionOwnerEpoch(sessionFile: string): void {
+  const key = normalizeSessionKey(sessionFile || '')
+  if (key) ownerEpochBySession.delete(key)
+}
 
 export function setSessionLeafOverride(
   sessionFile: string | null | undefined,
@@ -32,12 +58,16 @@ export function getSessionLeafOverride(
 }
 
 export function clearSessionLeafOverride(sessionFile?: string | null): void {
-  if (!sessionFile) {
-    leafBySession.clear()
+  if (sessionFile) {
+    const key = normalizeSessionKey(sessionFile)
+    if (key) {
+      leafBySession.delete(key)
+      ownerEpochBySession.delete(key)
+    }
     return
   }
-  const key = normalizeSessionKey(sessionFile)
-  if (key) leafBySession.delete(key)
+  leafBySession.clear()
+  ownerEpochBySession.clear()
 }
 
 /** A persisted prompt advances the rewound branch; subsequent rebinds must follow its live leaf. */

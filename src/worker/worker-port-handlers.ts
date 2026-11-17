@@ -15,6 +15,7 @@ const dispatch: Record<string, (msg: WorkerIncomingMessage, reply: WorkerReply) 
   'steer': Turn.handleSteer,
   'followUp': Turn.handleFollowup,
   'clearQueue': Turn.handleClearqueue,
+  'ownerStatus': Turn.handleOwnerStatus,
   'extension-ui-response': Turn.handleExtensionUiResponse,
   'extension-ui-cancel': Turn.handleExtensionUiCancel,
   'dispose': Turn.handleDispose,

@@ -22,6 +22,15 @@ export default defineConfig({
       'src/extension-compat/**/*.test.ts',
     ],
     exclude: ['node_modules/**', 'out/**', 'dist/**', 'e2e/**'],
+    // The SDK fork's workspace packages (@earendil-works/pi-ai and siblings) live behind
+    // node_modules symlinks pointing outside the project (scripts/link-local-sdk.mjs). The
+    // default externalize path refuses native imports outside the root, so timeline/preview
+    // tests that load the real SDK dist must inline them instead.
+    server: {
+      deps: {
+        inline: [/node_modules[\\/]@earendil-works[\\/]pi-(ai|agent-core|tui|mcp|codemode|telemetry)/],
+      },
+    },
   },
   resolve: {
     alias: {

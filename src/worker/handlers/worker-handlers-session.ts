@@ -6,6 +6,7 @@ import { toolCallDetailFromPi } from '@shared/tool-call-detail'
 import { errorMessage } from '@shared/error-message'
 import type { SettingsManager } from '@earendil-works/pi-coding-agent'
 import { sessionFilePathsEqual } from '@shared/session-file-path'
+import { classifyOwnerError } from '../worker-owner-protocol.js'
 import { timelineItemsFromBranchPath } from '../worker-timeline.js'
 import { boundThinkingLevel } from '../worker-model-thinking.js'
 import type { WorkerIncomingMessage } from '../worker-port-types.js'
@@ -209,6 +210,7 @@ export async function handleLoadsession(msg: WorkerIncomingMessage, reply: Worke
           await switchOrLoadSession(String(msg.sessionFile ?? ''), leafOverride)
           st.promptSent = true
           const modelStr = currentSessionModelKey()
+          const ownerEpoch = typeof st.session?.getOwnerStatus === 'function' ? (st.session.getOwnerStatus() as { ownerEpoch?: number }).ownerEpoch : undefined
           reply({
             type: 'loadSession-done',
             sessionId: st.currentSessionId,
@@ -216,8 +218,19 @@ export async function handleLoadsession(msg: WorkerIncomingMessage, reply: Worke
             thinkingLevel: st.session?.thinkingLevel,
             leafId: st.session?.sessionManager.getLeafId?.() ?? null,
             modelFallbackMessage: currentModelFallbackMessage(),
+            ownerEpoch,
           })
         } catch (e: unknown) {
+          const classified = classifyOwnerError(e)
+          if (classified.code) {
+            reply({
+              type: 'error',
+              error: `loadSession failed: ${classified.message}`,
+              code: classified.code,
+              ...(classified.ownerPid !== undefined ? { ownerPid: classified.ownerPid } : {}),
+            })
+            return
+          }
           reply({ type: 'error', error: `loadSession failed: ${errorMessage(e)}` })
         }
         return

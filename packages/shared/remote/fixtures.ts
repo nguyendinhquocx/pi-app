@@ -305,6 +305,20 @@ const methodSamples: Samples = {
   'settings.cacheWarming.set': { params: { mode: 'idle' }, result: { mode: 'idle' } },
   'ui.respond': { params: { id: 'u6', result: { cancelled: false, answers: [] } }, result: { accepted: true } },
   'ui.cancel': { params: { id: 'u1' }, result: { accepted: false } },
+  'file.read': { params: { sessionKey, path: 'src/auth.ts' }, result: { content: 'export const a = 1\n', size: 22, truncated: false, mime: 'text/typescript' } },
+  'file.create': { params: { sessionKey, path: 'notes/new.md' }, result: { path: 'notes/new.md' } },
+  'file.rename': { params: { sessionKey, path: 'notes/new.md', newName: 'first.md' }, result: { path: 'notes/first.md' } },
+  'session.rename': { params: { sessionKey, title: 'Auth refactor' }, result: { title: 'Auth refactor' } },
+  'session.delete': { params: { sessionKey }, result: { deleted: true } },
+  'session.clone': { params: { sessionKey }, result: { sessionKey: '/project/.pi/agent/sessions/2026-11-16T10-00-clone.jsonl' } },
+  'terminal.open': { params: { sessionKey, cols: 120, rows: 30 }, result: { terminalId: 'rt1' } },
+  'terminal.input': { params: { terminalId: 'rt1', data: 'ls\n' }, result: {} },
+  'terminal.resize': { params: { terminalId: 'rt1', cols: 100, rows: 24 }, result: {} },
+  'terminal.close': { params: { terminalId: 'rt1' }, result: {} },
+  'host.status': { params: {}, result: { appVersion: '0.7.13', platform: 'win32-x64', sdkVersion: '1.3.0', ownerProtocol: 1, serve: { configured: true, hostname: 'pc.tail1234.ts.net' } } },
+  'skills.list': { params: { sessionKey }, result: { skills: [{ name: 'commit', description: 'Create a commit', enabled: true, source: 'global' }] } },
+  'skills.setEnabled': { params: { sessionKey, name: 'commit', on: false }, result: { enabled: true } },
+  'extensions.list': { params: {}, result: { extensions: [{ name: 'todo-list', version: '1.0.0', loaded: true }] } },
 }
 
 type EventSamples = { [E in RemoteEvent]: z.infer<(typeof REMOTE_EVENTS)[E]>[] }
@@ -316,6 +330,8 @@ const eventSamples: EventSamples = {
   'ui.dismiss': [{ id: 'u6', sessionKey, by: 'desktop' }],
   'settings.changed': [{ key: 'capabilities', sessionKey }, { key: 'cacheWarming' }],
   'host.notice': [{ level: 'warning', text: '桌面即将退出' }],
+  'terminal.data': [{ terminalId: 'rt1', data: '$ ls\nsrc\n' }],
+  'terminal.exit': [{ terminalId: 'rt1', code: 0 }],
 }
 
 export function messageFixtures(): MessageFixture[] {

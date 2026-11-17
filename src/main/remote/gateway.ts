@@ -3,7 +3,7 @@ import { networkInterfaces } from 'node:os'
 import type { Duplex } from 'node:stream'
 import { WebSocketServer } from 'ws'
 import { normalizeSessionFileKey } from '@shared/session-file-key'
-import { base64UrlEncode, encodePairLink, isPrivateHost, type Role } from '@shared/remote'
+import { base64UrlEncode, encodePairLink, encodeWebPairLink, isPrivateHost, type Role } from '@shared/remote'
 import { AssetStore } from './assets'
 import { AuthStore, type DeviceRecord } from './auth-store'
 import { RemoteConnection } from './connection'
@@ -13,11 +13,38 @@ import { SessionHub } from './session-hub'
 import { setRemoteTapSink } from './tap'
 import { UiRouter } from './ui-router'
 
-export const REMOTE_FEATURES = ['capabilities', 'cacheWarming', 'sessionCreate', 'assets']
+export const REMOTE_FEATURES = ['capabilities', 'cacheWarming', 'sessionCreate', 'assets', 'ownerProtocol', 'terminal', 'files', 'sessionOps']
 const HANDSHAKE_FAILS_PER_MIN = 20
 
 const isLoopback = (ip: string): boolean => /^(::ffff:)?127\./.test(ip) || ip === '::1'
 const MAX_PAYLOAD = 16 * 1024 * 1024
+
+/**
+ * WebSocket upgrade Origin policy (spec T2): browsers always send `Origin`; a native client does
+ * not. A browser Origin must match the allowlist exactly (the static PWA + local dev); anything
+ * else gets a 403 BEFORE the Noise-IK handshake ever runs. No-Origin requests proceed to the
+ * handshake, which stays the real gate (host key + device key or one-shot pair token).
+ */
+const ALLOWED_ORIGINS = ['https://li.quoc.app']
+const ALLOWED_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i
+
+export function originAllowed(origin: string | undefined): boolean {
+  if (origin === undefined) return true // native clients (Android ws, curl) send no Origin header
+  if (ALLOWED_ORIGINS.includes(origin)) return true
+  return ALLOWED_ORIGIN_RE.test(origin)
+}
+
+/**
+ * Host-header policy: the upgrade must be addressed to a host the gateway actually serves —
+ * Tailscale MagicDNS names, Tailscale/CGNAT IPs, LAN/private IPs or loopback. Public hostnames
+ * (DNS-rebinding attempts) are refused before the handshake.
+ */
+export function hostHeaderAllowed(host: string | undefined): boolean {
+  if (!host) return false
+  const hostname = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase()
+  if (!hostname) return false
+  return isPrivateHost(hostname)
+}
 
 export type GatewayDevice = Omit<DeviceRecord, 'pub'> & { fingerprint: string; online: boolean }
 
@@ -114,6 +141,8 @@ export class RemoteGateway {
       assets: () => this.assets.infos(),
       features: REMOTE_FEATURES,
       endpoints: () => this.endpoints(),
+      ownerProtocol: () => this.port.hostStatus().ownerProtocol ?? null,
+      webPairLink: () => this.webPairLink(),
     })
   }
 
@@ -221,6 +250,16 @@ export class RemoteGateway {
       socket.end('HTTP/1.1 404 Not Found\r\n\r\n')
       return
     }
+    // Origin + Host checks run BEFORE handleUpgrade: a mismatched browser context never reaches
+    // the handshake and never opens a WebSocket frame.
+    if (!originAllowed(req.headers.origin)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
+      return
+    }
+    if (!hostHeaderAllowed(req.headers.host)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
+      return
+    }
     if (this.rateLimited(ip)) {
       socket.end('HTTP/1.1 429 Too Many Requests\r\n\r\n')
       return
@@ -233,7 +272,11 @@ export class RemoteGateway {
         port: this.port,
         hostName: () => this.port.hostName(),
         onHandshakeFailure: () => this.recordFailure(ip),
-        onClosed: (c) => this.conns.delete(c),
+        onClosed: (c) => {
+          this.conns.delete(c)
+          // Kill any PTYs this connection opened so no host terminal outlives its client.
+          this.rpc.detachTerminals(c.id)
+        },
       })
       this.conns.add(conn)
     })
@@ -242,14 +285,35 @@ export class RemoteGateway {
   private async onHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const path = (req.url ?? '').split('?')[0]
     const m = /^\/assets\/([A-Za-z0-9._-]+)$/.exec(path)
+    if (req.method === 'OPTIONS' && m) {
+      // Preflight for the browser PWA; allow only the approved origins.
+      const origin = req.headers.origin
+      if (typeof origin === 'string' && (ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGIN_RE.test(origin))) {
+        res.writeHead(204, {
+          'access-control-allow-origin': origin,
+          'access-control-allow-methods': 'GET, OPTIONS',
+          'access-control-allow-headers': 'content-type',
+          'access-control-max-age': '86400',
+          vary: 'Origin',
+        })
+        res.end()
+        return
+      }
+      res.writeHead(403, { 'content-type': 'text/plain' })
+      res.end('origin not allowed')
+      return
+    }
     if (req.method === 'GET' && m) {
       const asset = await this.assets.load(m[1])
       if (asset) {
+        const origin = req.headers.origin
+        const allowOrigin = typeof origin === 'string' && (ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGIN_RE.test(origin)) ? origin : undefined
         res.writeHead(200, {
           'content-type': 'application/javascript; charset=utf-8',
           'content-length': String(asset.body.length),
           'cache-control': 'public, max-age=86400',
           'x-content-sha256': asset.info.sha256,
+          ...(allowOrigin ? { 'access-control-allow-origin': allowOrigin, vary: 'Origin' } : {}),
         })
         res.end(asset.body)
         return
@@ -287,11 +351,32 @@ export class RemoteGateway {
   endpointInfo(): EndpointInfo[] {
     const hosts = this.endpointHosts()
     const all = this.tailnetName ? [...hosts, { host: this.tailnetName, kind: 'tailscale' as const }] : hosts
-    return all.map(({ host, kind }) => ({ url: `ws://${host.includes(':') ? `[${host}]` : host}:${this.boundPort}`, kind }))
+    const out = all.map(({ host, kind }) => ({ url: `ws://${host.includes(':') ? `[${host}]` : host}:${this.boundPort}`, kind }))
+    // Tailscale Serve mapping (owner-configured, activation is a separate release gate): a wss
+    // endpoint on 443 lets the HTTPS PWA connect without mixed-content violations.
+    const serve = this.auth.config.serve?.hostname
+    if (serve) out.push({ url: `wss://${serve}/ws`, kind: 'tailscale' })
+    return out
   }
 
   endpoints(): string[] {
     return this.endpointInfo().map((e) => e.url)
+  }
+
+  /** Browser pairing link (https://li.quoc.app/#pair=…) for the current pairing, if any. */
+  webPairLink(): string | null {
+    const p = this.auth.currentPairing
+    const endpoints = this.endpoints()
+    if (!p || !endpoints.length) return null
+    return encodeWebPairLink({
+      v: 1,
+      hostId: this.auth.config.hostId,
+      hostName: this.port.hostName(),
+      hostPub: base64UrlEncode(this.auth.hostKey().pub),
+      endpoints,
+      pairToken: p.token,
+      exp: p.exp,
+    })
   }
 
   regeneratePairing(): { link: string; exp: number } | null {

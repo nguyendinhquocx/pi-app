@@ -1,0 +1,8 @@
+{
+  "schema": "terminal.resize/params",
+  "value": {
+    "terminalId": "rt1",
+    "cols": 100,
+    "rows": 24
+  }
+}

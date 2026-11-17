@@ -49,6 +49,11 @@ export function terminals(): PtyManager {
   return manager
 }
 
+/** Lazy node-pty spawn accessor shared by the desktop and the remote gateway lanes. */
+export function ptySpawn(): SpawnPty {
+  return (createRequire(import.meta.url)('@lydell/node-pty') as { spawn: SpawnPty }).spawn
+}
+
 /** Running terminals (the close guard asks before ending them). */
 export function runningTerminalCount(): number {
   return manager?.count ?? 0

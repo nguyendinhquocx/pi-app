@@ -25,6 +25,8 @@ export type RemoteStoredConfig = {
   devices: DeviceRecord[]
   /** Workspace paths remote clients may see and create sessions in. */
   projects: string[]
+  /** Tailscale Serve hostname mapping (read-only mirror of the owner-approved host setting). */
+  serve?: { hostname: string }
 }
 
 export const DEFAULT_REMOTE_PORT = 47900
@@ -60,6 +62,9 @@ export class AuthStore {
       ...(typeof raw?.hostKeySealed === 'string' ? { hostKeySealed: raw.hostKeySealed } : {}),
       devices: Array.isArray(raw?.devices) ? raw.devices.filter((d) => d && typeof d.pub === 'string' && typeof d.id === 'string') : [],
       projects: Array.isArray(raw?.projects) ? raw.projects.filter((p): p is string => typeof p === 'string') : [],
+      ...(raw?.serve && typeof raw.serve === 'object' && typeof (raw.serve as { hostname?: unknown }).hostname === 'string'
+        ? { serve: { hostname: (raw.serve as { hostname: string }).hostname } }
+        : {}),
     }
     if (!raw?.hostId) this.save()
   }

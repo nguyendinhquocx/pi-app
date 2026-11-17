@@ -79,7 +79,8 @@ export interface RemoteHostPort {
 
   /** `projectId` is the session's (whitelisted) workspace: the cwd fallback when its file has no header yet. */
   send(sessionFile: string, text: string, mode: SendMode, capabilities: string[], projectId: string): Promise<void>
-  abort(sessionFile: string): Promise<void>
+  /** Truthful abort: `stopped` is only true when the owned run actually stopped; never spawn a worker. */
+  abort(sessionFile: string): Promise<{ wasRunning: boolean; stopped: boolean }>
   /**
    * Move the session's leaf to just before the user entry `anchor` (desktop rewind). Binds the
    * session's own worker (cwd `projectId`) when it has none; returns the rewound message text.
@@ -119,6 +120,32 @@ export interface RemoteHostPort {
   gitDiff(projectId: string): Promise<{ isRepo: boolean; branch: string; raw: string; message?: string }>
   listDir(projectId: string, path: string, dotfiles: boolean): Promise<{ entries: FileEntry[]; truncated: boolean } | null>
   searchFiles(projectId: string, query: string): Promise<FileEntry[]>
+  /** Bounded text preview of a project file (realpath-contained; binary refused). */
+  readFilePreview(projectId: string, path: string): Promise<{ content: string; size: number; truncated: boolean; mime: string } | null>
+  /** Create an empty file/folder inside the project; never overwrites. Returns the canonical rel path. */
+  createFile(projectId: string, path: string, dir?: boolean): Promise<string>
+  /** Rename within the current folder (name only). Returns the new rel path. */
+  renameFile(projectId: string, path: string, newName: string): Promise<string>
+  /** Rename a session (title). Throws the typed owner conflict when an external writer owns it. */
+  renameSession(sessionFile: string, title: string, projectId: string): Promise<string>
+  /** Delete a session file (host moves it aside first when a worker is live). */
+  deleteSession(sessionFile: string, projectId: string): Promise<void>
+  /** Clone a session to a new independent file (pi `clone`). Returns the new session file. */
+  cloneSession(sessionFile: string, projectId: string): Promise<string>
+  /** Skills catalog for a project (names + enabled state only). */
+  listSkills(projectId: string): Promise<Array<{ name: string; description?: string; enabled: boolean; source?: 'global' | 'project' }>>
+  setSkillEnabled(name: string, on: boolean): Promise<boolean>
+  /** Installed extensions inventory (names/versions/status only — never config values). */
+  listExtensions(): Promise<Array<{ name: string; version?: string; loaded: boolean }>>
+  /** Host versions (masked: no credentials, no agent-dir paths beyond the SDK entry). */
+  hostStatus(): { appVersion: string; platform: string; sdkVersion: string; sdkPath?: string; ownerProtocol?: number }
+  /** Tailscale Serve hostname the owner configured (read-only; activation is a separate release gate), or null. */
+  serveConfig?(): string | null
+  /** Open a host PTY in `projectId`; output/exit arrive through `handlers` (remote gateway lane only). */
+  terminalOpen(projectId: string, opts: { cols: number; rows: number }, handlers: { data(id: string, data: string): void; exit(id: string, code: number): void }): string
+  terminalWrite(id: string, data: string): void
+  terminalResize(id: string, cols: number, rows: number): void
+  terminalClose(id: string): void
   capabilityCatalog(): CapabilityInfo[]
   sessionCapabilities(sessionFile: string): string[]
   setSessionCapabilities(sessionFile: string, ids: string[]): void

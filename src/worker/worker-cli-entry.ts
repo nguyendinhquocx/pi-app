@@ -11,7 +11,8 @@ export async function preparePiCliEntry(sdkEntry: string, argv: string[] = proce
         manifest = JSON.parse(await readFile(resolve(dir, 'package.json'), 'utf8'))
       } catch { /* Try the parent directory. */ }
       if (manifest?.name === '@earendil-works/pi-coding-agent') {
-        const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.pi
+        // Upstream exposes the CLI as `bin.pi`; the pi-mono-li fork renames it to `bin.li`.
+        const bin = typeof manifest.bin === 'string' ? manifest.bin : (manifest.bin?.pi ?? manifest.bin?.li)
         if (!bin || isAbsolute(bin)) return
         const root = await realpath(dir)
         const cli = await realpath(resolve(dir, bin))

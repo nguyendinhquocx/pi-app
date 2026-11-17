@@ -1,3 +1,4 @@
+import { isAbsolute } from 'path'
 import { existsSync } from 'fs'
 import { sessionTreePreview, type PiSessionMessage } from '@shared/worker-message'
 
@@ -41,18 +42,25 @@ export async function flattenTreeFromSessionFile(
     return { nodes: [], leafId: null }
   }
 
-  const { pathToFileURL, fileURLToPath } = await import('node:url')
-  const { dirname, isAbsolute, join } = await import('node:path')
-  const pkgRoot =
-    activeSdkPath && isAbsolute(activeSdkPath)
-      ? dirname(dirname(activeSdkPath))
-      : dirname(dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))))
-  const smPath = join(pkgRoot, 'dist', 'core', 'session-manager.js')
-  const sm = (await import(pathToFileURL(smPath).href)) as {
-    loadEntriesFromFile: (f: string) => SessionEntry[]
+  // Builtin runtime: import the package entry (works in every runtime — the vitest module
+  // runner refuses native file:// imports into symlinked SDK roots). `SessionManager.open()`
+  // + `getEntries()` reads the same repaired entries the old deep `loadEntriesFromFile` gave.
+  // Non-builtin runtimes (global/user/WSL SDK) keep the exact-path deep import.
+  let fileEntries: SessionEntry[]
+  if (activeSdkPath && isAbsolute(activeSdkPath)) {
+    const { pathToFileURL } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const smPath = join(dirname(dirname(activeSdkPath)), 'dist', 'core', 'session-manager.js')
+    const sm = (await import(pathToFileURL(smPath).href)) as {
+      loadEntriesFromFile: (f: string) => SessionEntry[]
+    }
+    fileEntries = sm.loadEntriesFromFile(sessionFile) as SessionEntry[]
+  } else {
+    const mod = (await import('@earendil-works/pi-coding-agent')) as unknown as {
+      SessionManager: { open: (path: string) => { getEntries: () => SessionEntry[] } }
+    }
+    fileEntries = mod.SessionManager.open(sessionFile).getEntries() as SessionEntry[]
   }
-
-  const fileEntries = sm.loadEntriesFromFile(sessionFile) as SessionEntry[]
   const entries = fileEntries.filter((e) => e.type !== 'session' && e.id)
 
   const labelsById = new Map<string, string>()

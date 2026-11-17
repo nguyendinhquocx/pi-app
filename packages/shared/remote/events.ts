@@ -12,6 +12,10 @@ export const REMOTE_EVENTS = {
     .object({ key: z.enum(['cacheWarming', 'capabilities']), sessionKey: z.string().optional() })
     .strict(),
   'host.notice': z.object({ level: z.enum(['info', 'warning', 'error']), text: z.string() }).strict(),
+  /** Host PTY output chunk. Delivered only to the connection that opened the terminal. */
+  'terminal.data': z.object({ terminalId: z.string(), data: z.string() }).strict(),
+  /** Host PTY exited (remote client should mark the terminal dead). */
+  'terminal.exit': z.object({ terminalId: z.string(), code: z.number().int().optional() }).strict(),
 } as const
 
 export type RemoteEvent = keyof typeof REMOTE_EVENTS

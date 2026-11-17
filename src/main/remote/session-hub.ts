@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { posix as posixPath, win32 as win32Path } from 'node:path'
-import type { AppEvent } from '@shared/app-events'
 import { normalizeSessionFileKey } from '@shared/session-file-key'
 import type { BranchInfo, Cursor, DiffFile, DiffLine, OpenResult, RemoteEvent, SessionSummary, Turn, TurnPatch, UiRequest } from '@shared/remote'
 import { base64UrlEncode } from '@shared/remote'
 import { currentVisibleSessionFile, externalCompletionAlertsEnabled, observeAppEventForCompletion } from '../completion-notification-events'
+import type { AppEvent } from '@shared/app-events'
 import { RpcFail } from './errors'
 import type { HostSessionHistory, HostSessionRow, HostTimelineItem, RemoteHostPort } from './host-port'
 import { LiveProjector, projectHistory, type PatchBody } from './projector'
@@ -40,6 +40,21 @@ function normalizeHostSessionPath(sessionFile: string): string {
     return win32Path.normalize(sessionFile)
   }
   return posixPath.normalize(sessionFile)
+}
+
+/**
+ * Wire session-key guard (spec T2): a client-supplied session key is only ever resolved to a
+ * transcript in a session store — `.jsonl` suffix, no null bytes, no `..` traversal anywhere.
+ * Keys that come from warm host rows (allowedProjects rows) are canonical host data and skip
+ * this check (they were already validated when the row was created from the disk scan).
+ */
+export function wireSessionKeyIsResolvable(sessionKey: string): boolean {
+  if (!sessionKey || sessionKey.includes('\u0000')) return false
+  // Split on both separators: `..` traversal must be rejected in either flavor.
+  for (const seg of sessionKey.split(/[\\/]/)) {
+    if (seg === '..' || seg === '.') return false
+  }
+  return sessionKey.toLowerCase().endsWith('.jsonl')
 }
 const ENRICH_TOP = 10
 const OUTPUT_KEEP = 50
@@ -223,7 +238,9 @@ export class SessionHub {
     const row = this.rows.get(canonicalKey)
     // A canonical wire key can resolve without a warm session-list row. Convert it to the
     // host-native path form before filesystem/SDK calls; never persist wire spelling as I/O path.
-    const sessionFile = row?.sessionFile ?? normalizeHostSessionPath(sessionKey)
+    // Unknown keys must still look like a real transcript path: `.jsonl`, no traversal.
+    const sessionFile = row?.sessionFile ?? (wireSessionKeyIsResolvable(sessionKey) ? normalizeHostSessionPath(sessionKey) : null)
+    if (!sessionFile) throw new RpcFail('not_found', 'unknown session')
     const cwd = row?.projectId ?? (await this.port.sessionProject(sessionFile))
     const projectId = cwd ? this.allowedProjectFor(cwd) : undefined
     if (!projectId) throw new RpcFail('forbidden', 'session is not in an allowed project')

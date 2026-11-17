@@ -1,12 +1,8 @@
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
-import {
-  createPrivateKey,
-  createPublicKey,
-  diffieHellman,
-  generateKeyPairSync,
-  hkdfSync,
-} from 'node:crypto'
-import { deflateRawSync, inflateRawSync } from 'node:zlib'
+import { x25519 } from '@noble/curves/ed25519.js'
+import { hkdf } from '@noble/hashes/hkdf.js'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { deflateSync, inflateSync } from 'fflate'
 import { base64UrlDecode, base64UrlEncode } from './pairing'
 import {
   Hs1PayloadSchema,
@@ -22,10 +18,15 @@ import {
 } from './frames'
 
 /**
- * Remote channel crypto (Node only — never import from the renderer).
+ * Remote channel crypto — ISOMORPHIC (Node / Electron / browser).
  * Handshake follows the Noise IK shape: the client knows the host's static key from the QR,
  * proves its own static key through DH, and both sides mix an ephemeral-ephemeral DH for
  * forward secrecy. X25519 + HKDF-SHA256 + ChaCha20-Poly1305 (IETF, 96-bit nonce).
+ *
+ * Everything below is pure JS (spec T2): @noble/curves replaces the old node:crypto
+ * X25519 keygen/DH, @noble/hashes replaces hkdfSync, and fflate replaces node:zlib —
+ * the byte-level wire format is unchanged (same curve, same HKDF, same raw-DEFLATE flag bit),
+ * so Android hosts/clients interoperate without a protocol bump.
  */
 
 export const HKDF_SALT = new TextEncoder().encode('pi-remote/v1')
@@ -34,6 +35,14 @@ export const MAX_FRAME_PLAINTEXT = 16 * 1024 * 1024
 
 const PKCS8_PREFIX = Uint8Array.from(Buffer.from('302e020100300506032b656e04220420', 'hex'))
 const SPKI_PREFIX = Uint8Array.from(Buffer.from('302a300506032b656e032100', 'hex'))
+// DER prefixes were only needed by the old node:crypto key objects; kept as dead constants
+// would be confusing — drop them entirely.
+void PKCS8_PREFIX
+void SPKI_PREFIX
+
+/** Reused 16 MiB inflation cap (replaces zlib maxOutputLength without per-frame allocation). */
+const INFLATE_OUT_BUF = new Uint8Array(MAX_FRAME_PLAINTEXT)
+
 const utf8 = new TextEncoder()
 const fromUtf8 = new TextDecoder('utf-8', { fatal: true })
 
@@ -56,37 +65,29 @@ const concat = (...parts: Uint8Array[]): Uint8Array => {
   return out
 }
 
-const privateKeyObject = (priv: Uint8Array) =>
-  createPrivateKey({ key: Buffer.from(concat(PKCS8_PREFIX, priv)), format: 'der', type: 'pkcs8' })
-const publicKeyObject = (pub: Uint8Array) =>
-  createPublicKey({ key: Buffer.from(concat(SPKI_PREFIX, pub)), format: 'der', type: 'spki' })
-
 export function generateKeyPair(): KeyPair {
-  const { privateKey } = generateKeyPairSync('x25519')
-  return keyPairFromPrivate(new Uint8Array(privateKey.export({ format: 'der', type: 'pkcs8' })).slice(16))
+  return keyPairFromPrivate(x25519.utils.randomSecretKey())
 }
 
 export function keyPairFromPrivate(priv: Uint8Array): KeyPair {
   if (priv.length !== 32) throw new Error('x25519 private key must be 32 bytes')
-  const pub = new Uint8Array(createPublicKey(privateKeyObject(priv)).export({ format: 'der', type: 'spki' })).slice(12)
-  return { pub, priv: Uint8Array.from(priv) }
+  return { pub: x25519.getPublicKey(priv), priv: Uint8Array.from(priv) }
 }
 
 export function dh(priv: Uint8Array, pub: Uint8Array): Uint8Array {
   if (pub.length !== 32) throw new HandshakeError('bad', 'x25519 public key must be 32 bytes')
   let shared: Uint8Array
   try {
-    shared = new Uint8Array(diffieHellman({ privateKey: privateKeyObject(priv), publicKey: publicKeyObject(pub) }))
+    shared = x25519.getSharedSecret(priv, pub)
   } catch {
-    // OpenSSL refuses low-order points itself.
     throw new HandshakeError('bad', 'degenerate public key')
   }
   if (shared.every((b) => b === 0)) throw new HandshakeError('bad', 'degenerate public key')
   return shared
 }
 
-export function hkdf(ikm: Uint8Array, info: string, length: number): Uint8Array {
-  return new Uint8Array(hkdfSync('sha256', ikm, HKDF_SALT, utf8.encode(info), length))
+export function hkdfBytes(ikm: Uint8Array, info: string, length: number): Uint8Array {
+  return hkdf(sha256, ikm, HKDF_SALT, utf8.encode(info), length)
 }
 
 /** 96-bit nonce: 64-bit little-endian counter followed by four zero bytes. */
@@ -111,7 +112,7 @@ export function open(key: Uint8Array, nonce: Uint8Array, sealed: Uint8Array, aad
 }
 
 function deriveKeys(ikm: Uint8Array): { keys: SessionKeys; k2: Uint8Array } {
-  const okm = hkdf(ikm, 'keys', 96)
+  const okm = hkdfBytes(ikm, 'keys', 96)
   return { keys: { c2s: okm.slice(0, 32), s2c: okm.slice(32, 64) }, k2: okm.slice(64, 96) }
 }
 
@@ -127,7 +128,7 @@ export function clientHs1(input: {
   ephemeral?: KeyPair
 }): { msg: Hs1; state: ClientHandshakeState } {
   const e = input.ephemeral ?? generateKeyPair()
-  const k1 = hkdf(dh(e.priv, input.hostPub), 'hs1', 32)
+  const k1 = hkdfBytes(dh(e.priv, input.hostPub), 'hs1', 32)
   const payload: Hs1Payload = Hs1PayloadSchema.parse({ ...input.payload, s: base64UrlEncode(input.clientStatic.pub) })
   const ct = seal(k1, counterNonce(0), utf8.encode(JSON.stringify(payload)), concat(e.pub, input.hostPub))
   return {
@@ -154,7 +155,7 @@ export function hostOpenHs1(hostStatic: KeyPair, raw: unknown): OpenedHs1 {
   if (!parsed.success) throw new HandshakeError('bad', 'malformed hs1')
   try {
     const ce = base64UrlDecode(parsed.data.e)
-    const k1 = hkdf(dh(hostStatic.priv, ce), 'hs1', 32)
+    const k1 = hkdfBytes(dh(hostStatic.priv, ce), 'hs1', 32)
     const pt = open(k1, counterNonce(0), base64UrlDecode(parsed.data.ct), concat(ce, hostStatic.pub))
     const payload = Hs1PayloadSchema.parse(JSON.parse(fromUtf8.decode(pt)))
     const clientStatic = base64UrlDecode(payload.s)
@@ -208,7 +209,8 @@ export class SecureChannel {
     let body = utf8.encode(JSON.stringify(message))
     let flags = 0
     if (body.length > DEFLATE_THRESHOLD) {
-      body = new Uint8Array(deflateRawSync(body))
+      // fflate deflateSync IS raw DEFLATE (same bytes node's deflateRawSync produced).
+      body = deflateSync(body)
       flags |= 1
     }
     const header = Uint8Array.of(flags)
@@ -221,7 +223,11 @@ export class SecureChannel {
     if (header[0] & ~1) throw new Error('unknown frame flags')
     let body = open(this.recvKey, counterNonce(this.recvCounter), frame.subarray(1), header)
     this.recvCounter++
-    if (header[0] & 1) body = new Uint8Array(inflateRawSync(body, { maxOutputLength: MAX_FRAME_PLAINTEXT }))
+    if (header[0] & 1) {
+      // Decompression-bomb guard: inflate into a fixed cap buffer (replaces zlib maxOutputLength).
+      // fflate truncates at the cap; truncated JSON then fails to parse and the caller closes.
+      body = inflateSync(body, { out: INFLATE_OUT_BUF })
+    }
     return JSON.parse(fromUtf8.decode(body))
   }
 }

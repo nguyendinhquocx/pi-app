@@ -16,6 +16,13 @@ import { clearStreamPending } from '@renderer/stores/ui-store-stream'
 import { useUIStore } from '@renderer/stores/ui-store'
 import type { TimelineItem } from '@renderer/stores/ui-store-types'
 
+// The SDK session-manager now loads through the full package entry (owner protocol T1 SDK).
+// The first import inside jsdom costs several seconds of module graph; warm it up here so
+// individual tests stay well inside the default timeout.
+beforeAll(async () => {
+  await import('@earendil-works/pi-coding-agent')
+}, 60_000)
+
 let directory: string
 let sessionFile: string
 

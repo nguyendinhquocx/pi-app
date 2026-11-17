@@ -24,6 +24,14 @@ export type FakeCalls = {
   sessionsNotified: string[]
   /** Must stay empty: the gateway may never touch desktop focus. */
   forbidden: string[]
+  renamed?: string[]
+  deleted?: string[]
+  cloned?: string[]
+  skillSet?: Array<{ name: string; on: boolean }>
+  terminalOpened?: Array<{ id: string; projectId: string; cols: number; rows: number }>
+  terminalWritten?: Array<{ id: string; data: string }>
+  terminalResized?: Array<{ id: string; cols: number; rows: number }>
+  terminalClosed?: string[]
 }
 
 export type FakeHostOptions = {
@@ -233,10 +241,12 @@ export class FakeHost implements RemoteHostPort {
     const q = this.sessions.get(file)?.queue ?? { steering: [], followUp: [] }
     this.emit({ ...this.base(file), type: 'queue', steering: [...q.steering], followUp: [...q.followUp] } as AppEvent)
   }
-  async abort(sessionFile: string): Promise<void> {
+  async abort(sessionFile: string): Promise<{ wasRunning: boolean; stopped: boolean }> {
     this.calls.aborted.push(sessionFile)
     const s = this.sessions.get(sessionFile)
+    const wasRunning = !!s?.running
     if (s?.running) s.aborted = true
+    return { wasRunning, stopped: true }
   }
   async rewind(sessionFile: string, anchor: string): Promise<{ editorText?: string }> {
     const s = this.sessions.get(sessionFile)
@@ -343,6 +353,8 @@ export class FakeHost implements RemoteHostPort {
   }
   /** Project files by relative path (folders end with '/'). */
   files = ['README.md', 'package.json', 'src/', 'src/auth.ts', 'src/index.ts', 'src/main/', 'src/main/app.ts', 'docs/', 'docs/设计 说明.md', '.env']
+  fileBodies = new Map<string, string>()
+  readonly terminalHandlers = new Map<string, { data(id: string, data: string): void; exit(id: string, code: number): void }>()
   async sessionUsage(sessionFile: string): Promise<{ input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; calls: number } | null> {
     const s = this.sessions.get(sessionFile)
     if (!s) return null
@@ -413,6 +425,84 @@ export class FakeHost implements RemoteHostPort {
     return this.files
       .filter((f) => f.toLowerCase().includes(q))
       .map((f) => ({ name: f.replace(/\/$/, '').split('/').pop()!, path: f.replace(/\/$/, ''), dir: f.endsWith('/') }))
+  }
+  async readFilePreview(projectId: string, path: string): Promise<{ content: string; size: number; truncated: boolean; mime: string } | null> {
+    const rel = path.replace(/^\.\//, '')
+    if (rel.split('/').includes('..')) return null
+    const hit = this.files.find((f) => f.replace(/\/$/, '') === rel && !f.endsWith('/'))
+    if (!hit) return null
+    const content = this.fileBodies.get(rel) ?? `// fake preview of ${rel}\n`
+    return { content, size: content.length, truncated: false, mime: 'text/plain' }
+  }
+  async createFile(projectId: string, path: string, dir?: boolean): Promise<string> {
+    const rel = path.replace(/^\.\//, '')
+    if (rel.split('/').includes('..')) throw new Error('outside_workspace')
+    const entry = dir ? `${rel}/` : rel
+    if (this.files.includes(entry)) throw new Error('target_exists')
+    this.files.push(entry)
+    return rel
+  }
+  async renameFile(projectId: string, path: string, newName: string): Promise<string> {
+    const rel = path.replace(/^\.\//, '')
+    if (newName.includes('/') || newName.includes('\\')) throw new Error('invalid_name')
+    const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : ''
+    const next = `${parent}${newName}`
+    const i = this.files.findIndex((f) => f.replace(/\/$/, '') === rel)
+    if (i < 0) throw new Error('not_found')
+    this.files[i] = this.files[i].endsWith('/') ? `${next}/` : next
+    return next
+  }
+  async renameSession(sessionFile: string, title: string, projectId?: string): Promise<string> {
+    const s = this.sessions.get(sessionFile)
+    if (!s) throw new Error('entry not found')
+    s.row.title = title
+    this.calls.renamed?.push(sessionFile)
+    return title
+  }
+  async deleteSession(sessionFile: string, projectId?: string): Promise<void> {
+    this.sessions.delete(sessionFile)
+    this.calls.deleted?.push(sessionFile)
+  }
+  async cloneSession(sessionFile: string, projectId: string): Promise<string> {
+    const s = this.sessions.get(sessionFile)
+    if (!s) throw new Error('entry not found')
+    const file = this.addSession(projectId, `${s.row.title} clone`)
+    this.calls.cloned?.push(file)
+    return file
+  }
+  async listSkills(_projectId: string): Promise<Array<{ name: string; description?: string; enabled: boolean; source?: 'global' | 'project' }>> {
+    return [
+      { name: 'commit', description: 'Create a commit', enabled: true, source: 'global' },
+      { name: 'review', enabled: false, source: 'project' },
+    ]
+  }
+  async setSkillEnabled(name: string, on: boolean): Promise<boolean> {
+    this.calls.skillSet?.push({ name, on })
+    return true
+  }
+  async listExtensions(): Promise<Array<{ name: string; version?: string; loaded: boolean }>> {
+    return [{ name: 'todo-list', version: '1.0.0', loaded: true }]
+  }
+  hostStatus(): { appVersion: string; platform: string; sdkVersion: string; ownerProtocol?: number } {
+    return { appVersion: '0.7.13', platform: 'test', sdkVersion: '1.3.0', ownerProtocol: 1 }
+  }
+  terminalOpen(projectId: string, opts: { cols: number; rows: number }, handlers: { data(id: string, data: string): void; exit(id: string, code: number): void }): string {
+    const id = `rt${++this.seq}`
+    this.calls.terminalOpened?.push({ id, projectId, cols: opts.cols, rows: opts.rows })
+    this.terminalHandlers.set(id, handlers)
+    return id
+  }
+  terminalWrite(id: string, data: string): void {
+    this.calls.terminalWritten?.push({ id, data })
+    // Echo so tests can assert the data path end-to-end.
+    this.terminalHandlers.get(id)?.data(id, data)
+  }
+  terminalResize(id: string, cols: number, rows: number): void {
+    this.calls.terminalResized?.push({ id, cols, rows })
+  }
+  terminalClose(id: string): void {
+    this.calls.terminalClosed?.push(id)
+    this.terminalHandlers.delete(id)
   }
   capabilityCatalog(): CapabilityInfo[] {
     return [

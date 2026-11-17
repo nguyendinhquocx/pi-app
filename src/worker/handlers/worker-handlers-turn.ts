@@ -14,6 +14,7 @@ import {
   emit,
   currentSessionModelKey,
 } from '../worker-runtime.js'
+import { claimOwnerHandoffFromEnv, enableOwnerStrictMode, classifyOwnerError, resolveOwnerProtocol } from '../worker-owner-protocol.js'
 
 export async function handleInit(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
         try {
@@ -48,13 +49,33 @@ export async function handleInit(msg: WorkerIncomingMessage, reply: WorkerReply)
             console.warn('[Worker] Could not resolve Pi CLI entry:', errorMessage(e))
           }
           if (!st.sharedEventBus) st.sharedEventBus = st.sdk.createEventBus()
-          await initSession(String(msg.cwd || ''))
+          // Owner protocol (T1 SDK): claim a pending handoff BEFORE the session opens, then
+          // flip this cross-client worker into strict writer enforcement.
+          await claimOwnerHandoffFromEnv(resolvedEntry)
+          const ownerProtocolVersion = await enableOwnerStrictMode(resolvedEntry)
+          try {
+            await initSession(String(msg.cwd || ''))
+          } catch (e) {
+            const classified = classifyOwnerError(e)
+            if (classified.code) {
+              reply({
+                type: 'error',
+                error: classified.message,
+                code: classified.code,
+                ...(classified.ownerPid !== undefined ? { ownerPid: classified.ownerPid } : {}),
+              })
+              return
+            }
+            throw e
+          }
           if (resolvedEntry) {
             const globalCfg = (st.session?.settingsManager as { getGlobalSettings?: () => Record<string, unknown> } | undefined)?.getGlobalSettings?.()
             widenHttpConnectTimeout(resolvedEntry, globalCfg?.httpConnectTimeoutMs)
           }
           console.log('[Worker] Init done, sessionId:', st.currentSessionId)
-          reply({ type: 'init-done', sessionId: st.currentSessionId, model: currentSessionModelKey(), thinkingLevel: st.session?.thinkingLevel, sdkFallback })
+          const ownerProtocol = await resolveOwnerProtocol(resolvedEntry)
+          const ownerEpoch = typeof st.session?.getOwnerStatus === 'function' ? (st.session.getOwnerStatus() as { ownerEpoch?: number }).ownerEpoch : undefined
+          reply({ type: 'init-done', sessionId: st.currentSessionId, model: currentSessionModelKey(), thinkingLevel: st.session?.thinkingLevel, sdkFallback, ownerProtocol: ownerProtocol.version ?? undefined, ownerEpoch })
         } catch (e: unknown) {
           console.error('[Worker] Init FAILED:', errorMessage(e), e instanceof Error ? e.stack : '')
           reply({ type: 'error', error: `Init failed: ${errorMessage(e)}`, stack: e instanceof Error ? e.stack : undefined })
@@ -145,16 +166,20 @@ export async function handlePrompt(msg: WorkerIncomingMessage, reply: WorkerRepl
 export async function handleAbort(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
   const session = st.session
   if (!session) {
-    reply({ type: 'abort-done' })
+    reply({ type: 'abort-done', wasRunning: false, stopped: true })
     return
   }
+  // Truthful abort: report what was actually running BEFORE the stop attempt and what
+  // still is afterwards (no ambiguous success — spec T2).
+  const wasRunning = !!(st.agentTurnActive || session.isStreaming)
   try {
     session.clearQueue()
     // prompt() is still in preflight (input handlers, routing): pi has no run to abort yet and
     // would start one right after. Abort that run as soon as it starts.
     if (st.promptPreflightActive) st.abortAfterPreflight = true
     await session.abort()
-    reply({ type: 'abort-done' })
+    const stopped = !session.isStreaming && !st.agentTurnActive && !st.abortAfterPreflight
+    reply({ type: 'abort-done', wasRunning, stopped })
   } catch (error: unknown) {
     console.error('[Worker] abort failed:', error)
     reply({ type: 'error', error: `abort failed: ${errorMessage(error)}` })
@@ -163,18 +188,42 @@ export async function handleAbort(msg: WorkerIncomingMessage, reply: WorkerReply
 
 
 export async function handleSteer(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
-        await st.session?.steer(String(msg.text ?? ''))
-        reply({ type: 'steer-done' })
+        const session = st.session
+        if (!session) {
+          // No ambiguous success: steering without an owned session is a typed failure.
+          reply({ type: 'error', error: 'no owned session for steer', code: 'no_session' })
+          return
+        }
+        try {
+          const disposition = await session.steer(String(msg.text ?? ''))
+          reply({ type: 'steer-done', disposition })
+        } catch (error: unknown) {
+          const classified = classifyOwnerError(error)
+          if (classified.code) {
+            reply({ type: 'error', error: classified.message, code: classified.code, ...(classified.ownerPid !== undefined ? { ownerPid: classified.ownerPid } : {}) })
+            return
+          }
+          reply({ type: 'error', error: `steer failed: ${errorMessage(error)}` })
+        }
         return
 }
 
 
 export async function handleFollowup(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
-        if (!st.session) { reply({ type: 'error', error: 'No st.session' }); return }
-        reply({ type: 'followUp-done' })
-        void st.session.followUp(String(msg.text ?? '')).catch((e: unknown) => {
-          console.error('[Worker] followUp failed:', e)
-          const errText = errorMessage(e)
+        const session = st.session
+        if (!session) { reply({ type: 'error', error: 'No owned session for followUp', code: 'no_session' }); return }
+        try {
+          const disposition = await session.followUp(String(msg.text ?? ''))
+          reply({ type: 'followUp-done', disposition })
+        } catch (error: unknown) {
+          const classified = classifyOwnerError(error)
+          if (classified.code) {
+            reply({ type: 'error', error: classified.message, code: classified.code, ...(classified.ownerPid !== undefined ? { ownerPid: classified.ownerPid } : {}) })
+            return
+          }
+          console.error('[Worker] followUp failed:', error)
+          const errText = errorMessage(error)
+          reply({ type: 'error', error: `followUp failed: ${errText}` })
           emit({
             ...baseEvent(),
             type: 'agent_error',
@@ -182,7 +231,7 @@ export async function handleFollowup(msg: WorkerIncomingMessage, reply: WorkerRe
             kind: 'error',
             stopReason: 'error',
           })
-        })
+        }
         return
 }
 
@@ -253,5 +302,21 @@ export async function handleDispose(msg: WorkerIncomingMessage, reply: WorkerRep
 export async function handlePing(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
         reply({ type: 'pong' })
         return
+}
+
+/** Owner-protocol status snapshot for the host gate (getOwnerStatus from the T1 SDK). */
+export async function handleOwnerStatus(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
+  const session = st.session
+  let status: Record<string, unknown> | null = null
+  if (session && typeof session.getOwnerStatus === 'function') {
+    try {
+      status = session.getOwnerStatus() as unknown as Record<string, unknown>
+    } catch {
+      status = null
+    }
+  }
+  const protocol = await resolveOwnerProtocol(st.activeSdkPath)
+  reply({ type: 'owner-status', status, protocol: protocol.version ?? null })
+  return
 }
 

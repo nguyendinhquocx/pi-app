@@ -1,0 +1,12 @@
+{
+  "schema": "extensions.list/result",
+  "value": {
+    "extensions": [
+      {
+        "name": "todo-list",
+        "version": "1.0.0",
+        "loaded": true
+      }
+    ]
+  }
+}

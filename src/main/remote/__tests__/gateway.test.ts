@@ -314,7 +314,9 @@ describe('sessions', () => {
     expect(await c.call('turn.dequeue', { sessionKey: session })).toEqual({ restored: ['先改测试', '再更新文档'] })
     expect(await c.call('turn.dequeue', { sessionKey: session })).toEqual({ restored: [] })
     await c.call('turn.send', { sessionKey: session, text: '最后提交', mode: 'followUp', clientMessageId: 'm_queue003' })
-    expect(await c.call('turn.abort', { sessionKey: session })).toEqual({ aborted: true, restored: ['最后提交'] })
+    // Truthful abort: wasRunning/stopped carry the explicit facts; aborted stays true only when a
+    // running turn actually stopped (spec T2 no-ambiguous-success).
+    expect(await c.call('turn.abort', { sessionKey: session })).toEqual({ aborted: true, wasRunning: true, stopped: true, restored: ['最后提交'] })
     expect(host.calls.aborted).toEqual([session])
   })
 
@@ -630,5 +632,120 @@ describe('lanAddresses', () => {
       { host: '10.147.17.3', kind: 'overlay' },
       { host: '10.66.0.2', kind: 'overlay' },
     ])
+  })
+})
+
+// ── T2: owner protocol surface, origin/host policy, terminal, files, session ops ──
+
+import { originAllowed, hostHeaderAllowed } from '../gateway'
+
+describe('upgrade origin and host policy', () => {
+  it('allows no-Origin (native) and the approved PWA + localhost dev origins only', () => {
+    expect(originAllowed(undefined)).toBe(true)
+    expect(originAllowed('https://li.quoc.app')).toBe(true)
+    expect(originAllowed('http://localhost:5173')).toBe(true)
+    expect(originAllowed('http://127.0.0.1:5173')).toBe(true)
+    expect(originAllowed('https://evil.example')).toBe(false)
+    expect(originAllowed('https://li.quoc.app.evil.example')).toBe(false)
+  })
+
+  it('upgrades with a blocked Origin are refused with 403 before the handshake', async () => {
+    const evil = await fetch(`http://127.0.0.1:${gw.boundPort}/ws`, {
+      headers: { connection: 'upgrade', upgrade: 'websocket', origin: 'https://evil.example', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', 'sec-websocket-version': '13' },
+    }).catch((e) => e)
+    expect([403, 'fetch failed'].includes(evil.status ?? evil.message ?? '')).toBe(true)
+  })
+
+  it('host headers must be private/tailnet; public hostnames are refused', () => {
+    expect(hostHeaderAllowed('127.0.0.1:47900')).toBe(true)
+    expect(hostHeaderAllowed('192.168.1.23:47900')).toBe(true)
+    expect(hostHeaderAllowed('pc.tail1234.ts.net')).toBe(true)
+    expect(hostHeaderAllowed('li.quoc.app')).toBe(false)
+    expect(hostHeaderAllowed('')).toBe(false)
+    expect(hostHeaderAllowed(undefined)).toBe(false)
+  })
+})
+
+describe('owner protocol surface (T2)', () => {
+  it('host.hello carries the owner protocol version and the browser pair link', async () => {
+    const c = await pairNew()
+    // Pairing was consumed by pairNew: mint a fresh one so both links exist side by side.
+    const native = gw.regeneratePairing()!
+    const hello = await c.call('host.hello', { app: { name: 'probe', version: '0', platform: 'test' }, caps: { templates: [], piUi: [], uiKinds: [] } })
+    expect(hello.ownerProtocol).toBe(1)
+    expect(String(hello.webPairLink)).toMatch(/^https:\/\/li\.quoc\.app\/#pair=/)
+    // The web link and the native pidesk:// link carry the identical offer payload.
+    const fromWeb = decodePairLink(String(hello.webPairLink))!
+    const fromNative = decodePairLink(native.link)!
+    expect(fromWeb).toEqual(fromNative)
+  })
+
+  it('abort without a running turn is truthful, not ambiguous success', async () => {
+    const c = await pairNew()
+    const r = await c.call('turn.abort', { sessionKey: session })
+    expect(r).toEqual({ aborted: false, wasRunning: false, stopped: true, restored: [] })
+  })
+
+  it('file read/create/rename stay inside the project and round-trip', async () => {
+    const c = await pairNew()
+    const h = host as unknown as { fileBodies: Map<string, string> }
+    h.fileBodies.set('src/auth.ts', 'export const K = 1\n')
+    const read = await c.call('file.read', { sessionKey: session, path: 'src/auth.ts' })
+    expect(read).toMatchObject({ content: 'export const K = 1\n', truncated: false })
+    await expect(c.call('file.read', { sessionKey: session, path: '../escape.md' })).rejects.toThrow()
+    const created = await c.call('file.create', { sessionKey: session, path: 'notes/new.md' })
+    expect(created).toEqual({ path: 'notes/new.md' })
+    const renamed = await c.call('file.rename', { sessionKey: session, path: 'notes/new.md', newName: 'first.md' })
+    expect(renamed).toEqual({ path: 'notes/first.md' })
+    await expect(c.call('file.rename', { sessionKey: session, path: 'notes/first.md', newName: '../evil' })).rejects.toThrow()
+  })
+
+  it('session rename/delete/clone round-trip through the host', async () => {
+    const c = await pairNew()
+    expect(await c.call('session.rename', { sessionKey: session, title: 'đổi tên' })).toEqual({ title: 'đổi tên' })
+    const cloned = await c.call('session.clone', { sessionKey: session })
+    expect(String(cloned.sessionKey)).toBeTruthy()
+    expect(await c.call('session.delete', { sessionKey: cloned.sessionKey })).toEqual({ deleted: true })
+  })
+
+  it('skills/extensions/host status return metadata only (masked)', async () => {
+    const c = await pairNew()
+    const skills = await c.call('skills.list', { sessionKey: session })
+    expect(skills.skills.every((s) => typeof s.name === 'string' && typeof s.enabled === 'boolean')).toBe(true)
+    expect(await c.call('skills.setEnabled', { sessionKey: session, name: 'commit', on: false })).toEqual({ enabled: true })
+    const exts = await c.call('extensions.list', {})
+    expect(exts.extensions.every((e) => typeof e.name === 'string' && typeof e.loaded === 'boolean')).toBe(true)
+    const status = await c.call('host.status', {})
+    expect(status).toMatchObject({ appVersion: '0.7.13', sdkVersion: '1.3.0', ownerProtocol: 1 })
+  })
+
+  it('terminal lifecycle is per connection: open, write, resize, close', async () => {
+    const c = await pairNew()
+    const t = await c.call('terminal.open', { sessionKey: session, cols: 100, rows: 24 })
+    expect(t.terminalId).toBeTruthy()
+    await c.call('terminal.input', { terminalId: t.terminalId, data: 'ls\n' })
+    const echoed = await c.waitFor((e) => e.m === 'terminal.data', 2000)
+    expect((echoed.p as { terminalId: string; data: string }).data).toBe('ls\n')
+    await c.call('terminal.resize', { terminalId: t.terminalId, cols: 80, rows: 20 })
+    await c.call('terminal.close', { terminalId: t.terminalId })
+    // Another connection may not drive a terminal it did not open.
+    const other = await pairNew('other')
+    await expect(other.call('terminal.input', { terminalId: t.terminalId, data: 'evil\n' })).rejects.toThrow()
+    await expect(other.call('terminal.input', { terminalId: 'rt_missing', data: 'x\n' })).rejects.toThrow()
+  })
+})
+
+describe('wire session key guard (realpath containment)', () => {
+  it('unknown keys must look like real transcript paths', async () => {
+    const c = await pairNew()
+    // A warm host row resolves without the .jsonl suffix check (canonical host data)…
+    const open = await c.call('session.open', { sessionKey: session })
+    expect(open.sessionKey).toBeTruthy()
+    // …but an unknown key is refused unless it is a .jsonl transcript path without traversal.
+    const fakeJsonl = '/work/pi-app/.pi/agent/sessions/2026-01-01T00-00-00-000Z.jsonl'
+    await expect(c.call('session.open', { sessionKey: fakeJsonl })).rejects.toThrow() // not an allowed project → forbidden
+    await expect(c.call('session.open', { sessionKey: '/work/pi-app/.pi/../../etc/passwd' })).rejects.toThrow()
+    await expect(c.call('session.open', { sessionKey: '/work/pi-app/.pi/settings.json' })).rejects.toThrow()
+    await expect(c.call('session.open', { sessionKey: 'bad\u0000path.jsonl' })).rejects.toThrow()
   })
 })

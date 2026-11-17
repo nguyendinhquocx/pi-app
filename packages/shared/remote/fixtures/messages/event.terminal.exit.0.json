@@ -1,0 +1,7 @@
+{
+  "schema": "terminal.exit/event",
+  "value": {
+    "terminalId": "rt1",
+    "code": 0
+  }
+}

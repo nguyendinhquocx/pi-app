@@ -41,7 +41,12 @@ describe('buildSystemPromptPreview with the real SDK', () => {
     expect(prompt).toContain('PROJECT_APPEND_SENTINEL')
     expect(prompt).toContain('configured-only')
     expect(fetch).not.toHaveBeenCalled()
-    expect(readdirSync(agentDir)).toEqual(beforeAgent)
+    // SDK ≥ T1 creates the session-open-lease registry dir inside the agent dir on first
+    // session use — that is the owner protocol's storage, not leaked prompt-side state.
+    const ownerRegistry = 'session-open-leases'
+    const afterAgent = readdirSync(agentDir).filter((n) => n !== ownerRegistry)
+    const beforeFiltered = beforeAgent.filter((n) => n !== ownerRegistry)
+    expect(afterAgent).toEqual(beforeFiltered)
     expect(readdirSync(join(cwd, '.pi'))).toEqual(beforeProject)
   })
 })

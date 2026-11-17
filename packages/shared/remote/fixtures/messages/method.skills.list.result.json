@@ -1,0 +1,13 @@
+{
+  "schema": "skills.list/result",
+  "value": {
+    "skills": [
+      {
+        "name": "commit",
+        "description": "Create a commit",
+        "enabled": true,
+        "source": "global"
+      }
+    ]
+  }
+}
