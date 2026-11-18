@@ -60,3 +60,36 @@ Updated: 2026-11-17. Owner: parent (Web UI). Design tokens: `apps/web/DESIGN.md`
 ## OUT_OF_SPEC_ADDITIONS
 - `capture-responsive.mjs` + playwright chromium headless-shell download (dev tool cho verify spec T4).
 - Không thêm runtime dep mới (xterm/dompurify/react-markdown/zustand dùng sẵn của desktop renderer).
+
+## FIX ROUND (2026-11-18, sau independent review NEEDS_FIX — 7/7 findings)
+
+Reviewer độc lập (T4 review subagent) xác nhận 7 proven bugs. Tất cả đã fix:
+
+1. **Workbench chưa mount** → HostManager render `<Workbench>` khi có connection (manager panel collapse vào `<details>`); per-host `connectStore` wiring + `resetHost` cleanup.
+2. **Pair token bị drop ở hs1** → `HostConnection` giữ `pendingPairToken`, gửi trong hs1 đầu, clear sau handshake; HostSim ghi `pairTokens[]`; test assert one-time + không persist.
+3. **Memory key store** → một `IdbDeviceKeyStore` duy nhất share giữa HostStore + createDeviceKey; `store.markConnected(hostId, hello.deviceId)` gọi khi hello.
+4. **Không pin host identity** → hs2 `payload.hostId` + hello `hostId` so với pinned hostId; mismatch refuse; error state reset được từ `error`.
+5. **`ui.respond` sai envelope** → ExtensionDialogs gửi `{value}` (select/input/editor), `{confirmed}` (confirm), questionnaire `{result:{cancelled:false,answers}}`, image_review `{result:{choice,label,feedback?}}`; Workbench gửi `{id, ...response}`, chỉ dismiss khi `result.accepted`; `ui.cancel` xử lý; notify → store notice.
+6. **Terminal không subscribe** → `TerminalPane` dùng `conn.subscribeEvents()`; buffer `terminal.data` early output per terminalId; `terminal.exit` set exited; resize qua `term.onResize`; cleanup theo `conn.online`. Test mới `terminal-pane.test.tsx` (wire integration full: open → data OSC52 strip → input/resize → exit → close + unsubscribe + dispose).
+7. **Matrix cite test không tồn tại** → parity-matrix.ts rewrite, mọi row cite file thật; `validateMatrix(testPaths)` check disk; parity-matrix.test.ts walk filesystem covers 46 hàng T0.
+
+Kèm theo fix round:
+- Unknown custom `ui.request` → `UnknownCustomUiRequest` browser-side (`web-ui-request.ts`) + fallback card redact/bound (`adapter-registry.ts` rewrite). KHÔNG đụng `UiRequestSchema` T2.
+- Session resync single-path: `onSessionOpen` → `applyOpenResult`; không double-open khi resync.
+- AgentsPanel (steer/abort/resume từ parent tool steps) + Inspector agents tab; files create/rename + directory nav; SessionRail inline rename + delete-confirm + project filter (`project.list`); Composer queue display + thinkingLevels + abort feedback + @file insertion; Timeline todo widget; Settings `capability.list/set` + cacheWarming radio + version-diff guard.
+- Responsive capture chuyển sang dev fixture `workbench-preview.html` (dev-server, không cần host) — 5/5 overflow=0.
+
+## VERIFY RESULTS (final, fix round)
+- `npx vitest run apps/web`: **114/114 PASS (20 files)**.
+- `npm run web:typecheck` + `npm run typecheck`: 0 errors.
+- `npm run web:build`: PASS (warning chunk 522kB/xterm 338kB — note cho sau, không block).
+- Responsive captures 320–1440: **5/5 overflow=0px** (`captures-t4/workbench-*.png`, 2 shots đã soi mắt).
+
+## COMMIT
+- **T4 = `1a1a2ab`** (main, sau `da54e87` T3): 45 files, +5007/−102.
+
+## GAPS MỞ (chuyển T5 / pi android lane)
+- Child→parent session identity trong `sessions.update` — host lane (pi android), web side đã tự thoái (Agents view derive từ parent tool steps).
+- UAT host thật (laptop + ProDesk) + provider-real handoff >90s — T5.
+- li drift re-sync — chờ owner.
+- Tailscale Serve activation — release gate riêng, owner duyệt.
