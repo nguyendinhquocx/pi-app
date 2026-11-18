@@ -4,6 +4,7 @@ import type { ZodTypeAny } from 'zod'
 import { prepareHs1, type HandshakeOutcome } from './handshake'
 import { ReconnectBackoff, type BackoffOptions } from './reconnect'
 import type { DeviceKeyRecord } from './device-keys'
+import { normalizeUnknownCustomUiRequest } from './web-ui-request'
 
 /**
  * One host connection from the browser PWA (spec T3).
@@ -45,6 +46,8 @@ export type HostConnectionEvents = {
   onEvent?: (event: RemoteEvent, payload: EventPayload<RemoteEvent>) => void
   onResync?: (sessionKey: string, reason: NonNullable<import('@shared/remote').OpenResult['resync']>) => void
   onHello?: (hello: MethodResult<'host.hello'>) => void
+  /** RPC snapshot/replay result: needed because session.open is a response, not an event. */
+  onSessionOpen?: (sessionKey: string, result: MethodResult<'session.open'>) => void
 }
 
 export type SocketLike = {
@@ -103,7 +106,9 @@ export class HostConnection {
   private handshakeTimeout: ReturnType<typeof setTimeout> | null = null
   private stopped = false
   private lastError: string | null = null
-  private readonly events: HostConnectionEvents
+  private events: HostConnectionEvents
+  private readonly eventSubscribers = new Set<(event: RemoteEvent, payload: EventPayload<RemoteEvent>) => void>()
+  private pendingPairToken?: string
 
   constructor(options: HostConnectionOptions) {
     this.hostId = options.device.hostId
@@ -115,6 +120,7 @@ export class HostConnection {
     }
     this.backoff = new ReconnectBackoff(options.backoff ?? {})
     this.events = options.events ?? {}
+    this.pendingPairToken = options.pairToken
   }
 
   get online(): boolean {
@@ -128,7 +134,8 @@ export class HostConnection {
   /** Begin connecting (idempotent). */
   start(): void {
     if (this.stopped) return
-    if (this.state !== 'idle' && this.state !== 'reconnecting') return
+    if (this.state !== 'idle' && this.state !== 'reconnecting' && this.state !== 'error') return
+    if (this.state === 'error') this.backoff.reset()
     this.setState('connecting')
     const ws = (this.opts.socketFactory ?? ((url: string) => new WebSocket(url)))(this.opts.endpoint)
     this.ws = ws
@@ -158,6 +165,13 @@ export class HostConnection {
   dispose(): void {
     this.stop()
     this.watched.clear()
+    this.eventSubscribers.clear()
+  }
+
+  /** Subscribe to host events without replacing the workbench's store listener (e.g. PTY output). */
+  subscribeEvents(listener: (event: RemoteEvent, payload: EventPayload<RemoteEvent>) => void): () => void {
+    this.eventSubscribers.add(listener)
+    return () => this.eventSubscribers.delete(listener)
   }
 
   async request<M extends RemoteMethod>(method: M, params: MethodParams<M>): Promise<MethodResult<M>> {
@@ -188,6 +202,7 @@ export class HostConnection {
     const effectiveCursor = cursor && result.kind === 'replay' && !result.resync ? cursor : undefined
     const current: WatchedSession = { sessionKey, ...(effectiveCursor ?? { epoch: result.epoch, seq: result.seq }) }
     this.watched.set(sessionKey, current)
+    this.events.onSessionOpen?.(sessionKey, result)
     if (result.resync) this.events.onResync?.(sessionKey, result.resync)
     return result
   }
@@ -208,6 +223,33 @@ export class HostConnection {
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
+
+  /** Merge additional event listeners (workbench store wiring) without replacing connection-internal ones. */
+  bindEvents(events: HostConnectionEvents): void {
+    const prev = this.events
+    this.events = {
+      onState: (s, d) => {
+        prev.onState?.(s, d)
+        events.onState?.(s, d)
+      },
+      onEvent: (e, p) => {
+        prev.onEvent?.(e, p)
+        events.onEvent?.(e, p)
+      },
+      onResync: (k, r) => {
+        prev.onResync?.(k, r)
+        events.onResync?.(k, r)
+      },
+      onHello: (h) => {
+        prev.onHello?.(h)
+        events.onHello?.(h)
+      },
+      onSessionOpen: (k, r) => {
+        prev.onSessionOpen?.(k, r)
+        events.onSessionOpen?.(k, r)
+      },
+    }
+  }
 
   private setState(s: ConnState, detail?: string): void {
     if (this.state !== s) {
@@ -241,7 +283,7 @@ export class HostConnection {
       ws: this.ws as unknown as WebSocket,
       device: this.opts.device,
       hostPub: this.opts.device.hostPub,
-      ...(this.opts.pairToken ? { pairToken: this.opts.pairToken } : {}),
+      ...(this.pendingPairToken ? { pairToken: this.pendingPairToken } : {}),
     })
     // Install the finisher BEFORE the bytes hit the socket: a same-process host can answer
     // hs2 synchronously inside `send` (see prepareHs1 doc).
@@ -269,8 +311,14 @@ export class HostConnection {
         const detail = outcome.code === 'hs_err' ? `handshake refused: ${outcome.code_detail}` : 'handshake failed (wrong host key?)'
         return this.onSocketClose(detail)
       }
+      if (outcome.payload.hostId !== this.hostId) {
+        return this.onSocketClose(`handshake host identity mismatch (expected ${this.hostId}, received ${outcome.payload.hostId})`)
+      }
       this.channel = outcome.channel
       this.role = outcome.role
+      // The host consumed/recognized the device key. A future reconnect no longer needs the
+      // one-time pair token; never persist it beyond this in-memory first successful handshake.
+      this.pendingPairToken = undefined
       this.backoff.reset()
       this.setState('online')
       this.startPing()
@@ -306,11 +354,19 @@ export class HostConnection {
   }
 
   private dispatchEvt(frame: Extract<Frame, { k: 'evt' }>): void {
-    const def = REMOTE_EVENTS[frame.m as RemoteEvent]
+    const name = frame.m as RemoteEvent
+    const def = REMOTE_EVENTS[name]
     if (!def) return
     const parsed = (def as ZodTypeAny).safeParse(frame.p)
-    if (!parsed.success) return
-    const name = frame.m as RemoteEvent
+    if (!parsed.success) {
+      // Unknown extension custom UI still gets a safe fallback card. Validate only the routing
+      // envelope here; the raw payload remains untrusted and is redacted/bounded before display.
+      if (name === 'ui.request') {
+        const unknown = normalizeUnknownCustomUiRequest(frame.p)
+        if (unknown) this.emitEvent(name, unknown as unknown as EventPayload<RemoteEvent>)
+      }
+      return
+    }
     if (name === 'turn.patch') {
       const p = parsed.data as EventPayload<'turn.patch'>
       const w = this.watched.get(p.sessionKey)
@@ -322,7 +378,12 @@ export class HostConnection {
         this.watched.set(p.sessionKey, { ...w, cursor: { epoch: w.cursor?.epoch ?? this.hello?.epoch ?? '', seq: maxSeq } })
       }
     }
-    this.events.onEvent?.(name, parsed.data as EventPayload<RemoteEvent>)
+    this.emitEvent(name, parsed.data as EventPayload<RemoteEvent>)
+  }
+
+  private emitEvent(name: RemoteEvent, payload: EventPayload<RemoteEvent>): void {
+    this.events.onEvent?.(name, payload)
+    for (const listener of this.eventSubscribers) listener(name, payload)
   }
 
   private startPing(): void {
@@ -344,6 +405,10 @@ export class HostConnection {
         app: { name: 'Li Web', version: '1.0.0', platform: 'browser' },
         caps: { templates: [], piUi: [], uiKinds: [] },
       })
+      if (this.hello.hostId !== this.hostId) {
+        this.onSocketClose(`hello host identity mismatch (expected ${this.hostId}, received ${this.hello.hostId})`)
+        return
+      }
       this.events.onHello?.(this.hello)
       if (!this.opts.resumeSessions) return
       for (const [key, w] of this.watched) {

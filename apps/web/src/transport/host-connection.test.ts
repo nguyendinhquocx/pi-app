@@ -67,6 +67,7 @@ describe('HostConnection (spec T3)', () => {
   ): Promise<{ conn: HostConnection; sim: HostSim }> {
     const sim = new HostSim({
       hostStatic: HOST_STATIC,
+      hostId: 'host_w',
       handlers: { 'host.hello': () => HELLO, ...handlers },
     })
     const conn = new HostConnection({
@@ -101,6 +102,42 @@ describe('HostConnection (spec T3)', () => {
     expect(conn.errorDetail).toContain('handshake')
   })
 
+  it('pins host identity in addition to the crypto static key (wrong hostId is refused)', async () => {
+    const sim = new HostSim({ hostStatic: HOST_STATIC, hostId: 'host_other', handlers: { 'host.hello': () => HELLO } })
+    const conn = new HostConnection({
+      endpoint: 'wss://w.tail1234.ts.net/ws',
+      device,
+      socketFactory: () => sim.newSocket() as unknown as WebSocket,
+      backoff: { baseMs: 500, factor: 2, capMs: 8000, jitter: 0, rng: () => 0.5 },
+    })
+    conn.start()
+    sim.socket.open()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(conn.online).toBe(false)
+    expect(conn.errorDetail).toContain('host identity mismatch')
+  })
+
+  it('sends the pair token for first hs1 only, then drops it after a successful handshake', async () => {
+    const sim = new HostSim({ hostStatic: HOST_STATIC, hostId: 'host_w', handlers: { 'host.hello': () => HELLO } })
+    const conn = new HostConnection({
+      endpoint: 'wss://w.tail1234.ts.net/ws',
+      device,
+      pairToken: 'pair-token-one-time',
+      socketFactory: () => sim.newSocket() as unknown as WebSocket,
+      backoff: { baseMs: 500, factor: 2, capMs: 8000, jitter: 0, rng: () => 0.5 },
+    })
+    conn.start()
+    sim.socket.open()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sim.pairTokens[0]).toBe('pair-token-one-time')
+    sim.close(1006)
+    await vi.advanceTimersByTimeAsync(500)
+    sim.socket.open()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sim.pairTokens[1]).toBeUndefined()
+    conn.stop()
+  })
+
   it('typed RPC resolves with the schema-parsed result', async () => {
     const { conn } = await onlineConn({
       'session.stats': () => ({ context: { tokens: 10, messages: 2, breakdown: [] }, usage: null }),
@@ -117,7 +154,7 @@ describe('HostConnection (spec T3)', () => {
   })
 
   it('requests while offline reject immediately — nothing queued (no ambiguous delivery)', async () => {
-    const sim = new HostSim({ hostStatic: HOST_STATIC, handlers: { 'host.hello': () => HELLO } })
+    const sim = new HostSim({ hostStatic: HOST_STATIC, hostId: 'host_w', handlers: { 'host.hello': () => HELLO } })
     const conn = new HostConnection({
       endpoint: 'wss://w.tail1234.ts.net/ws',
       device,
@@ -181,6 +218,45 @@ describe('HostConnection (spec T3)', () => {
     expect(open.resync).toBe('epoch_changed')
     expect(open.epoch).toBe('e_2')
     expect(resyncs).toEqual([{ sessionKey: 'proj/s1.jsonl', reason: 'epoch_changed' }])
+  })
+
+  it('terminal PTY open/input/resize/close and terminal.data/exit events use the typed wire contract', async () => {
+    const outputs: string[] = []
+    const { conn, sim } = await onlineConn({
+      'terminal.open': () => ({ terminalId: 'term_1', profile: 'bash' }),
+      'terminal.input': () => ({}),
+      'terminal.resize': () => ({}),
+      'terminal.close': () => ({}),
+    })
+    const unsubscribe = conn.subscribeEvents((event, payload) => {
+      if (event === 'terminal.data') outputs.push((payload as { terminalId: string; data: string }).data)
+      if (event === 'terminal.exit') outputs.push(`exit:${(payload as { code?: number }).code}`)
+    })
+    const opened = await conn.request('terminal.open', { sessionKey: 'proj/s1.jsonl', cols: 80, rows: 24 })
+    expect(opened.terminalId).toBe('term_1')
+    sim.push('terminal.data', { terminalId: 'term_1', data: 'hello\\r\\n' })
+    sim.push('terminal.exit', { terminalId: 'term_1', code: 0 })
+    expect(outputs).toEqual(['hello\\r\\n', 'exit:0'])
+    await conn.request('terminal.input', { terminalId: 'term_1', data: 'pwd\\r' })
+    await conn.request('terminal.resize', { terminalId: 'term_1', cols: 100, rows: 30 })
+    await conn.request('terminal.close', { terminalId: 'term_1' })
+    unsubscribe()
+  })
+
+  it('unknown custom ui.request is forwarded for the Web fallback card instead of silently dropped', async () => {
+    const received: unknown[] = []
+    const { sim } = await onlineConn({}, { onEvent: (event, payload) => { if (event === 'ui.request') received.push(payload) } })
+    sim.push('ui.request', {
+      id: 'u_custom',
+      sessionKey: 'proj/s1.jsonl',
+      method: 'custom',
+      kind: 'vendor_custom_panel',
+      extensionName: 'vendor-extension',
+      toolName: 'custom_tool',
+      token: 'not-for-logs',
+    })
+    expect(received).toHaveLength(1)
+    expect(received[0]).toMatchObject({ kind: 'unknown_custom', rawKind: 'vendor_custom_panel', extensionName: 'vendor-extension', toolName: 'custom_tool' })
   })
 
   it('keepalive ping fires every pingInterval and the host answers pong', async () => {
