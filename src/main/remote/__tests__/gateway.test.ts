@@ -649,6 +649,15 @@ describe('upgrade origin and host policy', () => {
     expect(originAllowed('https://li.quoc.app.evil.example')).toBe(false)
   })
 
+  it('owner-set Serve hostname becomes a first-class origin, any listener port (T5)', () => {
+    const serve = 'x.tailff3893.ts.net'
+    expect(originAllowed('https://x.tailff3893.ts.net', serve)).toBe(true)
+    expect(originAllowed('https://x.tailff3893.ts.net:10000', serve)).toBe(true)
+    expect(originAllowed('http://x.tailff3893.ts.net:10000', serve)).toBe(false) // Serve is TLS-only
+    expect(originAllowed('https://evil.example', serve)).toBe(false)
+    expect(originAllowed('https://evil-x.tailff3893.ts.net', serve)).toBe(false)
+  })
+
   it('upgrades with a blocked Origin are refused with 403 before the handshake', async () => {
     const evil = await fetch(`http://127.0.0.1:${gw.boundPort}/ws`, {
       headers: { connection: 'upgrade', upgrade: 'websocket', origin: 'https://evil.example', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', 'sec-websocket-version': '13' },

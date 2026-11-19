@@ -28,10 +28,19 @@ const MAX_PAYLOAD = 16 * 1024 * 1024
 const ALLOWED_ORIGINS = ['https://li.quoc.app']
 const ALLOWED_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i
 
-export function originAllowed(origin: string | undefined): boolean {
+export function originAllowed(origin: string | undefined, serveHostname?: string): boolean {
   if (origin === undefined) return true // native clients (Android ws, curl) send no Origin header
   if (ALLOWED_ORIGINS.includes(origin)) return true
-  return ALLOWED_ORIGIN_RE.test(origin)
+  if (ALLOWED_ORIGIN_RE.test(origin)) return true
+  // The owner-approved Tailscale Serve hostname is a first-class PWA origin (spec T5 UAT):
+  // the browser connects through Serve TLS (`https://<serve-host>[:<listener-port>]`), so any
+  // port on exactly that hostname is same-host — the Serve gate itself is owner-controlled.
+  if (serveHostname) {
+    const normalized = serveHostname.replace(/^https?:\/\//i, '').replace(/\/.*/, '').toLowerCase()
+    const m = /^https:\/\/([^/:]+)(?::\d+)?$/i.exec(origin)
+    if (m && m[1].toLowerCase() === normalized) return true
+  }
+  return false
 }
 
 /**
@@ -246,13 +255,16 @@ export class RemoteGateway {
   private onUpgrade(wss: WebSocketServer, req: IncomingMessage, socket: Duplex, head: Buffer): void {
     const ip = req.socket.remoteAddress ?? ''
     const path = (req.url ?? '').split('?')[0]
-    if (path !== '/ws') {
+    // `/ws` is the canonical endpoint; `/` is accepted for the TLS-terminated TCP serve lane
+    // (`wss://serve:8443` — TCP forwarding keeps whatever path the client used). A request to
+    // any other path is a probe and gets a fast 404 before any handshake work.
+    if (path !== '/ws' && path !== '/') {
       socket.end('HTTP/1.1 404 Not Found\r\n\r\n')
       return
     }
     // Origin + Host checks run BEFORE handleUpgrade: a mismatched browser context never reaches
     // the handshake and never opens a WebSocket frame.
-    if (!originAllowed(req.headers.origin)) {
+    if (!originAllowed(req.headers.origin, this.auth.config.serve?.hostname)) {
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
       return
     }
@@ -279,6 +291,9 @@ export class RemoteGateway {
         },
       })
       this.conns.add(conn)
+      // Attribution for the host log (spec T5 UAT): which ingress path/IP each connection used.
+      conn.remoteIp = ip
+      conn.handshakePath = path
     })
   }
 
@@ -288,7 +303,7 @@ export class RemoteGateway {
     if (req.method === 'OPTIONS' && m) {
       // Preflight for the browser PWA; allow only the approved origins.
       const origin = req.headers.origin
-      if (typeof origin === 'string' && (ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGIN_RE.test(origin))) {
+      if (typeof origin === 'string' && originAllowed(origin, this.auth.config.serve?.hostname)) {
         res.writeHead(204, {
           'access-control-allow-origin': origin,
           'access-control-allow-methods': 'GET, OPTIONS',
@@ -355,6 +370,8 @@ export class RemoteGateway {
     // Tailscale Serve mapping (owner-configured, activation is a separate release gate): a wss
     // endpoint on 443 lets the HTTPS PWA connect without mixed-content violations.
     const serve = this.auth.config.serve?.hostname
+    const serveTcpPort = this.auth.config.serve?.tcpPort
+    if (serve && serveTcpPort) out.push({ url: `wss://${serve}:${serveTcpPort}`, kind: 'tailscale' })
     if (serve) out.push({ url: `wss://${serve}/ws`, kind: 'tailscale' })
     return out
   }

@@ -42,6 +42,9 @@ export type ConnectionDeps = {
 export class RemoteConnection implements RpcCaller {
   readonly id = `c_${base64UrlEncode(randomBytes(6))}`
   deviceId = ''
+  /** Debug fields (spec T5 UAT): set at construction/upgrade so the host log can attribute cycles. */
+  remoteIp = ''
+  handshakePath = ''
   private channel: SecureChannel | null = null
   private closed = false
   private handshakeTimer: ReturnType<typeof setTimeout> | null
@@ -55,8 +58,14 @@ export class RemoteConnection implements RpcCaller {
   ) {
     this.handshakeTimer = setTimeout(() => this.close(4000, 'handshake timeout'), HANDSHAKE_TIMEOUT_MS)
     ws.on('message', (data, isBinary) => this.onMessage(data, isBinary))
-    ws.on('close', () => this.cleanup())
-    ws.on('error', () => this.close(1011, 'socket error'))
+    ws.on('close', (code, reason) => {
+      if (!this.closed) this.deps.port.log('info', `[remote] socket close code=${code} reason=${String(reason).slice(0, 80) || '(none)'} from=${this.remoteIp}`)
+      this.cleanup()
+    })
+    ws.on('error', (err) => {
+      this.deps.port.log('warn', `[remote] socket error: ${err instanceof Error ? err.message : String(err)}`)
+      this.close(1011, 'socket error')
+    })
   }
 
   get ready(): boolean {
@@ -92,6 +101,7 @@ export class RemoteConnection implements RpcCaller {
     if (!frame) return this.close(4003, 'bad frame')
     if (frame.k === 'ping') return this.send(makePong(frame.id))
     if (frame.k !== 'req') return
+    this.deps.port.log('info', `[remote] rpc ${frame.m}`)
     void this.deps.rpc.dispatch(this, frame.m, frame.p).then(
       (result) => this.send(makeOk(frame.id, result)),
       (error: unknown) => {
@@ -104,6 +114,7 @@ export class RemoteConnection implements RpcCaller {
 
   private async handshake(text: string): Promise<void> {
     const { auth, hub } = this.deps
+    this.handshakePath = this.upgradePath
     let msg: unknown
     try {
       msg = JSON.parse(text)
@@ -116,9 +127,14 @@ export class RemoteConnection implements RpcCaller {
       if (opened.payload.pair) {
         const r = auth.consumePairToken(opened.payload.pair)
         if (r === 'ok') device = auth.registerDevice(opened.clientStatic, opened.payload.name, opened.payload.platform)
-        else if (!device || device.revokedAt) return this.failHandshake(r)
+        else {
+          this.deps.port.log('warn', `[remote] handshake pair token rejected (${r}, hasDevice=${Boolean(device)})`)
+          if (!device || device.revokedAt) return this.failHandshake(r)
+        }
+      } else if (!device) {
+        this.deps.port.log('warn', '[remote] handshake refused: no device record and no pair token')
+        return this.failHandshake('unpaired')
       }
-      if (!device) return this.failHandshake('unpaired')
       if (device.revokedAt) return this.failHandshake('revoked')
       const { msg: hs2, keys } = hostFinishHs2(auth.hostKey(), opened, {
         deviceId: device.id,
@@ -135,7 +151,7 @@ export class RemoteConnection implements RpcCaller {
       this.handshakeTimer = null
       auth.touchDevice(device.id)
       this.touch()
-      this.deps.port.log('info', `[remote] device ${device.id} connected`)
+      this.deps.port.log('info', `[remote] device ${device.id} connected from ${this.remoteIp} via ${this.handshakePath}`)
     } catch (error) {
       this.failHandshake(error instanceof HandshakeError ? error.code : 'bad')
     }
@@ -190,6 +206,7 @@ export class RemoteConnection implements RpcCaller {
   close(code = 1000, reason = ''): void {
     if (this.closed) return
     this.closed = true
+    this.deps.port.log('info', `[remote] conn closed code=${code} reason=${reason.slice(0, 80) || '(none)'}`)
     try {
       this.ws.close(code, reason.slice(0, 120))
     } catch {

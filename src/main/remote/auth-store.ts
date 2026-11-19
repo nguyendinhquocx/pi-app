@@ -25,8 +25,14 @@ export type RemoteStoredConfig = {
   devices: DeviceRecord[]
   /** Workspace paths remote clients may see and create sessions in. */
   projects: string[]
-  /** Tailscale Serve hostname mapping (read-only mirror of the owner-approved host setting). */
-  serve?: { hostname: string }
+  /** Tailscale Serve mapping (read-only mirror of the owner-approved host setting). */
+  serve?: {
+    hostname: string
+    /** Optional TLS-terminated TCP lane (`tailscale serve --tls-terminated-tcp=<port>`): the
+     *  gateway offers `wss://<hostname>:<tcpPort>` next to the HTTPS `/ws` path, because the
+     *  Serve HTTP proxy drops long-lived browser WebSocket streams (spec T5 UAT finding). */
+    tcpPort?: number
+  }
 }
 
 export const DEFAULT_REMOTE_PORT = 47900
@@ -63,10 +69,15 @@ export class AuthStore {
       devices: Array.isArray(raw?.devices) ? raw.devices.filter((d) => d && typeof d.pub === 'string' && typeof d.id === 'string') : [],
       projects: Array.isArray(raw?.projects) ? raw.projects.filter((p): p is string => typeof p === 'string') : [],
       ...(raw?.serve && typeof raw.serve === 'object' && typeof (raw.serve as { hostname?: unknown }).hostname === 'string'
-        ? { serve: { hostname: (raw.serve as { hostname: string }).hostname } }
+        ? (() => {
+            const serveRaw = raw.serve as { hostname: string; tcpPort?: unknown }
+            const tcpPort = typeof serveRaw.tcpPort === 'number' && serveRaw.tcpPort > 0 && serveRaw.tcpPort < 65536 ? serveRaw.tcpPort : undefined
+            return { serve: { hostname: serveRaw.hostname, ...(tcpPort ? { tcpPort } : {}) } }
+          })()
         : {}),
     }
     if (!raw?.hostId) this.save()
+    this.port.log('info', `[remote] auth-store boot: raw.serve=${JSON.stringify(raw?.serve ?? null)} parsed=${JSON.stringify(this.cfg.serve ?? null)}`)
   }
 
   private save(): void {

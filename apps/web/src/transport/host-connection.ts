@@ -138,6 +138,10 @@ export class HostConnection {
     if (this.state === 'error') this.backoff.reset()
     this.setState('connecting')
     const ws = (this.opts.socketFactory ?? ((url: string) => new WebSocket(url)))(this.opts.endpoint)
+    // Browser WebSockets deliver binary frames as Blob by default; the host only ever sends
+    // encrypted binary frames after hs2, so arrays are required (HostSim/Node hides this —
+    // Node's ws client already yields buffers, which is why tests never caught it, spec T5).
+    if (typeof WebSocket !== 'undefined' && 'binaryType' in ws) ws.binaryType = 'arraybuffer'
     this.ws = ws
     const handlers = ws as unknown as SocketHandlers
     handlers.onopen = () => this.onSocketOpen()
@@ -426,6 +430,7 @@ export class HostConnection {
 
   private onSocketClose(detail: string): void {
     if (this.stopped) return
+    console.warn('[li-web] socket close:', detail)
     // Close handlers can fire twice (hs_err text then socket close, or error + close). Only the
     // first one reconnects; subsequent calls are no-ops.
     if (!this.ws) return

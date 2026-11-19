@@ -17,6 +17,25 @@ describe('endpoint policy (spec T3)', () => {
     expect(chooseEndpoint([WS_CGNAT, WSS_SERVE, WS_CGNAT], policy)).toEqual({ ok: true, endpoint: WSS_SERVE })
   })
 
+  it('HTTPS page: Serve-shaped wss wins over a raw-gateway-port wss even when offered first (T5)', () => {
+    const policy = { secure: true }
+    // Real-host offer order: raw gateway wss first, Serve wss last.
+    expect(chooseEndpoint(['wss://pc.tail1234.ts.net:47900', WSS_SERVE], policy)).toEqual({ ok: true, endpoint: WSS_SERVE })
+    // The /ws HTTPS proxy path is the preferred lane; the TLS-TCP serve port outranks only the raw port.
+    expect(chooseEndpoint(['wss://pc.tail1234.ts.net:47900', 'wss://pc.tail1234.ts.net:8443', WSS_SERVE], policy)).toEqual({
+      ok: true,
+      endpoint: WSS_SERVE,
+    })
+    expect(chooseEndpoint(['wss://pc.tail1234.ts.net:47900', 'wss://pc.tail1234.ts.net:8443'], policy)).toEqual({
+      ok: true,
+      endpoint: 'wss://pc.tail1234.ts.net:8443',
+    })
+    // Explicit 443 IS Serve — keep it.
+    expect(chooseEndpoint(['wss://pc.tail1234.ts.net:443/ws'], policy)).toEqual({ ok: true, endpoint: 'wss://pc.tail1234.ts.net:443/ws' })
+    // No Serve-shaped endpoint → raw-port wss is still the best wss available.
+    expect(chooseEndpoint(['wss://pc.tail1234.ts.net:47900'], policy)).toEqual({ ok: true, endpoint: 'wss://pc.tail1234.ts.net:47900' })
+  })
+
   it('HTTP (dev) page: both protocols allowed, wss preferred when offered', () => {
     const policy = { secure: false }
     expect(chooseEndpoint([WS_CGNAT], policy)).toEqual({ ok: true, endpoint: WS_CGNAT })

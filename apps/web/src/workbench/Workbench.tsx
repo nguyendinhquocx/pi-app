@@ -141,10 +141,11 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
     [setSessions],
   )
 
+  const activeConnState = activeHostId ? slices[activeHostId]?.state : null
   useEffect(() => {
-    if (!active) return
+    if (!active || activeConnState !== 'online') return
     void refreshSessions(active.conn).catch(() => undefined)
-  }, [active, refreshSessions])
+  }, [active, activeConnState, refreshSessions])
 
   useEffect(() => {
     for (const item of connections) {
