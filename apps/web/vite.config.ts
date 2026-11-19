@@ -83,4 +83,10 @@ export default defineConfig({
     port: 5183,
     strictPort: true,
   },
+  preview: {
+    // Tailscale Serve proxies the tailnet hostname to this local preview server (T5 UAT lane).
+    port: 5183,
+    strictPort: true,
+    allowedHosts: ['.ts.net'],
+  },
 })
