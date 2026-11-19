@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { configStore } from './config-store'
+import { resolveUiLanguage } from './ui-language'
 import { traceAudio } from './audio-trace'
 import { presentCompletionCard } from './completion-notification-delivery'
 import { buildCompletionNotificationCopy } from '@shared/completion-preview'

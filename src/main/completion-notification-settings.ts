@@ -5,6 +5,7 @@ import {
   normalizeDndUntil,
 } from '@shared/completion-preview'
 import { configStore } from './config-store'
+import { resolveUiLanguage } from './ui-language'
 import type { CompletionNotificationSettings } from './completion-notification-controller'
 import { uiLanguage } from './ui-language'
 

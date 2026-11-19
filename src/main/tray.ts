@@ -1,6 +1,6 @@
 import { app, Menu, Tray } from 'electron'
 import { resolveAppIcon } from './app-icon'
-import { configStore } from './config-store'
+import { resolveUiLanguage } from './ui-language'
 import { getMainWindow } from './window'
 
 let appTray: Tray | null = null

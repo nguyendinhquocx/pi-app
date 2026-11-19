@@ -32,6 +32,8 @@ import {
 import type { WorkerInitResult, WorkerSlot } from './worker-manager-types'
 import { normalizeSessionKey, workspacePoolKey } from './worker-session-key'
 import { isWslWindowsPath } from '@shared/wsl-path'
+import { mainLabel } from '@shared/main-labels'
+import { getMainUiLanguage } from '@shared/main-language'
 import { getAgentRuntimeConfig, isWslRuntimeActive } from './wsl/runtime-config'
 import { normalizeWorkspaceCwd } from './wsl/workspace-path'
 import { readMaxSessionWorkers } from './worker-pool-config'
@@ -480,9 +482,14 @@ export class WorkerManager {
     return out
   }
 
-  /** Prompt text of the enabled session capabilities, applied from the next agent turn on. */
-  async setCapabilities(sections: Record<string, string>, tools: string[], sessionFile?: string): Promise<void> {
-    await this.request('setCapabilities', { sections, tools, sessionFile })
+  /** Prompt text of the enabled session capabilities (+ per-session Agent Purge), applied from the next agent turn on. */
+  async setCapabilities(
+    sections: Record<string, string>,
+    tools: string[],
+    sessionFile?: string,
+    purge?: import('@shared/agent-purge').ActivePurgePayload | null,
+  ): Promise<void> {
+    await this.request('setCapabilities', { sections, tools, sessionFile, purge: purge ?? null })
   }
 
   async sendPrompt(text: string, sessionFile?: string): Promise<void> {
@@ -990,7 +997,7 @@ export class WorkerManager {
   }
   async navigateTree(
     targetId: string,
-    options?: { summarize?: boolean; label?: string; sessionFile?: string },
+    options?: { summarize?: boolean; label?: string; sessionFile?: string; abortIfBusy?: boolean },
   ): Promise<{
     cancelled: boolean
     editorText?: string
@@ -1003,6 +1010,7 @@ export class WorkerManager {
       targetId,
       summarize: options?.summarize,
       label: options?.label,
+      ...(options?.abortIfBusy ? { abortIfBusy: true } : {}),
       ...(sessionFile ? { sessionFile } : {}),
     })
     if (r.type === 'error') {

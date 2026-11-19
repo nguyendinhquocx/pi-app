@@ -1,4 +1,5 @@
 import type { CompletionEvent } from '@shared/app-events'
+import type { CompletionUiLanguage } from '@shared/completion-preview'
 import {
   buildCompletionNotificationCopy,
   type CompletionCopy,

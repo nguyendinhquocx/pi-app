@@ -146,19 +146,8 @@ const TimelineItemBase = memo(function TimelineItem({
     const allowMessageActions = showMessageActions && !streaming
 
     if (!hasText && !hasThinking) {
-      // Optimistic / live wait: show thinking placeholder (not empty silence).
-      if (streaming || agentBoot) {
-        return (
-          <div className="timeline-message-row timeline-activity-item">
-            <ReplyPlaceholder
-              startedAt={Number(item.timestamp ?? 0) || undefined}
-              labelSeed={String(item.id)}
-            />
-          </div>
-        )
-      }
-      // Only show interrupted chrome for true incomplete leaves — not mid-turn tool bridges.
-      if (isInterrupted) {
+      // Settled incomplete leaves (from an earlier abort/error) must stay static even when a later turn boots.
+      if (isInterrupted && !streaming) {
         return (
           <div className="timeline-message-row timeline-prose-row">
             <MessageHoverShell
@@ -184,6 +173,17 @@ const TimelineItemBase = memo(function TimelineItem({
                     })}
               </div>
             </MessageHoverShell>
+          </div>
+        )
+      }
+      // Optimistic / live wait: show thinking placeholder (not empty silence).
+      if (streaming || agentBoot) {
+        return (
+          <div className="timeline-message-row timeline-activity-item">
+            <ReplyPlaceholder
+              startedAt={Number(item.timestamp ?? 0) || undefined}
+              labelSeed={String(item.id)}
+            />
           </div>
         )
       }
@@ -230,7 +230,7 @@ const TimelineItemBase = memo(function TimelineItem({
           </div>
         ) : isInterrupted && !hasText ? (
           <div className="text-[12px] timeline-text-quiet">
-            {t('timeline:interruptedPartial', { defaultValue: '回复未完成（已中断）' })}
+            {t('timeline:interruptedPartial')}
           </div>
         ) : null}
       </>
@@ -262,6 +262,15 @@ const TimelineItemBase = memo(function TimelineItem({
 
   if (item.type === 'slash') {
     const status = item.slashStatus || 'dispatched'
+    const rawSlashText = String(item.text ?? '')
+    const slashText =
+      rawSlashText === '已发送给 pi 执行'
+        ? t('timeline:slashSentToPi')
+        : rawSlashText === '命令已执行（详见下方助手/工具输出）'
+          ? t('timeline:slashExecutedDetail')
+          : rawSlashText.startsWith('执行失败:')
+            ? t('timeline:slashExecFailed', { error: rawSlashText.slice('执行失败:'.length).trim() })
+            : rawSlashText
     const iconCls =
       status === 'error'
         ? 'text-destructive/70'
@@ -270,15 +279,21 @@ const TimelineItemBase = memo(function TimelineItem({
           : 'timeline-text-quiet'
     const Icon = status === 'error' ? XCircle : status === 'ok' ? CheckCircle2 : CornerDownLeft
     const label =
-      status === 'error' ? t('timeline:statusFailed') : status === 'ok' ? t('timeline:statusDone') : String(item.text ?? '').includes('失败') ? t('timeline:statusFailed') : t('timeline:statusExecuted')
+      status === 'error'
+        ? t('timeline:statusFailed')
+        : status === 'ok'
+          ? t('timeline:statusDone')
+          : rawSlashText.includes('失败') || rawSlashText.startsWith('Execution failed:')
+            ? t('timeline:statusFailed')
+            : t('timeline:statusExecuted')
     return (
       <div className="py-1">
         <div className="timeline-status-line">
           <Icon className={cn('h-3 w-3 shrink-0', iconCls)} />
           <span className="font-mono text-[12px] timeline-text-secondary">{String(item.slashCommand ?? '')}</span>
           <span className={cn('text-[11px]', iconCls)}>{label}</span>
-          {String(item.text ?? '').length > 0 && (
-            <span className="truncate timeline-text-quiet">{String(item.text ?? '')}</span>
+          {slashText.length > 0 && (
+            <span className="truncate timeline-text-quiet">{slashText}</span>
           )}
         </div>
       </div>
@@ -846,10 +861,15 @@ export function Timeline() {
         .join('|'),
     [items],
   )
+  const isSessionTurnLive =
+    !!streamingAssistantId || agentRunning || agentBoot || sessionChrome.phase === 'waiting_ui'
   // Grouping is cheap and must see live item references (streaming text).
   const displayItems = useMemo(
-    () => buildTimelineDisplayItems(visibleItems as unknown as TimelineRawItem[]),
-    [visibleItems],
+    () =>
+      buildTimelineDisplayItems(visibleItems as unknown as TimelineRawItem[], {
+        turnSettled: !isSessionTurnLive,
+      }),
+    [visibleItems, isSessionTurnLive],
   )
   const { leading, turns: turnGroups } = useMemo(
     () => groupDisplayBlocksByTurn(displayItems),
@@ -927,9 +947,10 @@ export function Timeline() {
   const renderDisplayBlock = (
     block: TimelineDisplayItem,
     blockKey: string,
-    opts?: { showMessageActions?: boolean },
+    opts?: { showMessageActions?: boolean; allowBootPlaceholder?: boolean },
   ) => {
     const showMessageActions = opts?.showMessageActions !== false
+    const rowAgentBoot = agentBoot && !!opts?.allowBootPlaceholder
     if (block.kind === 'tool-group') {
       const groupThinking = block.thinkingText?.trim() || ''
       const stableGroupKey = block.groupId || `tg-${block.tools[0]?.id || blockKey}`
@@ -968,7 +989,7 @@ export function Timeline() {
         prevType={prevType}
         streaming={streamingAssistantId === item.id}
         agentRunning={agentRunning}
-        agentBoot={agentBoot}
+        agentBoot={rowAgentBoot}
         rewindEntryId={rewindEntryByItemId.get(item.id)}
         showMessageActions={showMessageActions}
       />
@@ -1087,7 +1108,7 @@ export function Timeline() {
                   item={turn.userItem as unknown as TimelineRawItem}
                   streaming={false}
                   agentRunning={agentRunning}
-                  agentBoot={agentBoot}
+                  agentBoot={false}
                   rewindEntryId={rewindEntryByItemId.get(String(turn.userItem.id))}
                   showMessageActions
                 />
@@ -1115,7 +1136,10 @@ export function Timeline() {
                     : `${turn.turnId}-b${bi}`
               return (
                 <Fragment key={claimBlockKey(blockKey || `${turn.turnId}-b${bi}`)}>
-                  {renderDisplayBlock(block, blockKey, { showMessageActions: isLastProse })}
+                  {renderDisplayBlock(block, blockKey, {
+                    showMessageActions: isLastProse,
+                    allowBootPlaceholder: isLiveTurn && bi === turn.blocks.length - 1,
+                  })}
                 </Fragment>
               )
             })}
@@ -1145,6 +1169,7 @@ export function Timeline() {
               block.kind === 'single' &&
               block.item.type === 'assistant-message' &&
               block.item.id === lastProseIdInTurn(displayItems),
+            allowBootPlaceholder: isSessionTurnLive && i === displayItems.length - 1,
           }),
         )}
       {/*

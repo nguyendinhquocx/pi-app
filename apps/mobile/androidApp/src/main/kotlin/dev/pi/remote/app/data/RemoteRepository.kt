@@ -7,9 +7,15 @@ import dev.pi.remote.protocol.SessionStatsResult
 import dev.pi.remote.protocol.ReviewDiffResult
 import dev.pi.remote.protocol.BranchInfo
 import dev.pi.remote.protocol.ForkResult
+import dev.pi.remote.protocol.HostBrowseResult
+import dev.pi.remote.protocol.PurgeSend
+import dev.pi.remote.protocol.PurgeStateResult
 import dev.pi.remote.protocol.TimelineReset
+import dev.pi.remote.protocol.TurnSettle
 import dev.pi.remote.protocol.FileEntry
 import dev.pi.remote.protocol.FileListResult
+import dev.pi.remote.protocol.FileReadResult
+import dev.pi.remote.protocol.UsageSummaryResult
 import dev.pi.remote.crypto.Hs2Payload
 import dev.pi.remote.net.HostConnection
 import dev.pi.remote.net.RemoteApi
@@ -40,6 +46,7 @@ import java.io.File
 import java.net.URI
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,6 +75,7 @@ data class InboxState(
     val sessions: List<SessionSummary> = emptyList(),
     val projects: List<ProjectInfo> = emptyList(),
     val loaded: Boolean = false,
+    val allowAllProjects: Boolean = false,
 )
 
 sealed interface SendOutcome {
@@ -101,6 +109,14 @@ class RemoteRepository(
     val connection: StateFlow<HostConnection.State> = _connection
     private val _inbox = MutableStateFlow(InboxState())
     val inbox: StateFlow<InboxState> = _inbox
+    private val _unread = MutableStateFlow<Set<String>>(emptySet())
+    val unread: StateFlow<Set<String>> = _unread
+    private val _drafts = MutableStateFlow<Map<String, String>>(emptyMap())
+    val drafts: StateFlow<Map<String, String>> = _drafts
+    private val _outbox = MutableStateFlow<List<OutboxEntry>>(emptyList())
+    val outbox: StateFlow<List<OutboxEntry>> = _outbox
+    private val _hostMeta = MutableStateFlow(HostMetaCache())
+    val hostMeta: StateFlow<HostMetaCache> = _hostMeta
     private val _timelines = MutableStateFlow<Map<String, SessionTimeline>>(emptyMap())
     val timelines: StateFlow<Map<String, SessionTimeline>> = _timelines
     private val _pendingSends = MutableStateFlow<Map<String, List<PendingSend>>>(emptyMap())
@@ -224,6 +240,7 @@ class RemoteRepository(
         val host = hostStore.hosts.firstOrNull { it.hostId == hostId } ?: return
         hostStore.setActive(hostId)
         if (_active.value?.hostId != hostId) {
+            flushPendingSaves()
             disconnect()
             clearActiveOpenKey()
             _timelines.value = emptyMap()
@@ -260,10 +277,18 @@ class RemoteRepository(
 
     fun forget(hostId: String) {
         if (_active.value?.hostId == hostId) {
+            saveJobs.values.forEach { it.cancel() }
+            saveJobs.clear()
+            draftJobs.values.forEach { it.cancel() }
+            draftJobs.clear()
             disconnect()
             clearActiveOpenKey()
             _active.value = null
             _inbox.value = InboxState()
+            _unread.value = emptySet()
+            _drafts.value = emptyMap()
+            _outbox.value = emptyList()
+            _hostMeta.value = HostMetaCache()
             _timelines.value = emptyMap()
             synchronized(timelineSyncLock) { timelineSync.clear() }
             _pendingSends.value = emptyMap()
@@ -292,17 +317,24 @@ class RemoteRepository(
         stopJob?.cancel()
         stopJob = null
         val c = conn
-        if (c == null) connect() else c.kick()
+        if (c == null) connect() else c.kick(immediateProbe = true)
     }
 
     fun onBackground() {
         foreground = false
+        flushPendingSaves()
         scheduleDisconnect()
         updateKeepAlive()
     }
 
+    /** Default network route changed (Wi-Fi ↔ cellular / VPN): probe Ready links or skip backoff. */
+    fun onNetworkChanged() {
+        if (!foreground && !keptAlive) return
+        conn?.kick(immediateProbe = true)
+    }
+
     fun retry() {
-        conn?.kick() ?: connect()
+        conn?.kick(immediateProbe = true) ?: connect()
     }
 
     /**
@@ -389,6 +421,12 @@ class RemoteRepository(
                     removed.forEach { byKey.remove(it) }
                     inbox.copy(sessions = byKey.values.sortedByDescending { it.updatedAt })
                 }
+                u.removed?.takeIf { it.isNotEmpty() }?.let { removed ->
+                    val hostId = _active.value?.hostId
+                    _timelines.update { it - removed.toSet() }
+                    setUnread(_unread.value - removed.toSet())
+                    removed.forEach { k -> if (hostId != null) scope.launch(Dispatchers.IO) { cache.removeTimeline(hostId, k) } }
+                }
                 persistInbox()
                 // Prune per-session bookkeeping so a long-running phone doesn't grow maps for
                 // every session that ever appeared in a summary.
@@ -422,7 +460,12 @@ class RemoteRepository(
                 handleSyncResult(key, withTimelineSync(key) { it.onUiDismiss(wire) })
             }
             "settings.changed" -> {
-                RemoteJson.decodeFromJsonElement(SettingsChanged.serializer(), e.payload)
+                val chg = RemoteJson.decodeFromJsonElement(SettingsChanged.serializer(), e.payload)
+                val sk = chg.sessionKey
+                when (chg.key) {
+                    "projects" -> scope.launch { refreshInbox() }
+                    "rewound" -> if (sk != null && sk == openKey) scope.launch { reopen(sk, fresh = true) }
+                }
                 _settingsVersion.update { it + 1 }
             }
             "host.notice" -> _notices.tryEmit(e.payload.toString())
@@ -820,6 +863,18 @@ class RemoteRepository(
 
     suspend fun searchFiles(rawKey: String, query: String): List<FileEntry>? = runCatching { api?.searchFiles(sessionKey(rawKey), query) }.getOrNull()
 
+    suspend fun readFile(key: String, path: String): Result<FileReadResult> =
+        runCatching { (api ?: error("offline")).readFile(key, path) }
+
+    suspend fun usageSummary(days: Int = 30): Result<UsageSummaryResult> = runCatching {
+        val res = (api ?: error("offline")).usageSummary(days)
+        if (days == 30) {
+            mutateMeta { it.copy(usage30d = res) }
+            notifier?.refreshWidgets()
+        }
+        res
+    }
+
     /** Rewind before the turn's user message; the message text on success, failure message otherwise. */
     suspend fun rewind(rawKey: String, anchor: String): Result<String> {
         val key = sessionKey(rawKey)
@@ -893,7 +948,9 @@ class RemoteRepository(
             if (notifyGate.shouldNotify(s.sessionKey, previous?.status, s.status, s.updatedAt, s.settledOutcome, s.settledAt, previous?.settledAt, openAndVisible, completionsOn)) n.notifySession(s)
             backstopKeepAliveGate.observe(s.sessionKey, previous?.status, s.status, s.settledOutcome, System.currentTimeMillis())
         }
+        setUnread(unreadNext)
         updateKeepAlive()
+        n?.refreshWidgets()
     }
 
     /**
@@ -929,7 +986,7 @@ class RemoteRepository(
             notifier?.keepAlive(watched)
             keptAlive = true
         } else if (keptAlive) {
-            notifier?.keepAlive(0)
+            notifier?.keepAlive(null)
             keptAlive = false
             if (!foreground) scheduleDisconnect()
         }

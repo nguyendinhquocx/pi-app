@@ -20,6 +20,7 @@ export function ReviewHunkComments({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
+  const { t } = useTranslation()
   const [tick, setTick] = useState(0)
 
   const comments = listReviewComments(cwd, filePath).filter((c) => c.hunkIndex === hunkIndex)

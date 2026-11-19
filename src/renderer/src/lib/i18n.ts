@@ -54,8 +54,11 @@ function normalizeAppLanguage(language: unknown, fallbackLanguage: AppLanguage):
   if (normalizedLanguage.startsWith('zh')) return 'zh'
   if (normalizedLanguage.startsWith('vi')) return 'vi'
   if (normalizedLanguage.startsWith('en')) return 'en'
+  if (normalizedLanguage.startsWith('ru')) return 'ru'
   return fallbackLanguage
 }
+
+const DOCUMENT_LANG: Record<AppLanguage, string> = { zh: 'zh-CN', en: 'en', ru: 'ru' }
 
 function applyDocumentLanguage(language: AppLanguage): void {
   document.documentElement.lang = language === 'zh' ? 'zh-CN' : language

@@ -75,7 +75,10 @@
     "cloneCancelled": "已取消 Clone",
     "cloneFailed": "Clone 失败",
     "cloned": "已 Clone 到新会话",
-    "nothingToClone": "当前没有可 Clone 的内容"
+    "nothingToClone": "当前没有可 Clone 的内容",
+    "forkSelectorFailed": "无法打开 Fork 选择器",
+    "panelSwitched": "已切换到 {{panel}} 面板",
+    "openSettingsFromSidebar": "请从左侧栏打开设置"
   },
   "voice": {
     "start": "开始录音",
@@ -249,5 +252,28 @@
     }
   },
   "thinkingShort": "思考 {{level}}",
-  "thinkingPrefix": "思考"
+  "thinkingPrefix": "思考",
+  "purge": {
+    "shortLabel": "人设",
+    "choosePersona": "选择注入人设与模式",
+    "menuTitle": "单会话人设注入",
+    "openSettings": "配置",
+    "modeLabel": "注入模式",
+    "modes": {
+      "replace": "换身份",
+      "append": "追加",
+      "strict": "只留人设"
+    },
+    "firstTurnNote": "仅当前会话生效，不影响全局；在首条消息前设定可保持整场对话的提示词缓存命中。",
+    "cacheBreakWarn": "提示：会话中途开启、切换或关闭人设会改写系统提示词，将使当前会话的提示词缓存（Prompt Cache）失效重建。",
+    "inactiveDraftHint": "点击为本新对话启用人设注入（默认：{{name}}）",
+    "activeDraftHint": "将在首条消息自动注入：{{name}}（{{mode}}），点击可取消",
+    "inactiveMidHint": "点击为当前会话启用人设注入（默认：{{name}}，将重置提示词缓存）",
+    "activeMidHint": "当前生效：{{name}}（{{mode}}）· 点击关闭或点右侧箭头切换（将重置提示词缓存）",
+    "lockedOnHint": "本会话已注入：{{name}}（{{mode}}）",
+    "lockedOffHint": "当前会话未启用人设注入"
+  },
+  "queueRestored": "已拉回 {{count}} 条排队消息到输入框",
+  "queueNothingToRestore": "没有可拉回的排队消息",
+  "queueRestoreFailed": "拉回队列失败"
 }

@@ -77,6 +77,7 @@ function normalizeLanguage(raw: unknown, fallback: LanguageChoice): LanguageChoi
   if (s.startsWith('zh')) return 'zh'
   if (s.startsWith('vi')) return 'vi'
   if (s.startsWith('en')) return 'en'
+  if (s.startsWith('ru')) return 'ru'
   return fallback
 }
 

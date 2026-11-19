@@ -42,6 +42,9 @@ export function sanitizeCompletionPreview(text: string | undefined, maxGraphemes
 export const COMPLETION_TITLE_MAX = 40
 export const COMPLETION_BODY_MAX = 140
 
+/** Languages the main-process notification copy is written in (mirrors the app language). */
+export type CompletionUiLanguage = 'zh' | 'en' | 'ru'
+
 export type CompletionCopyInput = {
   language: 'zh' | 'en' | 'vi'
   outcome: CompletionOutcome

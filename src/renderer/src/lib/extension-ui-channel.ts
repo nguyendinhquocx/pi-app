@@ -1,9 +1,13 @@
 import { toast } from 'sonner'
+import i18n from '@renderer/lib/i18n'
 import { onExtensionUIRequest, onExtensionUIDismiss } from '@renderer/lib/ipc-client'
 import { useExtensionUIStore, type ExtensionUIPending } from '@renderer/stores/extension-ui-store'
 import { useUIStore } from '@renderer/stores/ui-store'
 import { sessionFilesEqual } from '@renderer/lib/session-file-key'
-import { shouldShowExtensionNotify } from '@renderer/lib/extension-notify-policy'
+import {
+  formatExtensionNotifyMessage,
+  shouldShowExtensionNotify,
+} from '@renderer/lib/extension-notify-policy'
 import { signalDesktopAlert } from '@renderer/lib/desktop-alerts'
 import type { AskQuestionPayload } from '@renderer/features/extension-ui/questionnaire-dialog'
 import type { ImageReviewPayload } from '@renderer/features/extension-ui/image-review-dialog'
@@ -45,10 +49,15 @@ function rawToPending(raw: Record<string, unknown>): ExtensionUIPending | null {
       method: 'image_review',
       payload: {
         image: (raw.image as string) || '',
-        title: (raw.title as string) || '图片审查',
-        question: (raw.question as string) || '这张图片是否可用？',
+        title: (raw.title as string) || i18n.t('extension:imageReview.defaultTitle'),
+        question: (raw.question as string) || i18n.t('extension:imageReview.defaultQuestion'),
         context: raw.context as string | undefined,
-        options: (raw.options as string[]) || ['通过', '需要修改', '重做', '取消'],
+        options: (raw.options as string[]) || [
+          i18n.t('extension:imageReview.options.accept'),
+          i18n.t('extension:imageReview.options.revise'),
+          i18n.t('extension:imageReview.options.redo'),
+          i18n.t('extension:imageReview.options.cancel'),
+        ],
         allowFeedback: raw.allowFeedback !== false,
       },
       sessionFile,
@@ -126,7 +135,7 @@ export function ensureExtensionUIChannel(): void {
 
     if (method === 'notify') {
       const t = (req.notifyType as string) || 'info'
-      const msg = req.message as string
+      const msg = formatExtensionNotifyMessage(String(req.message || ''))
       traceAudioRenderer('extension-ui.notify', { notifyType: t, msg: msg?.slice(0, 120) })
       const show = shouldShowExtensionNotify(msg, t)
       alertTrace('extension notify', { notifyType: t, show, msg: msg?.slice(0, 120) })
@@ -169,12 +178,12 @@ export function ensureExtensionUIChannel(): void {
 
     const body =
       p.method === 'image_review'
-        ? p.payload.title || '图片审查'
+        ? p.payload.title || i18n.t('extension:imageReview.defaultTitle')
         : p.method === 'ask_user_question'
-          ? '扩展问答'
+          ? i18n.t('extension:dialogBody.askUserQuestion')
           : p.method === 'confirm' || p.method === 'select' || p.method === 'input'
-            ? p.title || '需要你的操作'
-            : '需要你的操作'
+            ? p.title || i18n.t('extension:dialogBody.needsAction')
+            : i18n.t('extension:dialogBody.needsAction')
     // Desktop alert only when running (idle dialog doesn't need system notification)
     if (useUIStore.getState().runState.status === 'running') {
       void signalDesktopAlert('extension_ui', {

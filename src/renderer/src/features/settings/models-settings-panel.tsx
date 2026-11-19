@@ -13,6 +13,8 @@ import {
   allocateProviderKey,
   clonePresetConfig,
   guessPresetForProvider,
+  presetLabel,
+  presetTagline,
   type ProviderPreset,
 } from '@renderer/features/settings/model-provider-presets'
 import { ManualModelAddDialog } from '@renderer/features/settings/manual-model-add-dialog'
@@ -148,11 +150,11 @@ export function ModelsSettingsPanel() {
   const addFromPreset = (preset: ProviderPreset) => {
     const key = allocateProviderKey(draft?.providers || {}, preset.defaultKey)
     patchDraft((c) => {
-      c.providers[key] = clonePresetConfig(preset)
+      c.providers[key] = clonePresetConfig(preset, t)
     })
     setExpanded((e) => ({ ...e, [key]: true }))
     setAddMenuOpen(false)
-    toast.success(t('models.addedProviderToast', { label: preset.label, key }))
+    toast.success(t('models.addedProviderToast', { label: presetLabel(preset, t), key }))
   }
 
   const removeProvider = (id: string) => {
@@ -170,7 +172,7 @@ export function ModelsSettingsPanel() {
   const applyPresetToExisting = (providerId: string, preset: ProviderPreset) => {
     patchDraft((c) => {
       const prev = c.providers[providerId]
-      const templ = clonePresetConfig(preset)
+      const templ = clonePresetConfig(preset, t)
       const models = prev.models?.length ? prev.models : templ.models?.length ? templ.models : []
       c.providers[providerId] = {
         ...templ,
@@ -179,7 +181,7 @@ export function ModelsSettingsPanel() {
         name: templ.name || prev.name,
       }
     })
-    toast.success(t('models.applyTemplateToast', { label: preset.label }))
+    toast.success(t('models.applyTemplateToast', { label: presetLabel(preset, t) }))
   }
 
   const fetchRemoteCatalog = async (providerId: string) => {
@@ -337,10 +339,10 @@ export function ModelsSettingsPanel() {
                         className="settings-preset-menu-item flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left"
                         onClick={() => addFromPreset(preset)}
                       >
-                        <ProviderAvatar preset={preset} label={preset.label} />
+                        <ProviderAvatar preset={preset} label={presetLabel(preset, t)} />
                         <div className="min-w-0 flex-1">
-                          <div className="text-base font-medium">{preset.label}</div>
-                          <div className="text-xs text-muted-foreground">{preset.tagline}</div>
+                          <div className="text-base font-medium">{presetLabel(preset, t)}</div>
+                          <div className="text-xs text-muted-foreground">{presetTagline(preset, t)}</div>
                           <div className="mt-0.5 font-mono text-2xs text-muted-foreground/50">
                             {t('models.keyName')} {preset.defaultKey}
                             {preset.starterModels?.length
@@ -389,7 +391,7 @@ export function ModelsSettingsPanel() {
                   onApplyPreset={(pr) =>
                     setConfirmState({
                       title: t('models.applyTemplateTitle'),
-                      message: t('models.applyTemplateConfirm', { label: pr.label }),
+                      message: t('models.applyTemplateConfirm', { label: presetLabel(pr, t) }),
                       onConfirm: () => {
                         setConfirmState(null)
                         applyPresetToExisting(pid, pr)
@@ -431,7 +433,7 @@ export function ModelsSettingsPanel() {
           open
           providerLabel={
             draft.providers[manualAddProviderId].name ||
-            guessPresetForProvider(manualAddProviderId, draft.providers[manualAddProviderId])?.label ||
+            presetLabel(guessPresetForProvider(manualAddProviderId, draft.providers[manualAddProviderId]), t) ||
             manualAddProviderId
           }
           existingIds={new Set((draft.providers[manualAddProviderId].models || []).map((m) => m.id))}
