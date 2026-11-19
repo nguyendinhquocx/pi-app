@@ -166,6 +166,27 @@ describe('HostConnection (spec T3)', () => {
     ).rejects.toBeInstanceOf(DisconnectedError)
   })
 
+  it('allows a cold turn.send worker-init window without extending ordinary RPC deadlines', async () => {
+    const { conn } = await onlineConn({
+      'session.stats': () => new Promise<never>(() => {}),
+      'turn.send': () => new Promise<never>(() => {}),
+    })
+    const ordinary = conn.request('session.stats', { sessionKey: 'proj/s1.jsonl' }).then(() => null, (error: Error) => error)
+    const send = conn.request('turn.send', {
+      sessionKey: 'proj/s1.jsonl', text: 'hi', mode: 'prompt', clientMessageId: 'cold-start-send-1',
+    }).then(() => null, (error: Error) => error)
+
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(await ordinary).toMatchObject({ message: 'session.stats timed out' })
+    expect(await Promise.race([send, Promise.resolve('still-pending')])).toBe('still-pending')
+
+    await vi.advanceTimersByTimeAsync(69_999)
+    expect(await Promise.race([send, Promise.resolve('still-pending')])).toBe('still-pending')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await send).toMatchObject({ message: 'turn.send timed out' })
+    conn.stop()
+  })
+
   it('pending request fails on socket drop; reconnect resumes watched sessions from the cursor', async () => {
     const opens: unknown[] = []
     const { conn, sim } = await onlineConn({

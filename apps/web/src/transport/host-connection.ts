@@ -73,6 +73,8 @@ export type HostConnectionOptions = {
   backoff?: BackoffOptions
   pingIntervalMs?: number
   requestTimeoutMs?: number
+  /** turn.send may cold-start a host worker; give it room beyond the host's 60s init cap. */
+  turnSendTimeoutMs?: number
   /** Re-open watched sessions after reconnect. Default true. */
   resumeSessions?: boolean
   events?: HostConnectionEvents
@@ -83,6 +85,8 @@ type WatchedSession = { sessionKey: string; cursor?: { epoch: string; seq: numbe
 
 const PING_INTERVAL = 30_000
 const REQUEST_TIMEOUT = 20_000
+// Cold worker initialization is bounded at 60s on LiX; leave 30s for transport/dispatch overhead.
+const TURN_SEND_TIMEOUT = 90_000
 
 export class HostConnection {
   readonly hostId: string
@@ -95,6 +99,7 @@ export class HostConnection {
   private readonly opts: HostConnectionOptions & {
     pingIntervalMs: number
     requestTimeoutMs: number
+    turnSendTimeoutMs: number
     resumeSessions: boolean
   }
   private readonly backoff: ReconnectBackoff
@@ -115,6 +120,7 @@ export class HostConnection {
     this.opts = {
       pingIntervalMs: PING_INTERVAL,
       requestTimeoutMs: REQUEST_TIMEOUT,
+      turnSendTimeoutMs: TURN_SEND_TIMEOUT,
       resumeSessions: true,
       ...options,
     }
@@ -183,11 +189,12 @@ export class HostConnection {
     const schema = REMOTE_METHODS[method]
     const id = `w${++this.reqId}`
     const frame = makeReq(id, method, schema.params.parse(params))
+    const timeoutMs = method === 'turn.send' ? this.opts.turnSendTimeoutMs : this.opts.requestTimeoutMs
     const promise = new Promise<Frame>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         reject(new Error(`${method} timed out`))
-      }, this.opts.requestTimeoutMs)
+      }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, method })
     })
     this.sendEncrypted(frame)
