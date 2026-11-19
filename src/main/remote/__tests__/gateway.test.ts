@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resolve } from 'node:path'
 import { base64UrlDecode, decodePairLink, type OpenResult, type PairOffer, type TurnPatch } from '@shared/remote'
 import { HandshakeError, generateKeyPair } from '@shared/remote/crypto'
 import { RemoteGateway, hostAddresses, lanAddresses } from '../gateway'
+import { AuthStore } from '../auth-store'
 import { remoteTap } from '../tap'
 import { FakeHost } from '../testing/fake-host'
 import { NodeRemoteClient, RemoteRpcError } from '../testing/node-client'
@@ -656,6 +658,48 @@ describe('upgrade origin and host policy', () => {
     expect(originAllowed('http://x.tailff3893.ts.net:10000', serve)).toBe(false) // Serve is TLS-only
     expect(originAllowed('https://evil.example', serve)).toBe(false)
     expect(originAllowed('https://evil-x.tailff3893.ts.net', serve)).toBe(false)
+  })
+
+  it('GET asset CORS follows the configured Serve Origin allowlist', async () => {
+    await gw.stop()
+    const serve = 'x.tailff3893.ts.net'
+    host.store.set('remote', {
+      enabled: true,
+      port: 47900,
+      hostId: 'h_test',
+      devices: [],
+      projects: ['/work/pi-app'],
+      serve: { hostname: serve },
+    })
+    host.assetPath = () => resolve('node_modules/mermaid/dist/mermaid.min.js')
+    gw = new RemoteGateway(host)
+    gw.endpointHosts = () => [{ host: '127.0.0.1', kind: 'lan' }]
+    await gw.start({ port: 0, host: '127.0.0.1' })
+    host.sink = gw.sink
+
+    const origin = `https://${serve}:10000`
+    const allowed = await fetch(`http://127.0.0.1:${gw.boundPort}/assets/mermaid.min.js`, { headers: { origin } })
+    expect(allowed.status).toBe(200)
+    expect(allowed.headers.get('access-control-allow-origin')).toBe(origin)
+
+    const denied = await fetch(`http://127.0.0.1:${gw.boundPort}/assets/mermaid.min.js`, { headers: { origin: 'https://evil.example' } })
+    expect(denied.status).toBe(200)
+    expect(denied.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('AuthStore ignores fractional Serve ports and never logs unknown raw fields', () => {
+    host.store.set('remote', {
+      enabled: true,
+      port: 47900,
+      hostId: 'h_test',
+      devices: [],
+      projects: [],
+      serve: { hostname: 'x.tailff3893.ts.net', tcpPort: 8443.5, token: 'do-not-log-this' },
+    })
+    const log = vi.spyOn(host, 'log')
+    const auth = new AuthStore(host)
+    expect(auth.config.serve).toEqual({ hostname: 'x.tailff3893.ts.net' })
+    expect(JSON.stringify(log.mock.calls)).not.toContain('do-not-log-this')
   })
 
   it('upgrades with a blocked Origin are refused with 403 before the handshake', async () => {

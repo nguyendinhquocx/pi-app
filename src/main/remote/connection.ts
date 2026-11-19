@@ -114,7 +114,6 @@ export class RemoteConnection implements RpcCaller {
 
   private async handshake(text: string): Promise<void> {
     const { auth, hub } = this.deps
-    this.handshakePath = this.upgradePath
     let msg: unknown
     try {
       msg = JSON.parse(text)

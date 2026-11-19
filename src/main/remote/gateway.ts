@@ -322,7 +322,7 @@ export class RemoteGateway {
       const asset = await this.assets.load(m[1])
       if (asset) {
         const origin = req.headers.origin
-        const allowOrigin = typeof origin === 'string' && (ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGIN_RE.test(origin)) ? origin : undefined
+        const allowOrigin = typeof origin === 'string' && originAllowed(origin, this.auth.config.serve?.hostname) ? origin : undefined
         res.writeHead(200, {
           'content-type': 'application/javascript; charset=utf-8',
           'content-length': String(asset.body.length),

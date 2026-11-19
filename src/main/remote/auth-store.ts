@@ -71,13 +71,14 @@ export class AuthStore {
       ...(raw?.serve && typeof raw.serve === 'object' && typeof (raw.serve as { hostname?: unknown }).hostname === 'string'
         ? (() => {
             const serveRaw = raw.serve as { hostname: string; tcpPort?: unknown }
-            const tcpPort = typeof serveRaw.tcpPort === 'number' && serveRaw.tcpPort > 0 && serveRaw.tcpPort < 65536 ? serveRaw.tcpPort : undefined
+            const tcpPort = typeof serveRaw.tcpPort === 'number' && Number.isInteger(serveRaw.tcpPort) && serveRaw.tcpPort > 0 && serveRaw.tcpPort < 65536 ? serveRaw.tcpPort : undefined
             return { serve: { hostname: serveRaw.hostname, ...(tcpPort ? { tcpPort } : {}) } }
           })()
         : {}),
     }
     if (!raw?.hostId) this.save()
-    this.port.log('info', `[remote] auth-store boot: raw.serve=${JSON.stringify(raw?.serve ?? null)} parsed=${JSON.stringify(this.cfg.serve ?? null)}`)
+    // Log only fields accepted by the typed config; raw persisted objects may contain unknown secrets.
+    this.port.log('info', `[remote] auth-store boot: serve=${JSON.stringify(this.cfg.serve ?? null)}`)
   }
 
   private save(): void {
