@@ -1,8 +1,8 @@
 # T1 Status — Shared session owner protocol (SPEC-2026-11-16-li-web)
 
-Updated: 2026-11-16. Design doc: `.agent-workbench/lix-web/t1-design.md`.
+Updated: 2026-11-19 after independent TUI↔Web architecture review. Design doc: `.agent-workbench/lix-web/t1-design.md`.
 
-## DONE (code + tests trên pi-mono-li/packages/coding-agent)
+## T1 core primitives DONE; end-to-end TUI↔Web acceptance NOT YET VERIFIED
 
 - `src/core/session-open-lease.ts`:
   - LeaseRecord owner extensions (owner_epoch/owner_kind/writer_state/heartbeat_utc/owner_protocol_version/handoff_token/handoff_epoch) — optional, legacy records parse tiếp.
@@ -36,6 +36,7 @@ Harness hai-process chứng minh: single-writer registry, token handoff, conflic
 2. ~~Interactive-mode (TUI) UI-pending hook~~ — DONE 2026-11-16: `trackedDialog` wrap select/confirm/input/editor trong `createExtensionUIContext`; dialog chờ → incrementUiPending, settle → decrement (handoff refused khi dialog mở).
 3. Full rpc-entry hai-process với provider thật (long tool >90s, real turn) — T5 UAT gate.
 4. Test case double-begin handoff — registry đã chặn (`handoff already pending`); thêm case khi làm envelope tests.
+5. **BLOCKED (independent review 2026-11-19): full TUI↔Web handoff contract chưa PASS.** `claimSessionHandoffFromEnv` chỉ wired ở `src/rpc-entry.ts` (`--mode rpc`), không có interactive TUI begin/claim command; TUI mặc định non-strict; cached shared write-guard trả sớm không revalidate owner sau claim; beginHandoff không freeze prompt admission; raw token nằm trong lease record và claim không so sessionId với record; TUI không attach cùng live event stream với LiX/Web. 5 integration tests chứng minh lease/token primitives, KHÔNG chứng minh các acceptance này. T5 giữ PARTIAL cho tới khi core/host/UI fixes + race/session binding tests + UAT cả hai chiều.
 
 Lưu ý xác minh 2026-11-16: `interactive-mode-suspend` 2 failures là PRE-EXISTING (fail trên HEAD sạch qua stash check, không liên quan T1 changes).
 
