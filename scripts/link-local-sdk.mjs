@@ -11,8 +11,8 @@
 // Idempotent: re-run any time pi-mono-li moves or a package list changes.
 // PI_MONO_LI_ROOT overrides the source tree (used on non-laptop hosts).
 
-import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -30,11 +30,18 @@ const LINKS = [
   ['packages/coding-agent', 'pi-coding-agent'],
   ['packages/ai', 'pi-ai'],
   ['packages/agent', 'pi-agent-core'],
+  ['packages/schema', 'pi-schema'],
   ['packages/tui', 'pi-tui'],
   ['packages/mcp', 'pi-mcp'],
   ['packages/codemode', 'pi-codemode'],
   ['packages/telemetry', 'pi-telemetry'],
 ]
+
+// Packaging mode: electron-builder cannot resolve versions through symlinks into the
+// pnpm-workspace tree, so it silently drops fork packages and their deps from app.asar
+// (host-2 0.7.14 r2 incident, 2026-11-20). In copy mode every fork package is
+// materialized as a REAL directory (node_modules excluded — deps come from the flat
+// app tree). Dev mode (default) keeps symlinks so laptop runtime always sees the fork.
 
 if (!existsSync(monoLiRoot)) {
   console.error(`[link-local-sdk] pi-mono-li root not found: ${monoLiRoot} (set PI_MONO_LI_ROOT)`)
@@ -43,14 +50,31 @@ if (!existsSync(monoLiRoot)) {
 
 mkdirSync(scopeDir, { recursive: true })
 
+const copyMode = process.env.PI_MONO_LI_LINK_MODE === 'copy'
 let linked = 0
 let kept = 0
+let copied = 0
 for (const [pkgDir, pkgName] of LINKS) {
   const target = join(monoLiRoot, pkgDir)
   const linkPath = join(scopeDir, pkgName)
   if (!existsSync(join(target, 'package.json'))) {
     console.error(`[link-local-sdk] missing package: ${target}`)
     process.exit(1)
+  }
+  if (copyMode) {
+    rmSync(linkPath, { recursive: true, force: true })
+    cpSync(target, linkPath, {
+      recursive: true,
+      dereference: false,
+      filter: (src) => {
+        const rel = relative(target, src)
+        if (!rel) return true
+        const top = rel.split(sep)[0]
+        return top !== 'node_modules' && top !== '.git'
+      },
+    })
+    copied++
+    continue
   }
   if (existsSync(linkPath)) {
     const st = statSync(linkPath)
@@ -67,5 +91,5 @@ for (const [pkgDir, pkgName] of LINKS) {
   linked++
 }
 
-console.log(`[link-local-sdk] root=${monoLiRoot}`)
-console.log(`[link-local-sdk] linked=${linked} kept=${kept} (${LINKS.length} total)`)
+console.log(`[link-local-sdk] root=${monoLiRoot} mode=${copyMode ? 'copy' : 'symlink'}`)
+console.log(`[link-local-sdk] linked=${linked} kept=${kept} copied=${copied} (${LINKS.length} total)`)
