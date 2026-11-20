@@ -381,6 +381,36 @@
   .message-actions-slot--reserved .message-actions-slot-inner {
     position: static;
   }
+  /* Mid-turn prose: zero flow-height floating pill docked bottom-right so left-aligned tool rows below stay unobstructed. */
+  .message-actions-slot--floating {
+    position: absolute;
+    right: 0;
+    left: auto;
+    bottom: -14px;
+    height: auto;
+    z-index: 12;
+  }
+  .message-actions-slot--floating .message-actions-slot-inner {
+    height: 26px;
+    padding: 0 5px;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--bg-1, var(--background)) 94%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(6px);
+  }
+  .dark .message-actions-slot--floating .message-actions-slot-inner {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32);
+  }
+  /* Scroll-hover suppression: keep the timeline completely quiet while scrolling. */
+  [data-scrolling='true'] .message-actions-slot {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition-duration: 70ms !important;
+  }
+  [data-scrolling='true'] .message-actions-slot-inner > * {
+    pointer-events: none !important;
+  }
   @media (prefers-reduced-motion: reduce) {
     .message-actions-slot,
     .message-actions-slot-inner {
@@ -1730,7 +1760,9 @@
     contain: layout style;
   }
   /* 向下滚到底：最后一条停在输入框上方（留白 + scroll-padding）；向上滚：内容可穿过悬浮层由渐变+模糊处理 */
+  /* 禁用 Chromium 原生 overflow-anchor，避免与元素级视口锚定叠加造成向上加载历史时双重补偿跳页 */
   .timeline-scroll-with-dock .overlay-scroll-pane {
+    overflow-anchor: none;
     padding-bottom: calc(var(--composer-dock-h, 11rem) + 1rem);
     scroll-padding-bottom: calc(var(--composer-dock-h, 11rem) + 1rem);
   }

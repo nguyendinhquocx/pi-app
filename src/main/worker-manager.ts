@@ -482,6 +482,125 @@ export class WorkerManager {
     return out
   }
 
+  /**
+   * Query background terminal tasks from live workers only (never cold-starts a worker).
+   */
+  async listBackgroundTasks(
+    sessionFile?: string,
+  ): Promise<{
+    liveSessionFiles: string[]
+    tasks: import('@shared/background-tasks').BackgroundTaskSnapshot[]
+    activeAdaptersBySession: Record<string, { adapterId: string; icon?: string; title?: string } | null>
+  }> {
+    const slots: WorkerSlot[] = []
+    if (sessionFile) {
+      const sk = normalizeSessionKey(sessionFile)
+      const hit = this.pool.get(sk)
+      if (hit && !hit.stopping) slots.push(hit)
+    } else {
+      for (const slot of this.pool.values()) {
+        if (!slot.stopping && slot.sessionFile) slots.push(slot)
+      }
+    }
+    const liveSessionFiles: string[] = []
+    const tasks: import('@shared/background-tasks').BackgroundTaskSnapshot[] = []
+    const activeAdaptersBySession: Record<
+      string,
+      { adapterId: string; icon?: string; title?: string } | null
+    > = {}
+    await Promise.all(
+      slots.map(async (slot) => {
+        if (slot.sessionFile) liveSessionFiles.push(slot.sessionFile)
+        try {
+          const res = await this.requestOnSlot(slot, 'listBackgroundTasks', {
+            sessionFile: slot.sessionFile,
+          })
+          if (slot.sessionFile) {
+            const adapterInfo =
+              res?.activeAdapter && typeof res.activeAdapter === 'object'
+                ? (res.activeAdapter as { adapterId: string; icon?: string; title?: string })
+                : null
+            activeAdaptersBySession[slot.sessionFile] = adapterInfo
+          }
+          const rows = Array.isArray(res?.tasks)
+            ? (res.tasks as import('@shared/background-tasks').BackgroundTaskSnapshot[])
+            : []
+          for (const row of rows) {
+            tasks.push(slot.sessionFile && !row.sessionFile ? { ...row, sessionFile: slot.sessionFile } : row)
+          }
+        } catch {
+          /* ignore busy or shutting-down worker */
+        }
+      }),
+    )
+    return { liveSessionFiles, tasks, activeAdaptersBySession }
+  }
+
+  async inspectBackgroundTask(
+    sessionFile: string | undefined,
+    taskId: string,
+    outputPath?: string,
+  ): Promise<{
+    ok: boolean
+    task?: import('@shared/background-tasks').BackgroundTaskSnapshot | null
+    tail?: string
+    truncated?: boolean
+    sizeBytes?: number
+    error?: string
+  } | null> {
+    let slot: WorkerSlot | undefined
+    if (sessionFile) {
+      const candidate = this.pool.get(normalizeSessionKey(sessionFile))
+      if (candidate && !candidate.stopping) slot = candidate
+    }
+    if (!slot) return null
+    try {
+      const res = await this.requestOnSlot(slot, 'inspectBackgroundTask', {
+        sessionFile: slot.sessionFile,
+        taskId,
+        ...(outputPath ? { outputPath } : {}),
+      })
+      return {
+        ok: res?.ok !== false,
+        task: (res?.task as import('@shared/background-tasks').BackgroundTaskSnapshot | null) ?? null,
+        tail: typeof res?.tail === 'string' ? res.tail : '',
+        truncated: res?.truncated === true,
+        sizeBytes: typeof res?.sizeBytes === 'number' ? res.sizeBytes : 0,
+        ...(typeof res?.error === 'string' ? { error: res.error } : {}),
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  async killBackgroundTask(
+    sessionFile: string,
+    taskId: string,
+  ): Promise<{
+    ok: boolean
+    task?: import('@shared/background-tasks').BackgroundTaskSnapshot | null
+    error?: string
+  }> {
+    const sk = normalizeSessionKey(sessionFile)
+    const slot = this.pool.get(sk)
+    if (!slot || slot.stopping) {
+      return { ok: false, error: 'Session worker is not active' }
+    }
+    try {
+      const res = await this.requestOnSlot(slot, 'killBackgroundTask', {
+        sessionFile: slot.sessionFile,
+        taskId,
+      })
+      return {
+        ok: res?.ok !== false,
+        task: (res?.task as import('@shared/background-tasks').BackgroundTaskSnapshot | null) ?? null,
+        ...(typeof res?.error === 'string' ? { error: res.error } : {}),
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   /** Prompt text of the enabled session capabilities (+ per-session Agent Purge), applied from the next agent turn on. */
   async setCapabilities(
     sections: Record<string, string>,
@@ -957,6 +1076,24 @@ export class WorkerManager {
   async renameSessionFile(sessionFile: string, title: string): Promise<{ ok: boolean; title?: string; error?: string }> {
     const r = await this.request('sessionRenameFile', { sessionFile, title })
     return { ok: !!r.ok, title: r.title as string | undefined, error: r.error as string | undefined }
+  }
+  async editSessionMessageOnLiveWorker(
+    sessionFile: string,
+    entryId: string,
+    text: string,
+  ): Promise<{ ok: boolean; role?: 'user' | 'assistant'; error?: string } | null> {
+    const sk = normalizeSessionKey(sessionFile)
+    const slot = this.pool.get(sk)
+    if (!slot || slot.stopping) return null
+    if (slot.agentTurnActive) return { ok: false, error: 'SESSION_BUSY' }
+    if (slot.initPromise) await slot.initPromise.catch(() => {})
+    if (slot.stopping || this.pool.get(sk) !== slot) return null
+    const r = await this.requestOnSlot(slot, 'sessionEditMessage', { sessionFile, entryId, text })
+    return {
+      ok: !!r.ok,
+      role: r.role === 'user' || r.role === 'assistant' ? r.role : undefined,
+      error: typeof r.error === 'string' ? r.error : undefined,
+    }
   }
   async deleteSessionFile(sessionFile: string): Promise<{ ok: boolean; error?: string }> {
     return this.enqueueLifecycle(() => this.deleteSessionFileUnlocked(sessionFile))

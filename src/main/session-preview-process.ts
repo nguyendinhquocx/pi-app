@@ -1,4 +1,5 @@
 import { app, utilityProcess, type UtilityProcess } from 'electron'
+import { join } from 'node:path'
 import { resolveUtilityEntry } from './utility-entry-path'
 import { resolveActiveSdk } from './sdk-loader'
 import { isWslRuntimeActive } from './wsl/runtime-config'
@@ -136,6 +137,7 @@ export class SessionPreviewProcess {
       | 'pi.settings.get'
       | 'pi.settings.set'
       | 'extensions.probe'
+      | 'extensions.install'
       | 'model.list'
       | 'context.preview'
       | 'warm'
@@ -218,15 +220,25 @@ export class SessionPreviewProcess {
     return this.request('session.getMessages', { ...payload, cwd: payload.cwd })
   }
 
+  private usageCacheDir(): string | undefined {
+    try {
+      return join(app.getPath('userData'), 'usage-cache')
+    } catch {
+      return undefined
+    }
+  }
+
   /** Usage across every session under `agentDir` (routes to WSL preview when WSL runtime is active). */
   usageSummary(payload: { agentDir: string; from: number; to: number; offsetMin: number }): Promise<UsageSummary> {
-    return this.request('usage.summary', payload)
+    const cacheDir = isWslRuntimeActive() ? undefined : this.usageCacheDir()
+    return this.request('usage.summary', { ...payload, ...(cacheDir ? { cacheDir } : {}) })
   }
 
   usageLogs(
     payload: Omit<UsageLogQuery, 'days'> & { agentDir: string; from: number; to: number },
   ): Promise<UsageLogPage> {
-    return this.request('usage.logs', payload)
+    const cacheDir = isWslRuntimeActive() ? undefined : this.usageCacheDir()
+    return this.request('usage.logs', { ...payload, ...(cacheDir ? { cacheDir } : {}) })
   }
 
   usageRequestDetail(payload: { sessionFile: string; entryId: string }): Promise<UsageRequestDetail> {
@@ -256,6 +268,15 @@ export class SessionPreviewProcess {
     homeDir: string
   }): Promise<ExtensionProbeResult[]> {
     return this.request('extensions.probe', payload)
+  }
+
+  installExtensionPackage(payload: {
+    cwd: string
+    agentDir: string
+    source: string
+    local?: boolean
+  }): Promise<{ ok: boolean }> {
+    return this.request('extensions.install', payload)
   }
 
   warm(): Promise<void> {

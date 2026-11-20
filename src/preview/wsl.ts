@@ -19,7 +19,9 @@ import type { WorkerIncomingMessage } from '../worker/worker-port-types'
 import { listAvailableModelsWithSdk, listCatalogModelsWithSdk, type ModelEntry } from '../main/active-sdk-models-core'
 import { buildSessionContextPreview } from '@shared/session-context-preview'
 import type { PiSessionMessage } from '@shared/worker-message'
-import { queryUsageLogs, refreshUsage, summarizeUsage } from '../main/usage-scan'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { queryUsageLogs, refreshUsageAsync, summarizeUsage } from '../main/usage-scan'
 import { readUsageRequestDetailFromFile } from '../main/usage-request-detail'
 import type { UsageLogSortField, UsageStopStatus } from '@shared/usage-summary'
 
@@ -113,6 +115,7 @@ async function handleRequest(message: WslPreviewRequest): Promise<void> {
         id: m.id,
         name: m.name,
         provider: m.provider,
+        ...(typeof (m as { api?: unknown }).api === 'string' ? { api: String((m as { api?: unknown }).api) } : {}),
         contextWindow: m.contextWindow,
         maxOutput: m.maxOutput,
         maxTokens: m.maxTokens,
@@ -136,6 +139,21 @@ async function handleRequest(message: WslPreviewRequest): Promise<void> {
     } else if (message.type === 'pi.settings.get') {
       const sdk = await import(message.sdkPath)
       result = piSettingsSnapshot(sdk.SettingsManager.create(String(message.cwd || '/'), sdk.getAgentDir()))
+    } else if (message.type === 'extensions.install') {
+      const m = message as unknown as Record<string, unknown>
+      const sdk = await import(message.sdkPath)
+      const cwd = String(m.cwd || '/')
+      const agentDir = String(m.agentDir || sdk.getAgentDir())
+      const source = String(m.source || '').trim()
+      const local = m.local === true
+      const settingsManager = sdk.SettingsManager.create(cwd, agentDir, { projectTrusted: local })
+      const pkgManager = new sdk.DefaultPackageManager({ cwd, agentDir, settingsManager })
+      await pkgManager.installAndPersist(source, { local })
+      await settingsManager.flush()
+      const targetScope = local ? 'project' : 'global'
+      const errors = settingsManager.drainErrors().filter((entry: { scope: string }) => entry.scope === targetScope)
+      if (errors.length > 0) throw errors[0].error
+      result = { ok: true }
     } else if (message.type === 'pi.settings.set') {
       const sdk = await import(message.sdkPath)
       const manager = sdk.SettingsManager.create(
@@ -147,11 +165,15 @@ async function handleRequest(message: WslPreviewRequest): Promise<void> {
       result = null
     } else if (message.type === 'usage.summary') {
       const m = message as unknown as Record<string, unknown>
-      refreshUsage(String(m.agentDir || ''))
-      result = summarizeUsage(Number(m.from), Number(m.to), Number(m.offsetMin) || 0)
+      const from = Number(m.from) || 0
+      const cacheDir = join(homedir(), '.cache', 'pi-desktop', 'usage-cache')
+      await refreshUsageAsync(String(m.agentDir || ''), { from, cacheDir })
+      result = summarizeUsage(from, Number(m.to), Number(m.offsetMin) || 0)
     } else if (message.type === 'usage.logs') {
       const m = message as unknown as Record<string, unknown>
-      refreshUsage(String(m.agentDir || ''))
+      const from = Number(m.from) || 0
+      const cacheDir = join(homedir(), '.cache', 'pi-desktop', 'usage-cache')
+      await refreshUsageAsync(String(m.agentDir || ''), { from, cacheDir })
       result = queryUsageLogs({
         from: Number(m.from) || 0,
         to: Number(m.to) || Date.now(),

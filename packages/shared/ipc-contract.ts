@@ -13,6 +13,7 @@ import type {
 } from './usage-summary'
 import type { CustomTheme, ThemeWindowMaterial } from './custom-theme'
 import type { CssSnippetItem, CssSnippetValues, SavedThemePack } from './theme-pack'
+import type { UpstreamCatalogSnapshot } from './models-dev-catalog'
 
 // ── Workspace ──
 export interface WorkspaceOpenRequest { path?: string; awaitWorker?: boolean }
@@ -123,6 +124,7 @@ export interface ModelInfo {
   id: string
   name: string
   provider: string
+  api?: string
   contextWindow: number
   maxOutput: number
   available: boolean
@@ -344,6 +346,7 @@ export interface IpcMethodMap {
   'pi.models.get': { request: PiModelsGetRequest; response: PiModelsGetResponse }
   'pi.models.set': { request: PiModelsSetRequest; response: PiModelsSetResponse }
   'pi.models.fetch': { request: PiModelsFetchRequest; response: PiModelsFetchResponse }
+  'pi.models.catalog': { request: { force?: boolean }; response: UpstreamCatalogSnapshot }
   'thinkingLevel.set': { request: ThinkingLevelSetRequest; response: ThinkingLevelSetResponse }
   'commands.list': { request: CommandsListRequest; response: CommandsListResponse }
   'review.getDiff': { request: ReviewGetDiffRequest; response: ReviewGetDiffResponse }
@@ -351,6 +354,10 @@ export interface IpcMethodMap {
   'review.unstageHunks': { request: ReviewStageHunksRequest; response: ReviewStageHunksResponse }
   'extensions.list': { request: ExtensionsListRequest; response: ExtensionsListResponse }
   'extensions.setEnabled': { request: ExtensionsSetEnabledRequest; response: ExtensionsSetEnabledResponse }
+  'extensions.install': {
+    request: { adapterId: string; scope?: 'global' | 'project'; workspaceId?: string }
+    response: { ok: boolean; source?: string; error?: string }
+  }
   'registry.refresh': { request: RegistryRefreshRequest; response: RegistryRefreshResponse }
   'settings.get': { request: SettingsGetRequest; response: SettingsGetResponse }
   'settings.set': { request: SettingsSetRequest; response: SettingsSetResponse }

@@ -29,6 +29,7 @@ export type SessionEventDeps = {
   getSessionModelKey: () => string | undefined
   getUiBridge: () => DesktopUIBridge | null
   captureAdapterTool?: (toolName: string, payload: unknown) => void
+  captureAdapterCustomMessage?: (msg: unknown) => void
   isAgentTurnActive: () => boolean
   setAgentTurnActive: (v: boolean) => void
   setPromptPreflightActive: (value: boolean) => void
@@ -188,6 +189,9 @@ export function handleSessionEvent(event: AgentSessionEvent, deps: SessionEventD
     }
     case 'message_start': {
       const msg = event.message as PiSessionMessage
+      if ((msg as { role?: string })?.role === 'custom') {
+        deps.captureAdapterCustomMessage?.(msg)
+      }
       if (msg?.role === 'assistant') {
         assistantTextSnapshot = ''
         assistantThinkingSnapshot = ''
@@ -246,6 +250,9 @@ export function handleSessionEvent(event: AgentSessionEvent, deps: SessionEventD
     }
     case 'message_end': {
       const msg = event.message as PiSessionMessage
+      if ((msg as { role?: string })?.role === 'custom') {
+        deps.captureAdapterCustomMessage?.(msg)
+      }
       if (msg?.role === 'assistant') {
         pendingTerminalError = terminalErrorFromAssistant(msg)
         lastAssistantPreview = extractTextFromPiMessage(msg)
@@ -253,6 +260,10 @@ export function handleSessionEvent(event: AgentSessionEvent, deps: SessionEventD
         lastUserPreview = normalizeUserMessageDisplayText(extractTextFromPiMessage(msg))
       }
       const text = msg?.role === 'assistant' ? extractTextFromPiMessage(msg) : undefined
+      const toolResultCallId =
+        msg?.role === 'toolResult' ? String((msg as { toolCallId?: unknown }).toolCallId || '') : ''
+      const toolResultName =
+        msg?.role === 'toolResult' ? String((msg as { toolName?: unknown }).toolName || '') : ''
       queueMicrotask(() => {
         const entryId = session?.sessionManager?.getLeafId?.() ?? undefined
         if (msg?.role === 'assistant') {
@@ -270,6 +281,15 @@ export function handleSessionEvent(event: AgentSessionEvent, deps: SessionEventD
             type: 'message',
             role: 'user',
             phase: 'end',
+            sessionEntryId: entryId,
+          } as AppEvent)
+        } else if (msg?.role === 'toolResult' && toolResultCallId && entryId) {
+          deps.emit({
+            ...base,
+            type: 'tool',
+            toolCallId: toolResultCallId,
+            toolName: toolResultName || 'tool',
+            phase: 'entry',
             sessionEntryId: entryId,
           } as AppEvent)
         }
@@ -294,7 +314,7 @@ export function handleSessionEvent(event: AgentSessionEvent, deps: SessionEventD
           for (const [field, path] of Object.entries(interact.fields || {})) {
             extracted[field] = extractJsonPath(event.args, path)
           }
-          uiBridge.setInteractArgs(interact.schema, extracted)
+          uiBridge.setInteractArgs(interact.schema, extracted, interact.defaults)
         }
       }
       deps.emit({

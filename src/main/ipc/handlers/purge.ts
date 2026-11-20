@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { AGENT_PURGE_MODES } from '@shared/agent-purge'
 import { registerHandler, registerHandlerWithSchema } from '../registry'
+import { purgeStrategyPatchSchema } from '../schemas'
 import {
   getActivePurgeForSession,
   getAgentPurgeConfig,
@@ -41,12 +42,14 @@ export function registerPurgeHandlers(): void {
       enabled: z.boolean(),
       personaId: z.string().max(128).optional(),
       mode: z.enum(AGENT_PURGE_MODES).optional(),
+      strategy: purgeStrategyPatchSchema.optional(),
     }),
     async (req) => {
       const record = setPurgedSession(req.sessionFile, {
         enabled: req.enabled,
         personaId: req.personaId,
         mode: req.mode,
+        strategy: req.strategy,
       })
       if (workerManager.hasLiveSessionWorker(req.sessionFile)) {
         const capMap = (configStore.get('sessionCapabilities') || {}) as Record<string, string[]>
