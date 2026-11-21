@@ -205,3 +205,23 @@ Historical preflight evidence: `.agent-workbench/lix-web/prodesk-preflight-20261
 
 
 **Cleanup restart note:** restoring the original CDP-free unit required `systemctl --user restart pi-desktop-app`. During stop, old PID 3632281 exited `code=dumped, status=4/ILL` and systemd logged `Failed with result 'core-dump'`; the unit then started new PID 530022. Postcondition verified active/running, NRestarts=0, gateway 47900 listening and HTTP probe 404. `coredumpctl info 3632281` returned no retained dump; no further restart/mutation performed. Parent informed for triage; this is not evidence of a failed steady-state service.
+
+
+### R4 narrow F2 candidate — verification report (2026-11-21)
+
+**Base/ownership:** isolated branch `li-web/r4-f2-narrow`, based on `35e2e18` and fast-forwarded to evidence-only `86f8ad4`; no `cef0daa`/origin-main integration. Owner approved this lane for F2 only. Current source scope is `apps/web/src/workbench/**`; no main/renderer/shared/mobile/worker edits.
+
+**F2 patch:** `workbench-store.ts` preserves `setSessions` as the complete-snapshot path used by `session.watchList`; new `mergeSessionDeltas` upserts only dirty session rows, removes only keys in `removed`, preserves untouched rows, sorts newest-first, and removes only non-selected removed-row timelines. `connectStore` routes `sessions.update` to the merge action. New `session-delta-merge.test.ts` covers one-row update (25 rows remain), removal-only delta, unseen-row upsert, and full-snapshot replacement.
+
+**Scoped checks — PASS:**
+- `npx vitest run apps/web/src/workbench/session-delta-merge.test.ts` → 1 file, 4/4 tests PASS.
+- Temporary `tsconfig.r4-scoped.tmp.json` covering only `workbench-store.ts` + the F2 test → `tsc --noEmit` exit 0; temporary config removed after verification.
+- `npx tsc -p apps/web/tsconfig.sw.json --noEmit` → exit 0.
+- `npx vitest run src/main/remote` → 9 files, 115/115 PASS on this r3 code line. The 119 count belongs to broad origin-main integration; those four upstream tests are intentionally absent here.
+- `npx vitest run apps/web` → 16 files/94 tests PASS; 5 test files fail at import resolution for the same baseline-missing helper below. The four F2 tests pass in this run; no F2-related failure.
+- `git diff --check` → PASS.
+
+**Baseline blockers — NOT PASS and not caused by F2:**
+- Full `npx tsc -p apps/web/tsconfig.json --noEmit` exits 2: `TS2307` for missing `../test/host-sim` in `apps/web/src/hosts/HostManager.integration.test.tsx:7`, `apps/web/src/transport/host-connection.test.ts:6`, `apps/web/src/workbench/branch-flow.test.ts:6`, `apps/web/src/workbench/connection-states.test.ts:6`, and `apps/web/src/workbench/subagent-flow.test.tsx:6`; cascading `TS7006` for `raw` at `subagent-flow.test.tsx:95`. `apps/web/src/test/host-sim.ts` is absent from HEAD and the five importer files are unchanged vs HEAD. Parent independently verified that helper absent from `86f8ad4`, `cef0daa`, `origin/main`, and history. No helper or persistent tsconfig change added per narrow scope.
+- `npx vitest run apps/web` has the same five import-resolution failures, all for `../test/host-sim`; remaining 16 files/94 tests pass.
+- No r4 build/package, T20 pin, owner no-turn request, host apply, or deployment was run in this verification phase. Await parent review of this diff and baseline-gate treatment before proceeding to packaging.
