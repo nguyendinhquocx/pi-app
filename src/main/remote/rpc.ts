@@ -28,6 +28,8 @@ export type RpcContext = {
   ownerProtocol?: () => number | null
   /** Browser pair link (https://li.quoc.app/#pair=…) for the current pairing, if any. */
   webPairLink?: () => string | null
+  /** Upstream allowAllProjects switch (auth-store field); enables host browse/admit flows. */
+  allowAllProjects?: () => boolean
 }
 
 /** Per-connection remote terminals: only the opener drives them; closed on disconnect. */
@@ -66,7 +68,7 @@ export class RemoteRpc {
       'project.list': async () => ({
         projects: port
           .trustedProjects()
-          .filter((p) => hub.isAllowedProject(p))
+          .filter((p) => ctx.allowAllProjects?.() || hub.isAllowedProject(p))
           .map((id) => {
             const info = port.projectInfo?.(id) ?? {}
             const folder = id.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || id
@@ -74,8 +76,17 @@ export class RemoteRpc {
           })
           // Temporary chats after real projects.
           .sort((a, b) => Number(!!a.temporary) - Number(!!b.temporary)),
+        allowAllProjects: ctx.allowAllProjects?.() ?? false,
       }),
-      'session.watchList': async (caller, p) => ({ sessions: await hub.watchList(caller, p.projectId) }),
+      'host.browseDir': async (_c, p) => {
+        if (!ctx.allowAllProjects?.()) throw new RpcFail('forbidden', 'host directory browsing is disabled')
+        if (!port.browseHostDir) throw new RpcFail('not_supported', 'host directory browsing unavailable')
+        return port.browseHostDir(p.path, p.dotfiles === true)
+      },
+      'session.watchList': async (caller, p) => {
+        await port.refreshProjects?.()
+        return { sessions: await hub.watchList(caller, p.projectId) }
+      },
       'session.unwatchList': async (caller) => {
         hub.unwatchList(caller)
         return {}
@@ -92,7 +103,7 @@ export class RemoteRpc {
         if (prior) return prior.then((r) => ({ ...r, duplicate: true }))
         const run = (async () => {
           const { entry, projectId } = await hub.authorize(p.sessionKey)
-          await port.send(entry.sessionFile, p.text, p.mode, port.sessionCapabilities(entry.sessionFile), projectId)
+          await port.send(entry.sessionFile, p.text, p.mode, port.sessionCapabilities(entry.sessionFile), projectId, p.agentPurge)
           return { accepted: true as const }
         })()
         this.sent.set(p.clientMessageId, run)
@@ -116,11 +127,42 @@ export class RemoteRpc {
       'session.fork': async (_c, p) => hub.fork(p.sessionKey, p.anchor),
       'turn.dequeue': async (_c, p) => {
         const { entry } = await hub.authorize(p.sessionKey)
-        return { restored: await port.clearQueue(entry.sessionFile) }
+        return { restored: await port.clearQueue(entry.sessionFile, p.index) }
+      },
+      'usage.summary': async (_c, p) => {
+        if (!port.usageSummary) throw new RpcFail('not_supported', 'usage summary unavailable')
+        return port.usageSummary(p.days ?? 30)
+      },
+      'purge.get': async (_c, p) => {
+        let sessionFile: string | undefined
+        if (p.sessionKey) {
+          const { entry } = await hub.authorize(p.sessionKey)
+          sessionFile = entry.sessionFile
+        }
+        if (!port.getPurgeState) {
+          return { defaultPersonaId: '', defaultMode: 'replace' as const, personas: [] }
+        }
+        return port.getPurgeState(sessionFile)
+      },
+      'purge.set': async (_c, p) => {
+        const { entry } = await hub.authorize(p.sessionKey)
+        if (!port.setPurgeState) throw new RpcFail('not_supported', 'persona switching unavailable')
+        return port.setPurgeState(entry.sessionFile, {
+          enabled: p.enabled,
+          ...(p.personaId ? { personaId: p.personaId } : {}),
+          ...(p.mode ? { mode: p.mode } : {}),
+        })
       },
       'session.create': async (_c, p) => {
-        if (!hub.isAllowedProject(p.projectId)) throw new RpcFail('forbidden', 'project is not allowed')
-        const project = port.trustedProjects().find((t) => normalizeSessionFileKey(t) === normalizeSessionFileKey(p.projectId)) ?? p.projectId
+        let project: string | undefined
+        if (hub.isAllowedProject(p.projectId)) {
+          project = port.trustedProjects().find((t) => normalizeSessionFileKey(t) === normalizeSessionFileKey(p.projectId)) ?? p.projectId
+        } else if (ctx.allowAllProjects?.()) {
+          project = (await port.admitProject?.(p.projectId)) ?? undefined
+          if (!project) throw new RpcFail('not_found', 'folder not found')
+        } else {
+          throw new RpcFail('forbidden', 'project is not allowed')
+        }
         const sessionFile = await port.createSession(project)
         if (p.capabilities?.length) {
           const known = new Set(port.capabilityCatalog().map((c) => c.id as string))
@@ -205,18 +247,8 @@ export class RemoteRpc {
         port.notifySettingsChanged('cacheWarming')
         return { mode }
       },
-      'session.rename': async (_c, p) => {
-        const { entry, projectId } = await hub.authorize(p.sessionKey)
-        const title = await port.renameSession(entry.sessionFile, p.title, projectId)
-        port.notifySessionsChanged(projectId)
-        return { title }
-      },
-      'session.delete': async (_c, p) => {
-        const { entry, projectId } = await hub.authorize(p.sessionKey)
-        await port.deleteSession(entry.sessionFile, projectId)
-        port.notifySessionsChanged(projectId)
-        return { deleted: true }
-      },
+      'session.rename': async (_c, p) => hub.rename(p.sessionKey, p.title),
+      'session.delete': async (_c, p) => hub.deleteSession(p.sessionKey),
       'session.clone': async (_c, p) => {
         const { entry, projectId } = await hub.authorize(p.sessionKey)
         if (entry.projector.sessionState.running) throw new RpcFail('busy', 'stop the run before cloning')
@@ -226,6 +258,11 @@ export class RemoteRpc {
       },
       'file.read': async (_c, p) => {
         const { projectId } = await hub.authorize(p.sessionKey)
+        if (port.readFile) {
+          const r = await port.readFile(projectId, p.path)
+          if (!r.ok) throw new RpcFail(r.code, r.message)
+          return r.value
+        }
         const r = await port.readFilePreview(projectId, p.path)
         if (!r) throw new RpcFail('not_found', 'file not found in the project')
         return r

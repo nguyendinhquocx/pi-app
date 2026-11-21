@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mainLabel } from '@shared/main-labels'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../config-store', () => ({

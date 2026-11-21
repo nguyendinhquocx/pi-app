@@ -46,6 +46,7 @@ export function WorkspaceTasksSidePanel({ panelId, adapterId }: SidePanelCompone
   const [loading, setLoading] = useState(false)
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
   const workspace = useUIStore((s) => s.currentWorkspace)
+  const { t } = useTranslation()
 
   const fetchData = async () => {
     if (!workspace || !adapterId) return

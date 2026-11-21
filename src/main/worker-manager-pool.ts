@@ -3,6 +3,8 @@ import type { AppEvent } from '@shared/app-events'
 import { remoteTap } from './remote/tap'
 import type { WorkerResponsePayload } from '@shared/worker-rpc-types'
 import { windowsPathToWsl } from '@shared/wsl-path'
+import { mainLabel } from '@shared/main-labels'
+import { getMainUiLanguage } from '@shared/main-language'
 import { resolveActiveSdk } from './sdk-loader'
 import type { WorkerInitResult, WorkerSlot } from './worker-manager-types'
 import { readMaxSessionWorkers, minutesToIdleDelayMs, readSessionWorkerIdleTimeoutMinutes } from './worker-pool-config'
@@ -370,12 +372,12 @@ export async function forkWorkerForCwd(
     const sdk = await resolveWslActiveSdk(runtime.distro)
     if (!sdk) {
       throw new Error(
-        `[WSL] 发行版 ${runtime.distro} 内未找到 pi-coding-agent，请在 WSL 中执行 npm i -g @earendil-works/pi-coding-agent`,
+        mainLabel(getMainUiLanguage(), 'wsl.sdkMissingInstall', { distro: runtime.distro }),
       )
     }
     const workerWslPath = await syncWorkerBundleToWsl(runtime.distro)
     if (!workerWslPath) {
-      throw new Error('[WSL] 无法将 worker 同步到 WSL 发行版（检查 out/main/worker.mjs）')
+      throw new Error(mainLabel(getMainUiLanguage(), 'wsl.workerSyncFailed'))
     }
     const wslCwd = windowsPathToWsl(runtime.distro, cwd)
     workerCwd = wslCwd
@@ -504,6 +506,6 @@ export function canAcquireNewWorker(
   }
   return {
     ok: false,
-    reason: `Worker pool full (${max} running sessions). Stop a turn or raise maxSessionWorkers.`,
+    reason: mainLabel(getMainUiLanguage(), 'workers.poolLimit', { max }),
   }
 }

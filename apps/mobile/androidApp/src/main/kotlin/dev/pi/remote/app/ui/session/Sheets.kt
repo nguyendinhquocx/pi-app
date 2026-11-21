@@ -55,6 +55,7 @@ import dev.pi.remote.app.ui.verbFor
 import dev.pi.remote.protocol.CapabilityRow
 import dev.pi.remote.protocol.ModelInfo
 import dev.pi.remote.protocol.ModelListResult
+import dev.pi.remote.protocol.PurgeStateResult
 import dev.pi.remote.protocol.ToolStep
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
@@ -151,11 +152,45 @@ fun StepDetailSheet(steps: List<ToolStep>, start: Int, loadDetail: suspend (Tool
 }
 
 @Composable
-fun ToolsSheet(caps: List<CapabilityRow>, cacheMode: String?, canWrite: Boolean, onCapability: (String, Boolean) -> Unit, onCache: (String) -> Unit, onDismiss: () -> Unit) {
+fun purgeModeLabel(mode: String?): String = stringResource(
+    when (mode) {
+        "append" -> R.string.purge_mode_append
+        "strict" -> R.string.purge_mode_strict
+        else -> R.string.purge_mode_replace
+    },
+)
+
+@Composable
+fun ToolsSheet(
+    caps: List<CapabilityRow>,
+    cacheMode: String?,
+    canWrite: Boolean,
+    onCapability: (String, Boolean) -> Unit,
+    onCache: (String) -> Unit,
+    onDismiss: () -> Unit,
+    purgeSummary: String? = null,
+    onOpenPurge: (() -> Unit)? = null,
+) {
+    val browserCap = caps.firstOrNull { it.id == "browser" }
+    val chromeCap = caps.firstOrNull { it.id == "chrome" }
     PiSheet(onDismiss) {
-        Column(Modifier.padding(bottom = 18.dp)) {
+        Column(Modifier.padding(bottom = 18.dp).verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.tools), style = Pi.t.bodyMedium.copy(color = Pi.c.fg), modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
             Text(stringResource(R.string.tools_session), style = Pi.t.meta.copy(color = Pi.c.fg3), modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
+            if (onOpenPurge != null) {
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = canWrite, role = Role.Button, onClick = onOpenPurge).padding(horizontal = 20.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PiIcon(PiIcons.User, Pi.c.fg3, 18.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stringResource(R.string.purge_title), style = Pi.t.body.copy(color = Pi.c.fg))
+                        Text(purgeSummary ?: stringResource(R.string.purge_short_off), style = Pi.t.secondary.copy(color = Pi.c.fg3), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    PiIcon(PiIcons.ChevronRight, Pi.c.fg3, 14.dp)
+                }
+            }
             caps.firstOrNull { it.id == "pi-ui" }?.let { c ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
                     PiIcon(PiIcons.Sparkles, Pi.c.fg3, 18.dp, Modifier.padding(top = 1.dp))
@@ -167,6 +202,70 @@ fun ToolsSheet(caps: List<CapabilityRow>, cacheMode: String?, canWrite: Boolean,
                     }
                     Spacer(Modifier.width(10.dp))
                     QuietSwitch(c.enabled, { onCapability(c.id, it) }, stringResource(R.string.tool_piui), enabled = canWrite && c.available)
+                }
+            }
+            if (browserCap != null || chromeCap != null) {
+                val activeMode = when {
+                    chromeCap?.enabled == true -> "chrome"
+                    browserCap?.enabled == true -> "browser"
+                    else -> "off"
+                }
+                val refCap = when (activeMode) {
+                    "chrome" -> chromeCap
+                    "browser" -> browserCap
+                    else -> browserCap ?: chromeCap
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
+                    PiIcon(PiIcons.Globe, Pi.c.fg3, 18.dp, Modifier.padding(top = 1.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(stringResource(R.string.tool_browser), style = Pi.t.body.copy(color = Pi.c.fg))
+                        Text(stringResource(R.string.tool_browser_desc), style = Pi.t.secondary.copy(color = Pi.c.fg3))
+                        if (refCap != null && refCap.tools > 0) {
+                            val tok = "%.1fk".format(refCap.promptTokens / 1000.0)
+                            if (refCap.coreTools != null) {
+                                Text(stringResource(R.string.tool_deferred_meta, refCap.coreTools!!, refCap.tools, tok), style = Pi.t.meta.copy(color = Pi.c.fg3))
+                            } else {
+                                Text(stringResource(R.string.tool_tokens, tok), style = Pi.t.meta.copy(color = Pi.c.fg3))
+                            }
+                        }
+                    }
+                }
+                Column(Modifier.padding(start = 50.dp, end = 20.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val options = buildList {
+                        add("off" to stringResource(R.string.tool_browser_off))
+                        if (browserCap != null) add("browser" to stringResource(R.string.tool_browser_builtin))
+                        if (chromeCap != null) add("chrome" to stringResource(R.string.tool_browser_chrome))
+                    }
+                    Segmented(
+                        options = options,
+                        selected = activeMode,
+                        onSelect = { next ->
+                            if (!canWrite || next == activeMode) return@Segmented
+                            when (next) {
+                                "off" -> {
+                                    if (browserCap?.enabled == true) onCapability("browser", false)
+                                    if (chromeCap?.enabled == true) onCapability("chrome", false)
+                                }
+                                "browser" -> if (browserCap?.available == true) {
+                                    if (chromeCap?.enabled == true) onCapability("chrome", false)
+                                    onCapability("browser", true)
+                                }
+                                "chrome" -> if (chromeCap?.available == true) {
+                                    if (browserCap?.enabled == true) onCapability("browser", false)
+                                    onCapability("chrome", true)
+                                }
+                            }
+                        },
+                        fill = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (browserCap != null && !browserCap.available && browserCap.reason == "browser-panel-off") {
+                        Text(stringResource(R.string.tool_browser_panel_off), style = Pi.t.meta.copy(color = Pi.c.fg3))
+                    }
+                    if (chromeCap != null && !chromeCap.available && chromeCap.reason == "extension-disconnected") {
+                        Text(stringResource(R.string.tool_chrome_disconnected), style = Pi.t.meta.copy(color = Pi.c.fg3))
+                    }
                 }
             }
             Hairline(Modifier.padding(horizontal = 20.dp))

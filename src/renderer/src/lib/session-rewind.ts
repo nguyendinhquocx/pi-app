@@ -43,19 +43,34 @@ export async function navigateSessionToEntry(targetId: string): Promise<boolean>
     })
 
     if (!file) {
-      toast.warning('未找到会话文件，无法刷新时间线')
+      toast.warning(i18n.t('timeline:rewind.needFile'))
       return false
     }
     if (!targetId || !String(targetId).trim()) {
-      toast.warning('无法回退：缺少消息节点 id')
+      toast.warning(i18n.t('timeline:rewind.needEntryId'))
       return false
     }
+
+    const { clearAbortQueueIgnore, clearAbortUiHold } = await import('@renderer/lib/abort-ui-hold')
+    clearAbortUiHold(file)
+    clearAbortQueueIgnore(file)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pi-desktop:cancel-pending-send', { detail: { sessionFile: file } }))
+    }
+    const needAbort =
+      st.runState.status === 'running' ||
+      st.sessionRuntimeRunning[file] === true ||
+      st.workerLiveSnapshot.status === 'running' ||
+      st.agentTurnBootstrapping ||
+      !!st.streamingAssistantId ||
+      st.optimisticPendingUserText != null
 
     // Bind + navigate on the session's worker (required for pi tree pointer).
     const r = (await ipcClient.invoke('session.navigateTree', {
       targetId,
       sessionFile: file,
       summarize: false,
+      ...(needAbort ? { abortIfBusy: true } : {}),
     })) as {
       cancelled?: boolean
       error?: string
@@ -70,8 +85,11 @@ export async function navigateSessionToEntry(targetId: string): Promise<boolean>
       hasEditorText: !!(r?.editorText && r.editorText.length),
     })
     if (!stillCurrent()) return false
-    if (r?.cancelled || r?.error) {
-      toast.error(r?.error || '跳转已取消')
+    if (r?.error) {
+      toast.error(r.error)
+      return false
+    }
+    if (r?.cancelled) {
       return false
     }
 
@@ -126,7 +144,7 @@ export async function navigateSessionToEntry(targetId: string): Promise<boolean>
         const disk = await getSessionMessagesFromDiskViaIpc(file, leafId)
         if (!stillCurrent()) return false
         if (disk.error) {
-          toast.error(hist.error || '回退后刷新历史失败')
+          toast.error(hist.error || i18n.t('timeline:rewind.historyRefreshFailed'))
           return false
         }
         const items = sanitizeHistoryTimeline((disk.items || []) as TimelineItem[])
@@ -155,14 +173,14 @@ export async function navigateSessionToEntry(targetId: string): Promise<boolean>
     if (!stillCurrent()) return false
     toast.success(
       editorText
-        ? '已回退：消息已填入输入框，可修改后重新发送'
-        : '已跳转到该节点，可从此继续',
+        ? i18n.t('timeline:rewind.doneWithText')
+        : i18n.t('timeline:rewind.doneAtNode'),
     )
     return true
   } catch (e: unknown) {
     if (!stillCurrent()) return false
     console.error('[rewind] navigateSessionToEntry error:', e)
-    toast.error((e instanceof Error ? e.message : String(e)) || '回退失败')
+    toast.error((e instanceof Error ? e.message : String(e)) || i18n.t('timeline:rewind.failed'))
     return false
   }
 }

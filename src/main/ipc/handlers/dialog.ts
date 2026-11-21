@@ -1,4 +1,6 @@
 import { dialog, BrowserWindow } from 'electron'
+import { mainLabel } from '@shared/main-labels'
+import { getMainUiLanguage } from '@shared/main-language'
 import { registerHandler } from '../registry'
 import { uiText } from '../../ui-language'
 

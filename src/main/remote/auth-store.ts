@@ -33,6 +33,8 @@ export type RemoteStoredConfig = {
      *  Serve HTTP proxy drops long-lived browser WebSocket streams (spec T5 UAT finding). */
     tcpPort?: number
   }
+  /** When true, remote clients may access all desktop projects and browse host folders (upstream field; stored, not yet wired into the li-web gateway). */
+  allowAllProjects?: boolean
 }
 
 export const DEFAULT_REMOTE_PORT = 47900
@@ -72,9 +74,10 @@ export class AuthStore {
         ? (() => {
             const serveRaw = raw.serve as { hostname: string; tcpPort?: unknown }
             const tcpPort = typeof serveRaw.tcpPort === 'number' && Number.isInteger(serveRaw.tcpPort) && serveRaw.tcpPort > 0 && serveRaw.tcpPort < 65536 ? serveRaw.tcpPort : undefined
-            return { serve: { hostname: serveRaw.hostname, ...(tcpPort ? { tcpPort } : {}) } }
+            return { serve: { hostname: serveRaw.hostname, ...(tcpPort ? { tcpPort: tcpPort } : {}) } }
           })()
         : {}),
+      allowAllProjects: raw?.allowAllProjects === true,
     }
     if (!raw?.hostId) this.save()
     // Log only fields accepted by the typed config; raw persisted objects may contain unknown secrets.
@@ -145,6 +148,11 @@ export class AuthStore {
 
   setProjects(projects: string[]): void {
     this.cfg.projects = [...new Set(projects.filter((p) => typeof p === 'string' && p.trim()))]
+    this.save()
+  }
+
+  setAllowAllProjects(allow: boolean): void {
+    this.cfg.allowAllProjects = allow
     this.save()
   }
 

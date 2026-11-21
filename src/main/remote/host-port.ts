@@ -1,7 +1,7 @@
 import type { TreeRow } from './branches'
 import type { AppEvent } from '@shared/app-events'
 import type { CapabilityInfo } from '@shared/capabilities'
-import type { CacheWarming, CommandInfo, ContextStats, FileEntry, UiRequest, UiResponse, SessionUsage } from '@shared/remote'
+import type { CacheWarming, CommandInfo, ContextStats, FileEntry, UiRequest, UiResponse, SessionUsage, PurgeSend, PurgeStateResult, HostBrowseResult, UsageSummaryResult, FileReadResult } from '@shared/remote'
 import type { ToolCardDef } from '../../extension-compat/adapter-schema'
 
 /**
@@ -20,6 +20,10 @@ export type HostSessionRow = {
   createdAt: number
   updatedAt: number
   firstMessage?: string
+  /** Subagent child's parent session file (mobile inbox nesting). */
+  parentSessionFile?: string
+  /** Source session this one was forked/cloned from (listed flat). */
+  forkedFromSessionFile?: string
 }
 
 /** Timeline row as produced by the worker / preview process (see src/worker/worker-timeline.ts). */
@@ -61,6 +65,7 @@ export type HostModelList = {
 }
 
 export type SendMode = 'prompt' | 'steer' | 'followUp'
+export type RemoteSettingsKey = 'cacheWarming' | 'capabilities' | 'purge' | 'projects' | 'models' | 'rewound'
 
 export interface RemoteHostPort {
   hostName(): string
@@ -68,6 +73,20 @@ export interface RemoteHostPort {
 
   /** Projects the desktop trusts (recent projects). The gateway intersects them with its whitelist. */
   trustedProjects(): string[]
+  /** Refresh discovered projects asynchronously before listing projects or sessions. */
+  refreshProjects?(): Promise<void>
+  /** Validate and admit an arbitrary host folder when `allowAllProjects` is enabled. */
+  admitProject?(projectId: string): Promise<string | null>
+  /** UTF-8 read of a workspace file with typed errors (upstream fileRead feature). */
+  readFile?(projectId: string, path: string): Promise<
+    { ok: true; value: FileReadResult } | { ok: false; code: 'not_found' | 'forbidden' | 'bad_request'; message: string }
+  >
+  /** Browse host directories when `allowAllProjects` is enabled. */
+  browseHostDir?(path?: string, dotfiles?: boolean): Promise<HostBrowseResult>
+  /** Normalized session keys currently running in live desktop workers. */
+  liveRunningSessions?(): Set<string>
+  /** Upstream `allowAllProjects` switch (auth-store field; false when unwired). */
+  allowAllProjects?(): boolean
   /** Display info for a project folder: temporary chats live in sandbox dirs named by a random id. */
   projectInfo?(path: string): { label?: string; temporary?: boolean }
   listSessions(projectId: string): Promise<HostSessionRow[]>
@@ -78,7 +97,7 @@ export interface RemoteHostPort {
   liveState(sessionFile: string): Promise<HostLiveState>
 
   /** `projectId` is the session's (whitelisted) workspace: the cwd fallback when its file has no header yet. */
-  send(sessionFile: string, text: string, mode: SendMode, capabilities: string[], projectId: string): Promise<void>
+  send(sessionFile: string, text: string, mode: SendMode, capabilities: string[], projectId: string, agentPurge?: PurgeSend): Promise<void>
   /** Truthful abort: `stopped` is only true when the owned run actually stopped; never spawn a worker. */
   abort(sessionFile: string): Promise<{ wasRunning: boolean; stopped: boolean }>
   /**
@@ -87,7 +106,7 @@ export interface RemoteHostPort {
    */
   rewind(sessionFile: string, anchor: string, projectId: string): Promise<{ editorText?: string }>
   /** Empty the session's steer/follow-up queue and return the texts (steering first); [] without a live worker. */
-  clearQueue(sessionFile: string): Promise<string[]>
+  clearQueue(sessionFile: string, index?: number): Promise<string[]>
   /** New session in the background: never reuses or replaces the desktop's foreground worker. */
   /** The session's entry tree and current leaf (desktop session tree). */
   sessionTree(sessionFile: string, projectId: string): Promise<{ rows: TreeRow[]; leafId: string | null }>
@@ -96,6 +115,9 @@ export interface RemoteHostPort {
   /** Fork before the user entry `anchor` into a new session file of the same project. */
   fork(sessionFile: string, anchor: string, projectId: string): Promise<{ sessionFile: string; editorText?: string }>
   createSession(projectId: string): Promise<string>
+  getPurgeState?(sessionFile?: string): Promise<PurgeStateResult>
+  setPurgeState?(sessionFile: string, req: PurgeSend): Promise<PurgeStateResult>
+  usageSummary?(days: number): Promise<UsageSummaryResult>
   listModels(sessionFile: string): Promise<HostModelList>
   setModel(sessionFile: string, modelId: string): Promise<string>
   setThinking(sessionFile: string, level: string): Promise<void>
@@ -129,7 +151,7 @@ export interface RemoteHostPort {
   /** Rename a session (title). Throws the typed owner conflict when an external writer owns it. */
   renameSession(sessionFile: string, title: string, projectId: string): Promise<string>
   /** Delete a session file (host moves it aside first when a worker is live). */
-  deleteSession(sessionFile: string, projectId: string): Promise<void>
+  deleteSession(sessionFile: string, projectId: string): Promise<boolean>
   /** Clone a session to a new independent file (pi `clone`). Returns the new session file. */
   cloneSession(sessionFile: string, projectId: string): Promise<string>
   /** Skills catalog for a project (names + enabled state only). */
@@ -152,7 +174,7 @@ export interface RemoteHostPort {
   getCacheWarming(): Promise<CacheWarming>
   setCacheWarming(mode: CacheWarming): Promise<CacheWarming>
   /** Tell the desktop renderer a setting changed underneath it. */
-  notifySettingsChanged(key: 'cacheWarming' | 'capabilities' | 'rewound', sessionFile?: string): void
+  notifySettingsChanged(key: 'cacheWarming' | 'capabilities' | 'purge' | 'projects' | 'models' | 'rewound', sessionFile?: string): void
   /** A remotely created session now exists on disk: the desktop sidebar should re-list this project. */
   notifySessionsChanged(projectId: string): void
 
@@ -170,5 +192,9 @@ export type RemoteTapSink = {
   appEvent(event: AppEvent): void
   uiRequest(request: UiRequest): void
   uiResolved(id: string, by: 'desktop' | 'remote' | 'system'): void
-  settingsChanged(key: 'cacheWarming' | 'capabilities', sessionFile?: string): void
+  settingsChanged(key: RemoteSettingsKey, sessionFile?: string): void
+  /** Desktop session list changed underneath the gateway (new/removed TUI sessions). */
+  sessionsChanged?(projectId?: string, removedSessionFile?: string): void
+  /** Session branch pointer moved underneath the gateway. */
+  branchMoved?(sessionFile: string): void
 }

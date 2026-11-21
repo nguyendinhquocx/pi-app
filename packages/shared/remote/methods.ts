@@ -20,6 +20,9 @@ export const CacheWarmingSchema = z.enum(CACHE_WARMING_MODES)
 export type CacheWarming = z.infer<typeof CacheWarmingSchema>
 
 export const SEND_MODES = ['prompt', 'steer', 'followUp'] as const
+export const PURGE_MODES = ['replace', 'append', 'strict'] as const
+export const PurgeModeSchema = z.enum(PURGE_MODES)
+export type PurgeMode = z.infer<typeof PurgeModeSchema>
 
 /** Raw attachment bytes per upload (phones downscale photos well below this). */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
@@ -84,6 +87,126 @@ export const ModelInfoSchema = z
   .object({ id: z.string(), name: z.string().optional(), provider: z.string().optional(), group: z.enum(MODEL_GROUPS).optional() })
   .strict()
 
+export const PurgePersonaSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+  })
+  .strict()
+export type PurgePersona = z.infer<typeof PurgePersonaSchema>
+
+export const PurgeSendSchema = z
+  .object({
+    enabled: z.boolean(),
+    personaId: z.string().optional(),
+    mode: PurgeModeSchema.optional(),
+  })
+  .strict()
+export type PurgeSend = z.infer<typeof PurgeSendSchema>
+
+export const PurgeSessionStateSchema = z
+  .object({
+    locked: z.enum(['draft', 'on', 'off']),
+    personaId: z.string().optional(),
+    personaName: z.string().optional(),
+    mode: PurgeModeSchema.optional(),
+  })
+  .strict()
+export type PurgeSessionState = z.infer<typeof PurgeSessionStateSchema>
+
+export const PurgeStateResultSchema = z
+  .object({
+    defaultPersonaId: z.string(),
+    defaultMode: PurgeModeSchema,
+    personas: z.array(PurgePersonaSchema),
+    session: PurgeSessionStateSchema.optional(),
+  })
+  .strict()
+export type PurgeStateResult = z.infer<typeof PurgeStateResultSchema>
+
+export const PurgeSetParamsSchema = z
+  .object({
+    sessionKey,
+    enabled: z.boolean(),
+    personaId: z.string().optional(),
+    mode: PurgeModeSchema.optional(),
+  })
+  .strict()
+export type PurgeSetParams = z.infer<typeof PurgeSetParamsSchema>
+
+export const HostDirEntrySchema = z
+  .object({
+    name: z.string(),
+    path: z.string(),
+    git: z.boolean().optional(),
+  })
+  .strict()
+export type HostDirEntry = z.infer<typeof HostDirEntrySchema>
+
+export const HostBrowseResultSchema = z
+  .object({
+    path: z.string(),
+    parent: z.string().nullable(),
+    roots: z.array(z.string()),
+    entries: z.array(HostDirEntrySchema),
+    truncated: z.boolean(),
+  })
+  .strict()
+export type HostBrowseResult = z.infer<typeof HostBrowseResultSchema>
+
+export const FileReadResultSchema = z
+  .object({
+    path: z.string(),
+    content: z.string(),
+    size: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    binary: z.boolean().optional(),
+  })
+  .strict()
+export type FileReadResult = z.infer<typeof FileReadResultSchema>
+
+export const UsageModelRowSchema = z
+  .object({
+    model: z.string(),
+    calls: z.number().int().nonnegative(),
+    input: z.number().int().nonnegative(),
+    output: z.number().int().nonnegative(),
+    cacheRead: z.number().int().nonnegative(),
+    cost: z.number().nonnegative(),
+  })
+  .strict()
+export type UsageModelRow = z.infer<typeof UsageModelRowSchema>
+
+export const UsageDayRowSchema = z
+  .object({
+    day: z.string(),
+    calls: z.number().int().nonnegative(),
+    tokens: z.number().int().nonnegative(),
+    cost: z.number().nonnegative(),
+  })
+  .strict()
+export type UsageDayRow = z.infer<typeof UsageDayRowSchema>
+
+export const UsageSummaryResultSchema = z
+  .object({
+    days: z.number().int().nonnegative(),
+    calls: z.number().int().nonnegative(),
+    sessions: z.number().int().nonnegative(),
+    input: z.number().int().nonnegative(),
+    output: z.number().int().nonnegative(),
+    cacheRead: z.number().int().nonnegative(),
+    cacheWrite: z.number().int().nonnegative(),
+    cost: z.number().nonnegative(),
+    cacheHitRate: z.number().nullable(),
+    avgTtftMs: z.number().int().nonnegative().nullable(),
+    genTps: z.number().nullable(),
+    byModel: z.array(UsageModelRowSchema),
+    byDay: z.array(UsageDayRowSchema),
+  })
+  .strict()
+export type UsageSummaryResult = z.infer<typeof UsageSummaryResultSchema>
+
 export const CapabilityRowSchema = z
   .object({
     id: z.string(),
@@ -91,6 +214,7 @@ export const CapabilityRowSchema = z
     reason: z.string().optional(),
     promptTokens: z.number().int().nonnegative(),
     tools: z.number().int().nonnegative(),
+    coreTools: z.number().int().nonnegative().optional(),
     enabled: z.boolean(),
   })
   .strict()
@@ -162,7 +286,7 @@ function method<P extends z.ZodTypeAny, R extends z.ZodTypeAny>(params: P, resul
 
 export const REMOTE_METHODS = {
   'host.hello': method(HelloParamsSchema, HelloResultSchema, 'viewer'),
-  'project.list': method(empty, z.object({ projects: z.array(ProjectInfoSchema) }).strict(), 'viewer'),
+  'project.list': method(empty, z.object({ projects: z.array(ProjectInfoSchema), allowAllProjects: z.boolean().optional() }).strict(), 'viewer'),
   'session.watchList': method(
     z.object({ projectId: z.string().optional() }).strict(),
     z.object({ sessions: z.array(SessionSummarySchema) }).strict(),
@@ -183,7 +307,13 @@ export const REMOTE_METHODS = {
   ),
   'turn.send': method(
     z
-      .object({ sessionKey, text: z.string().min(1).max(100_000), mode: z.enum(SEND_MODES), clientMessageId: z.string().min(8).max(80) })
+      .object({
+        sessionKey,
+        text: z.string().min(1).max(100_000),
+        mode: z.enum(SEND_MODES),
+        clientMessageId: z.string().min(8).max(80),
+        agentPurge: PurgeSendSchema.optional(),
+      })
       .strict(),
     z.object({ accepted: z.literal(true), duplicate: z.boolean().optional() }).strict(),
     'operator',
@@ -226,7 +356,7 @@ export const REMOTE_METHODS = {
     'operator',
   ),
   /** Pull queued steer/follow-up texts back without stopping the run. */
-  'turn.dequeue': method(z.object({ sessionKey }).strict(), z.object({ restored: z.array(z.string()) }).strict(), 'operator'),
+  'turn.dequeue': method(z.object({ sessionKey, index: z.number().int().nonnegative().optional() }).strict(), z.object({ restored: z.array(z.string()) }).strict(), 'operator'),
   'session.create': method(
     z.object({ projectId: z.string(), capabilities: z.array(z.string()).optional() }).strict(),
     z.object({ sessionKey }).strict(),
@@ -311,7 +441,7 @@ export const REMOTE_METHODS = {
         content: z.string(),
         size: z.number().int().nonnegative(),
         truncated: z.boolean(),
-        mime: z.string(),
+        mime: z.string().optional(),
       })
       .strict(),
     'viewer',
@@ -433,6 +563,30 @@ export const REMOTE_METHODS = {
   'capability.set': method(
     z.object({ sessionKey, id: z.string(), on: z.boolean() }).strict(),
     z.object({ enabled: z.array(z.string()) }).strict(),
+    'operator',
+  ),
+  /** Browse host directories for project registration (upstream hostBrowse feature). */
+  'host.browseDir': method(
+    z.object({ path: z.string().max(4096).optional(), dotfiles: z.boolean().optional() }).strict(),
+    HostBrowseResultSchema,
+    'operator',
+  ),
+  /** Aggregated usage summary (upstream usageSummary feature). */
+  'usage.summary': method(
+    z.object({ days: z.number().int().min(0).max(365).optional() }).strict(),
+    UsageSummaryResultSchema,
+    'viewer',
+  ),
+  /** Read the current purge/CoT steering state (upstream purge feature). */
+  'purge.get': method(
+    z.object({ sessionKey: z.string().optional() }).strict(),
+    PurgeStateResultSchema,
+    'viewer',
+  ),
+  /** Set purge/CoT steering for a session (upstream purge feature). */
+  'purge.set': method(
+    PurgeSetParamsSchema,
+    PurgeStateResultSchema,
     'operator',
   ),
   'settings.cacheWarming.get': method(empty, z.object({ mode: CacheWarmingSchema }).strict(), 'viewer'),

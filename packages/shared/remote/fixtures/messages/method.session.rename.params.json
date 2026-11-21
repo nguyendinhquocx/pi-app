@@ -2,6 +2,6 @@
   "schema": "session.rename/params",
   "value": {
     "sessionKey": "/home/u/.pi/agent/sessions/--work-pi-app--/2026-10-05T14-02-11_a1b2.jsonl",
-    "title": "Auth refactor"
+    "title": "修复登录页 401 并发刷新"
   }
 }

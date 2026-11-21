@@ -2,11 +2,12 @@ import Store, { type Options as StoreOptions } from 'electron-store'
 import type { AsrConfig } from '@shared/asr-types'
 import type { BackgroundSettings } from '@shared/background'
 import type { CustomCssOverride, CustomTheme } from '@shared/custom-theme'
+import { defaultAgentPurgeConfig } from '@shared/agent-purge'
 import { DEFAULT_ICON_THEME, type IconTheme } from '@shared/icon-theme'
 import { DEFAULT_TIMELINE_MAX_AUTO_EXPANDED_TOOLS, DEFAULT_TIMELINE_VISIBLE_TURNS } from '@shared/timeline-settings'
 import { projectDisplayNameKey, uniqueWorkspacePaths, workspacePathsEqual } from '@shared/workspace-path'
 import { bindSecretStoreBacking } from './secret-store'
-import { nextRecentProjects } from './recent-projects'
+import { nextRecentProjects, workspaceRealPathsEqual } from './recent-projects'
 import { defaultAppLanguage } from './default-language'
 
 export interface StoreSchema {
@@ -97,6 +98,10 @@ export interface StoreSchema {
   browserDownloadConnections: number
   /** Composer Tools menu: capabilities switched on per session file (absent = all off). */
   sessionCapabilities: Record<string, import('@shared/capabilities').CapabilityId[]>
+  /** Per-conversation Agent Purge persona library & defaults. */
+  agentPurgeConfig: import('@shared/agent-purge').AgentPurgeConfig
+  /** Sessions locked with Agent Purge on their first message (sessionFileKey → snapshot). */
+  purgedSessions: Record<string, import('@shared/agent-purge').PurgedSessionRecord>
   /** Mobile remote gateway (off unless the user enables it in Settings → 手机连接). */
   remote?: import('./remote/auth-store').RemoteStoredConfig
   /** 每个 WSL 发行版解析出的用户环境（home / PATH / node …），见 wsl/wsl-env.ts */
@@ -176,6 +181,8 @@ const storeOptions: StoreOptions<StoreSchema> & { projectName: string } = {
     browserChromeBridge: { enabled: false, port: 19825, token: '' },
     browserDownloadConnections: 16,
     sessionCapabilities: {},
+    agentPurgeConfig: defaultAgentPurgeConfig(),
+    purgedSessions: {},
   },
 }
 
@@ -215,7 +222,7 @@ export const configStore = {
   },
 
   removeRecentProject(path: string): void {
-    const recent = (store.get('recentProjects') || []).filter((p: string) => !workspacePathsEqual(p, path))
+    const recent = (store.get('recentProjects') || []).filter((p: string) => !workspaceRealPathsEqual(p, path))
     store.set('recentProjects', recent)
   },
 

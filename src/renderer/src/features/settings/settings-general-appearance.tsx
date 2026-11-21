@@ -3,13 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
 import { ipcClient } from '@renderer/lib/ipc-client'
+import { useUIStore } from '@renderer/stores/ui-store'
 import { showAppUpdateDialog } from '@renderer/lib/app-update-notify'
 
 import { useSettingsDraft } from '@renderer/features/settings/settings-draft-context'
+import { isSandboxPath } from '@renderer/features/workspace/project-sidebar-types'
 import { PiSettingsPanel } from '@renderer/features/settings/pi-settings-panel'
 import { AppearanceThemeEditor } from '@renderer/features/settings/appearance-theme-editor'
 import { AppearanceBackground } from '@renderer/features/settings/appearance-background'
 import { RuntimeSettingsPanel } from '@renderer/features/settings/runtime-settings-panel'
+import { SessionWorkersSection } from '@renderer/features/settings/session-workers-section'
 import { SettingsPageHeader } from '@renderer/features/settings/settings-shell'
 import { SettingRow, SettingsSection } from '@renderer/features/settings/settings-page-shared'
 import { btnOutline, numberInputCls } from '@renderer/features/settings/settings-controls'
@@ -108,9 +111,10 @@ export function GeneralSettings() {
   } = useSettingsDraft()
   const [recentProjects, setRecentProjects] = useState<string[]>([])
   const [fixedOrder, setFixedOrder] = useState(false)
+  const activeSessionsDrawer = useUIStore((s) => s.sidebarActiveSessionsDrawer)
+  const setActiveSessionsDrawer = useUIStore((s) => s.setSidebarActiveSessionsDrawer)
   const [updateCheck, setUpdateCheck] = useState<string | null>(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [testingAlert, setTestingAlert] = useState(false)
   const [alertTestFeedback, setAlertTestFeedback] = useState<'sent' | 'failed' | null>(null)
   const isWindows =
@@ -129,10 +133,17 @@ export function GeneralSettings() {
   }, [])
 
   useEffect(() => {
-    ipcClient.invoke('settings.get', { key: 'recentProjects' }).then((res) => {
-      if (res?.settings?.recentProjects) setRecentProjects(res.settings.recentProjects)
-    })
+    const loadRecentProjects = () => {
+      ipcClient.invoke('settings.get', { key: 'recentProjects' }).then((res) => {
+        if (!mountedRef.current) return
+        if (Array.isArray(res?.settings?.recentProjects)) {
+          setRecentProjects(res.settings.recentProjects.filter((p: string) => !isSandboxPath(p)))
+        }
+      })
+    }
+    loadRecentProjects()
     ipcClient.invoke('settings.get', { key: 'recentProjectsFixedOrder' }).then((res) => {
+      if (!mountedRef.current) return
       if (typeof res?.settings?.recentProjectsFixedOrder === 'boolean') {
         setFixedOrder(res.settings.recentProjectsFixedOrder)
       }
@@ -460,58 +471,7 @@ export function GeneralSettings() {
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection
-        title={t('settings:general.workersAdvanced')}
-        action={
-          <button
-            type="button"
-            className="text-xs text-muted-foreground/70 hover:text-foreground"
-            onClick={() => setAdvancedOpen((open) => !open)}
-            aria-expanded={advancedOpen}
-          >
-            {advancedOpen ? t('settings:general.hideAdvanced') : t('settings:general.showAdvanced')}
-          </button>
-        }
-      >
-        {advancedOpen ? (
-          <>
-            <SettingRow
-              label={t('settings:general.maxSessionWorkers')}
-              description={t('settings:general.maxSessionWorkersDesc')}
-            >
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={draft.maxSessionWorkers}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  if (!Number.isFinite(n)) return
-                  setMaxSessionWorkers(n)
-                }}
-                className={numberInputCls}
-              />
-            </SettingRow>
-            <SettingRow
-              label={t('settings:general.sessionWorkerIdleTimeout')}
-              description={t('settings:general.sessionWorkerIdleTimeoutDesc')}
-            >
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={draft.sessionWorkerIdleTimeoutMinutes}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  if (!Number.isFinite(n)) return
-                  setSessionWorkerIdleTimeoutMinutes(n)
-                }}
-                className={numberInputCls}
-              />
-            </SettingRow>
-          </>
-        ) : null}
-      </SettingsSection>
+      <SessionWorkersSection />
 
       <SettingsSection title={t('settings:general.language')}>
         <SettingRow label={t('settings:general.language')} description={t('settings:general.languageDesc')}>
@@ -520,6 +480,7 @@ export function GeneralSettings() {
               { key: 'vi' as const, label: t('settings:general.langVi') },
               { key: 'zh' as const, label: t('settings:general.langZh') },
               { key: 'en' as const, label: t('settings:general.langEn') },
+              { key: 'ru' as const, label: t('settings:general.langRu') },
             ].map((l) => (
               <button
                 key={l.key}
@@ -546,13 +507,19 @@ export function GeneralSettings() {
       <RuntimeSettingsPanel />
 
       <SettingsSection title={t('settings:general.recentProjects')}>
+        <SettingRow
+          label={t('settings:general.activeSessionsDrawer')}
+          description={t('settings:general.activeSessionsDrawerDesc')}
+        >
+          <Switch checked={activeSessionsDrawer} onCheckedChange={setActiveSessionsDrawer} />
+        </SettingRow>
         <SettingRow label={t('settings:general.fixedOrder')} description={t('settings:general.fixedOrderDesc')}>
           <Switch checked={fixedOrder} onCheckedChange={toggleFixedOrder} />
         </SettingRow>
         {recentProjects.length > 0 ? (
-          <div className="space-y-1 py-3">
-            {recentProjects.map((p, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--bg-hover)]">
+          <div className="max-h-64 space-y-1 overflow-y-auto py-3">
+            {recentProjects.map((p) => (
+              <div key={p} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--bg-hover)]">
                 <Folder className="h-3 w-3 shrink-0 text-muted-foreground/50" strokeWidth={2} />
                 <span className="truncate font-mono text-muted-foreground">{p}</span>
               </div>

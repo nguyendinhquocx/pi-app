@@ -123,7 +123,7 @@ export async function executeSlashCommand(
         commitSessionDisplayMeta(sessionFile, { thinkingLevel: arg })
         useUIStore.getState().setSessionRunState(sessionFile ?? sessionKey, { thinkingLevel: arg })
         if (sessionFile && !sessionFilesEqual(useUIStore.getState().historySessionFile, sessionFile)) return true
-        toast.success(`Thinking: ${arg}`)
+        toast.success(i18n.t('composer:thinkingPicker.switched', { level: arg }))
       } catch (e) {
         console.error('/thinking failed:', e)
         toast.error(i18n.t('composer:switchThinkingFailed'))
@@ -177,7 +177,7 @@ export async function executeSlashCommand(
         void storeMod
       } catch (e) {
         console.error('/fork failed:', e)
-        toast.error('无法打开 Fork 选择器')
+        toast.error(i18n.t('composer:toast.forkSelectorFailed'))
       }
       return true
     }
@@ -187,14 +187,14 @@ export async function executeSlashCommand(
         await cloneCurrentSession()
       } catch (e) {
         console.error('/clone failed:', e)
-        toast.error('Clone 失败')
+        toast.error(i18n.t('composer:toast.cloneFailed'))
       }
       return true
     }
-    case 'review': { setActivePanel('review'); toast.info('已切换到 Review 面板'); return true }
-    case 'run': { setActivePanel('run'); toast.info('已切换到 Run 面板'); return true }
+    case 'review': { setActivePanel('review'); toast.info(i18n.t('composer:toast.panelSwitched', { panel: i18n.t('common:panel.review') })); return true }
+    case 'run': { setActivePanel('run'); toast.info(i18n.t('composer:toast.panelSwitched', { panel: i18n.t('common:panel.run') })); return true }
     case 'tree': { setActivePanel('tree'); return true }
-    case 'settings': { toast.info('请从左侧栏打开设置'); return true }
+    case 'settings': { toast.info(i18n.t('composer:toast.openSettingsFromSidebar')); return true }
     case 'skills':
     case 'prompts':
     case 'help': {

@@ -222,9 +222,11 @@ export function createElectronRemoteHost(): RemoteHostPort {
       return r.title || title
     },
 
-    async deleteSession(sessionFile: string, projectId: string): Promise<void> {
+    async deleteSession(sessionFile: string, projectId: string): Promise<boolean> {
       const r = await invokeHandler<{ ok?: boolean; error?: string }>('ipc:session.delete', { sessionFile, workspaceId: projectId })
       if (!r.ok) throw new Error(r.error || 'delete failed')
+      void sessionPreviewProcess.invalidateListSessions(projectId).catch(() => {})
+      return true
     },
 
     async cloneSession(sessionFile: string, projectId: string): Promise<string> {

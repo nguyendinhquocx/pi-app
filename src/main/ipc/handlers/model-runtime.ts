@@ -57,6 +57,7 @@ export function registerModelRuntimeHandlers(): void {
         id: m.id,
         name: m.name || m.id,
         provider: m.provider || '',
+        ...(typeof (m as { api?: unknown }).api === 'string' ? { api: String((m as { api?: unknown }).api) } : {}),
         contextWindow: m.contextWindow || 0,
         maxOutput: m.maxOutput || m.maxTokens || 0,
         available: m.available ?? true,
@@ -145,6 +146,8 @@ export function registerModelRuntimeHandlers(): void {
       await workerManager.start(cwd)
     }
     const actualModel = await workerManager.setModel(provider, modelId, sessionFile)
+    const { remoteTap } = await import('../../remote/tap')
+    remoteTap.settingsChanged('models', sessionFile)
     return { modelId: actualModel }
   })
 
@@ -157,6 +160,8 @@ export function registerModelRuntimeHandlers(): void {
     const sessionFile = String(req.sessionFile || '').trim()
     if (!sessionFile) throw new Error('SESSION_FILE_REQUIRED')
     await workerManager.setThinkingLevel(req.level, sessionFile)
+    const { remoteTap } = await import('../../remote/tap')
+    remoteTap.settingsChanged('models', sessionFile)
     return { level: req.level }
   })
 

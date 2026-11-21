@@ -9,6 +9,9 @@ const webstorageOff = flags.has('--no-webstorage') ? ['--no-webstorage'] : flags
 export default defineConfig({
   plugins: [react()],
   test: {
+    // Fork layout: session-jsonl tests load the real fork SDK (symlinked, unbundled) —
+    // entry-import fallback takes ~7s under the runner. Upstream default is 5s.
+    testTimeout: 15_000,
     environment: 'jsdom',
     globals: true,
     execArgv: webstorageOff,
@@ -29,7 +32,18 @@ export default defineConfig({
     // tests that load the real SDK dist must inline them instead.
     server: {
       deps: {
-        inline: [/node_modules[\\/]@earendil-works[\\/]pi-(ai|agent-core|tui|mcp|codemode|telemetry)/],
+        inline: [
+          /node_modules[\\/]@earendil-works[\\/]pi-(ai|agent-core|tui|mcp|codemode|telemetry)/,
+          // Upstream-added tests import fork dist files via realpath file:// URLs
+          // (D:/pcloud/workspace/code/pi-mono-li/...) — inline so the module runner
+          // serves them instead of refusing out-of-root native imports.
+          /[\\/]pi-mono-li[\\/]packages[\\/]/,
+        ],
+      },
+      // Upstream-added tests import SDK dist files via file:// URLs resolved through the
+      // fork symlink (realpath outside the project root); allow serving that tree.
+      fs: {
+        allow: [resolve('.'), 'D:/pcloud/workspace/code/pi-mono-li'],
       },
     },
   },

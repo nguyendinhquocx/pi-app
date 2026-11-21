@@ -254,5 +254,63 @@
     "earlierCalls": "展开更早的 {{count}} 次调用",
     "collapseCalls": "收起较早调用",
     "modelCost": "模型调用: {{cost}}"
+  },
+  "previews": {
+    "written": "写入",
+    "saved": "已保存",
+    "noDiff": "无 diff 详情",
+    "lines": "{{count}} 行",
+    "matches": "{{count}} 条",
+    "noResults": "无结果",
+    "expandAll": "展开全部 {{count}} 条",
+    "noOutput": "无输出"
+  },
+  "rewind": {
+    "needFile": "未找到会话文件，无法刷新时间线",
+    "needEntryId": "无法回退：缺少消息节点 id",
+    "historyRefreshFailed": "回退后刷新历史失败",
+    "doneWithText": "已回退：消息已填入输入框，可修改后重新发送",
+    "doneAtNode": "已跳转到该节点，可从此继续",
+    "failed": "回退失败"
+  },
+  "forkFromHere": "从此 Fork 新会话",
+  "editMessage": "编辑消息",
+  "contextMenu": {
+    "copySelection": "复制选中文本",
+    "copyMessage": "复制消息",
+    "rewindToMessage": "回退到此消息",
+    "expandTool": "展开工具详情",
+    "collapseTool": "收起工具详情",
+    "copyToolOutput": "复制工具输出",
+    "copyToolArgs": "复制工具参数",
+    "rewindToToolStep": "回退到此工具步骤",
+    "expandToolGroup": "展开全部工具",
+    "collapseToolGroup": "收起工具组",
+    "rewindToToolGroup": "回退到此工具组末尾"
+  },
+  "edit": {
+    "placeholderUser": "编辑用户消息内容…",
+    "placeholderAssistant": "编辑或伪造助手回复内容…",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "shortcutHint": "{{mod}}+Enter 保存 · Esc 取消",
+    "needFile": "未找到会话文件，请先发送一条消息落盘后再编辑",
+    "needEntryId": "该消息尚未落盘，暂不可编辑",
+    "emptyText": "消息内容不可为空",
+    "sessionBusy": "当前会话运行中，请先停止后再编辑历史消息",
+    "notEditable": "该节点不支持编辑",
+    "entryNotFound": "在会话记录中未找到对应消息节点",
+    "failed": "编辑消息失败"
+  },
+  "openPathHint": "在文件中打开 · Shift+点击打开 Review",
+  "slashSentToPi": "已发送给 pi 执行",
+  "slashExecutedDetail": "命令已执行（详见下方助手/工具输出）",
+  "slashExecFailed": "执行失败: {{error}}",
+  "codemodeStatus": {
+    "running": "运行中",
+    "ok": "成功",
+    "error": "错误",
+    "cancelled": "已取消"
   }
 }

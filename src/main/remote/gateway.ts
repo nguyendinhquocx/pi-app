@@ -152,6 +152,7 @@ export class RemoteGateway {
       endpoints: () => this.endpoints(),
       ownerProtocol: () => this.port.hostStatus().ownerProtocol ?? null,
       webPairLink: () => this.webPairLink(),
+      allowAllProjects: () => !!this.auth.config.allowAllProjects,
     })
   }
 
