@@ -503,6 +503,29 @@ describe('sessions', () => {
     await expect(c.call('session.create', { projectId: '/work/secret' })).rejects.toMatchObject({ err: { code: 'forbidden' } })
   })
 
+  // iss_20261121165413: the web workbench always calls session.watchList between create and
+  // open (Workbench onCreate → refreshSessions → openSession). loadRows' freshness prune used to
+  // drop the provisional announce row (the transcript file only appears with the first reply),
+  // so the next session.open resolved no row and no sessionProject → forbidden.
+  it('keeps a just-created session openable and listed across a watchList refresh (iss_20261121165413)', async () => {
+    const c = await pairNew()
+    const created = await c.call('session.create', { projectId: '/work/pi-app' })
+    await c.call('session.watchList', {})
+    const opened = await c.call('session.open', { sessionKey: created.sessionKey })
+    expect(opened).toMatchObject({ kind: 'snapshot', turns: [] })
+    const inbox = await c.call('session.watchList', {})
+    expect(((inbox as { sessions?: Array<{ sessionKey: string }> }).sessions ?? (inbox as unknown as Array<{ sessionKey: string }>)).some((s) => s.sessionKey === created.sessionKey)).toBe(true)
+  })
+
+  it('still denies non-allowlisted sessions after a rows refresh (iss_20261121165413 negative)', async () => {
+    const c = await pairNew()
+    await c.call('session.watchList', {})
+    const secretFile = [...host.sessions.values()].find((s) => s.row.projectId === '/work/secret')!.row.sessionFile
+    await expect(c.call('session.open', { sessionKey: secretFile })).rejects.toMatchObject({ err: { code: 'forbidden' } })
+    // A crafted wire key that merely looks like a transcript in a non-allowed project stays denied.
+    await expect(c.call('session.open', { sessionKey: '/work/secret/crafted-iss-20261121165413.jsonl' })).rejects.toMatchObject({ err: { code: 'forbidden' } })
+  })
+
   it('a phone-created session opens empty, streams its first run, then tells the desktop list', async () => {
     const c = await pairNew()
     const { sessionKey } = await c.call('session.create', { projectId: '/work/pi-app' })

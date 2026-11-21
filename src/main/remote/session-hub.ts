@@ -33,6 +33,8 @@ const ROWS_REFRESH_MS = 30_000
 const EXTERNAL_RUNNING_BACKSTOP_MS = 90_000
 /** Completion metadata is a 2-minute reconnect proof, then it ages out. */
 const SETTLED_OUTCOME_FRESH_MS = 120_000
+/** iss_20261121165413: how long a session.create announce row survives without a disk-visible transcript. */
+const ANNOUNCE_PENDING_MS = 10 * 60_000
 
 /** Convert a canonical wire key to a filesystem path without changing path flavor. */
 function normalizeHostSessionPath(sessionFile: string): string {
@@ -689,8 +691,13 @@ export class SessionHub {
     }
     // Prune this project's rows whose file vanished and tell list subscribers; otherwise their
     // cached inbox keeps deleted sessions forever even though the watcher stopped stat-ing them.
+    // A just-created session's transcript only appears with the first reply (iss_20261121165413):
+    // its provisional announce row would fail this freshness scan and the very next session.open
+    // would resolve no row and no sessionProject → forbidden. Keep announced rows until their
+    // short provisional lease expires, then treat them like any other vanished file.
     for (const [k, r] of this.rows) {
-      if (r.projectId === projectId && !fresh.has(k)) {
+      const pendingAnnounce = typeof r.provisionalUntil === 'number' && r.provisionalUntil > this.now()
+      if (r.projectId === projectId && !fresh.has(k) && !pendingAnnounce) {
         this.rows.delete(k)
         this.dirty.delete(k)
         if (this.listWatchers.size) {
@@ -749,7 +756,16 @@ export class SessionHub {
   async listSummaries(projectId?: string): Promise<SessionSummary[]> {
     const projects = projectId ? (this.allowedProjectFor(projectId) ? [this.allowedProjectFor(projectId)!] : []) : this.allowedProjects()
     if (projectId && !projects.length) throw new RpcFail('forbidden', 'project is not allowed')
-    const rows = (await Promise.all(projects.map((p) => this.loadRows(p).catch(() => [] as HostSessionRow[])))).flat()
+    const listed = (await Promise.all(projects.map((p) => this.loadRows(p).catch(() => [] as HostSessionRow[])))).flat()
+    // iss_20261121165413: a just-created session exists only as a provisional announce row until
+    // its transcript file appears with the first reply — merge pending rows the disk listing
+    // does not include yet so the phone rail shows the session it just created.
+    const listedKeys = new Set(listed.map((r) => normalizeSessionFileKey(r.sessionFile)))
+    const now = this.now()
+    const announced = [...this.rows.values()].filter(
+      (r) => typeof r.provisionalUntil === 'number' && r.provisionalUntil > now && !listedKeys.has(normalizeSessionFileKey(r.sessionFile)),
+    )
+    const rows = [...listed, ...announced]
     const pending = this.ui.pendingBySession()
     return rows.map((r) => this.summaryFor(r, pending)).sort((a, b) => b.updatedAt - a.updatedAt)
   }
@@ -825,7 +841,8 @@ export class SessionHub {
   announceSession(sessionFile: string, projectId: string): void {
     const key = normalizeSessionFileKey(sessionFile)
     // Provisional row right away; the file (and the real row) appears with the first reply.
-    if (!this.rows.has(key)) this.rows.set(key, { sessionFile, projectId, title: '', createdAt: this.now(), updatedAt: this.now() })
+    // provisionalUntil bounds the loadRows freshness-prune protection (iss_20261121165413).
+    if (!this.rows.has(key)) this.rows.set(key, { sessionFile, projectId, title: '', createdAt: this.now(), updatedAt: this.now(), provisionalUntil: this.now() + ANNOUNCE_PENDING_MS })
     this.unlisted.set(key, projectId)
     this.markDirty(key)
   }

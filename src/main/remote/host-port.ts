@@ -20,6 +20,8 @@ export type HostSessionRow = {
   createdAt: number
   updatedAt: number
   firstMessage?: string
+  /** iss_20261121165413: set on the provisional announce row until the transcript file is disk-visible. */
+  provisionalUntil?: number
 }
 
 /** Timeline row as produced by the worker / preview process (see src/worker/worker-timeline.ts). */

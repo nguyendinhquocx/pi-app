@@ -215,6 +215,9 @@ export class FakeHost implements RemoteHostPort {
     return [...this.sessions.values()].filter((s) => s.row.projectId === projectId && !this.unwritten.has(s.row.sessionFile)).map((s) => ({ ...s.row }))
   }
   async sessionProject(sessionFile: string): Promise<string | null> {
+    // iss_20261121165413 fidelity: the real host reads cwd from the transcript file; a session
+    // whose file is not on disk yet (unwritten, pre-first-reply) has no meta → null.
+    if (this.unwritten.has(sessionFile)) return null
     return this.sessions.get(sessionFile)?.row.projectId ?? null
   }
   async readHistory(_projectId: string, sessionFile: string) {
