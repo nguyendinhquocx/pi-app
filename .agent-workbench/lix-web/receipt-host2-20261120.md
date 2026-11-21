@@ -232,8 +232,35 @@ Historical preflight evidence: `.agent-workbench/lix-web/prodesk-preflight-20261
 **Docker build:** `node:22-trixie`, image `sha256:16e416bccd9cbf5dcddc51ed3e33ec9732a4969830d62cabbe8da5f98c7ab2bc`; source app commit `cb19035`; SDK source commit `cb84283857c82eec932302904eb0bf94770038bd`, clean, sourceTreeHash `7138b6870cf6e4575f73c9b52c10df29769b36cba2ccb476899008289a3a0b76`. Build log: `D:/pcloud/workspace/archive/home-server-artifacts/lix-0.7.14-build-r4-f2/out/build.log`.
 
 - AppImage `LiX-0.7.14-x86_64.AppImage`: SHA-256 `629c6b67d1052c272b411b647d8fee245dfeb147f9f7f9d780e84d0b286deccc`, 258,805,932 bytes.
-- Extracted `app.asar`: SHA-256 `12ebc116fffe26b3668b0a3c20be1dd1457952334d3f3767518c4eca8b1f3a5c`, 457,522,603 bytes. Candidate release label: `0.7.14-12ebc116` (not deployed).
+- Extracted `app.asar`: SHA-256 `12ebc116fffe26b3668b0a3c20be1dd1457952334d3f3767518c4eca8b1f3a5c`, 457,522,603 bytes. Candidate release label: `0.7.14-12ebc116` (later installed on ProDesk at 09:34 UTC; see deployment section below).
 - Embedded Li SDK receipt verified from app.asar: `artifactHash=9cf819d21aad027d1af3619b02ef5fe608869bdf9c7547e9671c6b9bf2137ccd`, `gitDirty=false`, 84 files. SDK receipt/hash is unchanged from r3; only the desktop app bundle contains F2.
 - Packaging gates: link-local-sdk PASS (`mode=copy`, copied 8 packages); import audit PASS (84 imports/8 fork packages); `smoke-packaged-asar` PASS (10 imports); installer wrapper 14/14; installer fixture 5/5; `bash -n` PASS. The audit log's displayed `mode=symlink` label is from its default environment after the one-shot copy-link command; the preceding link step explicitly reports copy mode and 8 copied packages.
 
-**Review boundary:** candidate artifact and receipt are ready for parent review. Full web typecheck remains BASELINE BLOCKED by the missing `host-sim` helper documented above; do not call it PASS. No T20 pin/promotion, owner no-turn reconfirm, host apply, or r4 UAT was attempted. Parent must review the candidate/build receipt before any deployment authorization.
+**Review boundary:** parent approved the candidate artifact/plan before deployment. Full web typecheck remains BASELINE BLOCKED by the missing `host-sim` helper documented above; do not call it PASS. Packaging, deployment-plan, and T20 predicate evidence are separate from that baseline blocker. Deployment results are recorded below; scoped R4 UAT status is recorded in the following section.
+
+### Read-only deploy plans — fixed R3 invocation then isolated R4 candidate plan (2026-11-21)
+
+- Initial `py -3.13 deploy.py --plan` from the shared Python main worktree (terminal `6babb87b-6ce9-4706-8319-151ac41e5c40`) used its R3-only lock and therefore described R3 as `already_current`; it was not treated as the R4 plan.
+- Parent-approved isolated Python branch `lix/r4-plan-only-20261121` (base `c0f2e47a638cd84457349ef4e22bcd1aa7356c4a`, HEAD `58c9a43857531da6630a0285adf03825dfd092de`) carried only the six R3 deployer diffs plus the fixed candidate pin. The original dirty Python main was not edited. Copied R3 patch SHA-256: `79480d9f836623b76594411f33cdb3c432af73d6484d2806a62c9167683b9a64`.
+- Exact R4 plan PASS (terminal `3a589154-b815-4bbc-a1bf-13bb9afa255a`): source `v0.7.14-host2-r4-f2 @ cb190357cfd23ef8ca0ad0e2b3259d33b776723e`; AppImage `629c6b67…`; app.asar `12ebc116…`; H7 `ready`; current release `0.7.14-6a3a8547` / asar `6a3a8547…` / gateway 47900. Planned transition: R3 `0.7.14-6a3a8547` → R4 `0.7.14-12ebc116`; rollback target R3. Plan states the installer will stage verified artifacts, stop only `pi-desktop-app.service`, atomically switch `current`, retain the previous release; no sudo/user-data/Xvfb/VNC/Docker/firewall/DNS/tunnel changes.
+- SDK receipt `artifactHash` is unchanged (`9cf819d2…`); expected T20 hash/canary remains the R3 approval. T20 files are `~/.pi/agent/session-open-leases/registry.json` and `t20-canary-receipt.json`; any future authorized pin mutation requires adjacent `*.bak` backups. The read-only T20 predicate check and later install receipts are recorded below; no T20 promotion was performed.
+
+
+### R4 deployment and immediate postflight (2026-11-21)
+
+- Fresh owner no-turn confirmation was received immediately before the 09:34 atomic apply (“Xác nhận không turn”). First deploy receipt `prodesk-lix-0.7.14-20261121T093424583887Z.json` records `status=installed`, rollback release `0.7.14-6a3a8547`, AppImage `629c6b67…`, app.asar `12ebc116…`, H7 ready, stage cleanup pass. This is the actual R4 switch.
+- Journal observation during that installer stop/start (captured read-only; SIGILL issue remains tracked separately as `iss_20261121035131_af462c5ced`):
+
+```
+Nov 21 09:34:24 prodesk-home systemd[1150]: Stopping pi-desktop-app.service - pi Desktop app (headless via Xvfb :93)...
+Nov 21 09:34:24 prodesk-home systemd[1150]: pi-desktop-app.service: Main process exited, code=dumped, status=4/ILL
+Nov 21 09:34:24 prodesk-home systemd[1150]: pi-desktop-app.service: Failed with result 'core-dump'.
+Nov 21 09:34:24 prodesk-home systemd[1150]: Stopped pi-desktop-app.service - pi Desktop app (headless via Xvfb :93).
+Nov 21 09:34:25 prodesk-home systemd[1150]: Started pi-desktop-app.service - pi Desktop app (headless via Xvfb :93).
+Nov 21 09:34:26 prodesk-home AppRun[1256838]: [remote] gateway listening on :47900
+```
+
+- Postflight: `pi-desktop-app.service` active, MainPID 1256838 (started 09:34:25 UTC), NRestarts=0; current symlink `/home/quoc/apps/pi-desktop/current` → `/home/quoc/apps/pi-desktop/0.7.14-12ebc116`; app.asar SHA-256 `12ebc116fffe26b3668b0a3c20be1dd1457952334d3f3767518c4eca8b1f3a5c`; gateway :47900 listening (one listener); CDP :9222 closed.
+- This worker’s later `deploy.py --apply --yes` run `f5dadc31-4a9b-49fc-aff9-9746309fed72` returned `status=already_current`, stage cleanup pass, and receipt `prodesk-lix-0.7.14-20261121T093900119535Z.json`; it made no second release switch. Do not conflate this no-op with the 09:34 installation.
+- Read-only T20 predicate check after deployment PASS: SDK `artifactHash` remains `9cf819d2…`, registry SHA prefix `b0a828dc7a6e`, canary receipt `t20-canary-receipt.json` SHA prefix `220bdadeff62`, runtime `li`, protocol 1, approved build present. Registry/canary were not backed up or changed by this worker.
+- R4 UAT is now authorized only in the scoped lane. Preserve owner SM-A556E; any fresh test device must be removed and any temporary relay/tunnel closed at the end. G4 Serve remains excluded.
