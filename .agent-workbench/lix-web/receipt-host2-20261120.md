@@ -264,3 +264,30 @@ Nov 21 09:34:26 prodesk-home AppRun[1256838]: [remote] gateway listening on :479
 - This worker’s later `deploy.py --apply --yes` run `f5dadc31-4a9b-49fc-aff9-9746309fed72` returned `status=already_current`, stage cleanup pass, and receipt `prodesk-lix-0.7.14-20261121T093900119535Z.json`; it made no second release switch. Do not conflate this no-op with the 09:34 installation.
 - Read-only T20 predicate check after deployment PASS: SDK `artifactHash` remains `9cf819d2…`, registry SHA prefix `b0a828dc7a6e`, canary receipt `t20-canary-receipt.json` SHA prefix `220bdadeff62`, runtime `li`, protocol 1, approved build present. Registry/canary were not backed up or changed by this worker.
 - R4 UAT entered only after postflight PASS. Browser/pairing attempt is **BLOCKED before creating a test device or sending a turn**: native `agent_browser` failed at managed-session policy coordination; browse MCP was connected but `https://li.quoc.app` navigation returned `net::ERR_NAME_NOT_RESOLVED`. A fresh pair token is produced through host-local `ipc:remote.regeneratePairing` (`src/main/ipc/handlers/remote.ts:19`); obtaining it would require an app UI/CDP path, but no systemd/CDP changes are authorized in this lane. No new device was paired, no test turn was sent, and no relay/tunnel or systemd setting was started/changed. Owner SM-A556E and its device record remain untouched; G4 Serve remains excluded. Await parent decision for an allowed pairing route; once paired, run only F2 rail delta, test turn, and visible two-tab one-copy verification, then revoke the new test device and close any temporary relay/tunnel.
+
+## R4 scoped UAT (2026-11-21, executed) — PASS
+
+Authorization chain: parent approved the two-restart CDP route (enable loopback 9222, restore byte-identical unit; zero diagnostic restarts, no T20/host config change); fresh owner no-turn confirmations ("Không turn — tiến hành") received via parent relay and directly via ask_user immediately before restart #1.
+
+Setup (restart #1, 10:08:51 UTC):
+- Unit backup `pi-desktop-app.service.bak-20261121-r4-uat-cdp`, SHA-256 `9475f265093eb6b857b7cdd44143e16019a3ac12c3ea61839bcf8c8bd161d0d2`, taken before patching; only `--remote-debugging-port=9222` appended to ExecStart. CDP verified loopback-only (`127.0.0.1:9222`), no `0.0.0.0`/`*` bind. Restart PASS; service active, NRestarts stayed 0.
+- Pairing infra (laptop-local, temporary): static+WS relay `127.0.0.1:47981` serving `apps/web/dist` (fresh `npm run web:build` on this branch) splicing WS to `100.65.131.116:47900` with Origin `https://li.quoc.app`; SSH tunnel `19222→host:9222` for CDP. Fresh pair token via CDP `ipc:remote.regeneratePairing`; offer filtered to the single relay endpoint. Two relay bugs found and fixed locally (ws close-code 1005/1006 forwarding crash; hs1 frame dropped while upstream CONNECTING — queue+flush).
+
+Pairing: after "Quên" of the stale browser record (each `regeneratePairing` rotates the host key and wipes device records — `auth-store.ts:123`), fresh offer → "Ghép nối" → host chip "Trực tuyến". Test device `d_rVPNhkhnMcxE` ("Li Web", Chrome, operator) created.
+
+UAT results:
+- F2 live delta: baseline rail 31 sessions, 0 running. `turn.send` ("[R4-UAT] Reply with exactly one word: PONG") into existing probe session ("Reply with exactly one word: BOOT_OK"): the one-row incremental `sessions.update` upserted only the target row (▸ running badge) and the rail kept **31/31** sessions — the R3 rail-collapse did not reproduce. Settle delta cleared the badge; rail still 31/31; reply "PONG" visible once.
+- turn.send + event stream: patches streamed to settle (timeline shows user turn + reply, turn page/resume consistent).
+- Two tabs, same session: tab1 and tab2 each render exactly one copy of the UAT turn and one "PONG" reply; rail 31/31 in both. Screenshots: `uat-r4-f2-turn-settled.png`, `uat-r4-multitab-tab1.png`, `uat-r4-multitab-tab2.png` (this directory).
+- Removed-only live leg NOT exercised live (would require deleting a real session); covered by `apps/web/src/workbench/session-delta-merge.test.ts` (4/4 PASS, includes removals without dropping untouched rows).
+- Observed gap (not F2, for parent disposition): remote `session.create` succeeds but the follow-up `session.open` is rejected — "session.open failed: forbidden session is not in an allowed project"; the new session never appears in `session.watchList`. Likely host project-allowlist semantics; not fixed here.
+
+Idle verification before restore: web rail 0 running badges; host IPC `ipc:session.list` (fallback workspace scope) 0 running; UAT session settled.
+
+Cleanup:
+- Test device revoked via CDP `ipc:remote.revokeDevice` → `REVOKE=revoked`; status after: SM-A556E (`d_wRjm7laVr3Q7`, untouched, offline) + revoked test device (offline). Post-restore journal shows the revoked device's reconnect attempt closed `4004 reason=revoked` — revocation effective. Browser-local device key for origin `127.0.0.1:47981` remains in IndexedDB but is inert (device revoked).
+- Restore restart #2 (16:46:53 UTC): backup verified against expected SHA before restore, `cmp` clean, daemon-reload, restart. Postflight: active, NRestarts=0, MainPID 1987528, no CDP flag in ExecStart, `:9222` listeners 0, `:47900` listeners 1, unit SHA back to `9475f265…`, `current` → `0.7.14-12ebc116`, asar `12ebc116…` unchanged.
+- Laptop: relay process tree terminated (0 remaining), tunnel processes terminated by verified cmdline; `19222`/`47981` listeners 0; no stray `ssh`.
+- Read-only T20 check after UAT: registry `b0a828dc7a6e`, canary `220bdadeff62`, service active. No T20 mutation by this worker.
+
+Verdict: scoped R4 UAT **PASS** — F2 delta merge, `turn.send` + stream, and visible one-copy multi-tab verified on host-2 R4 runtime. G5's scoped R4 UAT item is complete; G6 off-tailnet remains UNVERIFIED; TUI↔Web handoff remains pre-existing spec-BLOCKED out of scope; G4 Serve excluded. Full web typecheck remains BASELINE BLOCKED (missing `apps/web/src/test/host-sim.ts`) as documented above.
