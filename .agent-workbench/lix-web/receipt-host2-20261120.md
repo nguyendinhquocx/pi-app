@@ -224,4 +224,16 @@ Historical preflight evidence: `.agent-workbench/lix-web/prodesk-preflight-20261
 **Baseline blockers — NOT PASS and not caused by F2:**
 - Full `npx tsc -p apps/web/tsconfig.json --noEmit` exits 2: `TS2307` for missing `../test/host-sim` in `apps/web/src/hosts/HostManager.integration.test.tsx:7`, `apps/web/src/transport/host-connection.test.ts:6`, `apps/web/src/workbench/branch-flow.test.ts:6`, `apps/web/src/workbench/connection-states.test.ts:6`, and `apps/web/src/workbench/subagent-flow.test.tsx:6`; cascading `TS7006` for `raw` at `subagent-flow.test.tsx:95`. `apps/web/src/test/host-sim.ts` is absent from HEAD and the five importer files are unchanged vs HEAD. Parent independently verified that helper absent from `86f8ad4`, `cef0daa`, `origin/main`, and history. No helper or persistent tsconfig change added per narrow scope.
 - `npx vitest run apps/web` has the same five import-resolution failures, all for `../test/host-sim`; remaining 16 files/94 tests pass.
-- No r4 build/package, T20 pin, owner no-turn request, host apply, or deployment was run in this verification phase. Await parent review of this diff and baseline-gate treatment before proceeding to packaging.
+
+### R4 narrow F2 candidate — packaging result (2026-11-21)
+
+**Parent review:** F2 patch review PASS; build authorized for this narrow r3-based branch. Commit `cb19035` (`fix(li-web): merge incremental sessions.update deltas (F2)`) contains only the allowed store, 4-case test, and receipt changes; no push.
+
+**Docker build:** `node:22-trixie`, image `sha256:16e416bccd9cbf5dcddc51ed3e33ec9732a4969830d62cabbe8da5f98c7ab2bc`; source app commit `cb19035`; SDK source commit `cb84283857c82eec932302904eb0bf94770038bd`, clean, sourceTreeHash `7138b6870cf6e4575f73c9b52c10df29769b36cba2ccb476899008289a3a0b76`. Build log: `D:/pcloud/workspace/archive/home-server-artifacts/lix-0.7.14-build-r4-f2/out/build.log`.
+
+- AppImage `LiX-0.7.14-x86_64.AppImage`: SHA-256 `629c6b67d1052c272b411b647d8fee245dfeb147f9f7f9d780e84d0b286deccc`, 258,805,932 bytes.
+- Extracted `app.asar`: SHA-256 `12ebc116fffe26b3668b0a3c20be1dd1457952334d3f3767518c4eca8b1f3a5c`, 457,522,603 bytes. Candidate release label: `0.7.14-12ebc116` (not deployed).
+- Embedded Li SDK receipt verified from app.asar: `artifactHash=9cf819d21aad027d1af3619b02ef5fe608869bdf9c7547e9671c6b9bf2137ccd`, `gitDirty=false`, 84 files. SDK receipt/hash is unchanged from r3; only the desktop app bundle contains F2.
+- Packaging gates: link-local-sdk PASS (`mode=copy`, copied 8 packages); import audit PASS (84 imports/8 fork packages); `smoke-packaged-asar` PASS (10 imports); installer wrapper 14/14; installer fixture 5/5; `bash -n` PASS. The audit log's displayed `mode=symlink` label is from its default environment after the one-shot copy-link command; the preceding link step explicitly reports copy mode and 8 copied packages.
+
+**Review boundary:** candidate artifact and receipt are ready for parent review. Full web typecheck remains BASELINE BLOCKED by the missing `host-sim` helper documented above; do not call it PASS. No T20 pin/promotion, owner no-turn reconfirm, host apply, or r4 UAT was attempted. Parent must review the candidate/build receipt before any deployment authorization.
