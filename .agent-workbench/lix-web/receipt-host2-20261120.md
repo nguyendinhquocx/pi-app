@@ -1,8 +1,21 @@
 # Receipt: Li Web host-2 (ProDesk) — 2026-11-20
 
-## Current verdict: DEPLOYED 0.7.14-6a3a8547 (r3) — service active, gateway up, T20 pinned; G5 UAT next
+## Current verdict: DEPLOYED 0.7.14-6a3a8547 (r3) — G5 UAT PARTIAL; cleanup complete
 
-G1+G2 owner assignment `peer_20261120043110_cc464ea2` is active; parent upstream dependency is satisfied (`msg_20261120053029_a8e50fb6c63e`). LiX 0.7.14 r2 candidate (SDK `cb84283857`) was staged and switched but the app crashed at boot (missing `chalk` in asar); auto-rollback completed and the host was manually recovered to `0.7.13-9c8f2650` with T20 restored from backups. **Host is stable on 0.7.13; no 0.7.14 deployment exists; UAT not started.** Serve 47900 (G4) is explicitly outside scope.
+G1+G2 owner assignment `peer_20261120043110_cc464ea2` remains the scope authority; parent upstream dependency is satisfied (`msg_20261120053029_a8e50fb6c63e`). R3 is active on ProDesk: service active/NRestarts=0, live asar `6a3a8547…`, T20 pin `9cf819d2…` intact, rollback `0.7.13-9c8f2650` retained, gateway `47900` responding. Historical R2 boot crash and rollback are recorded below under EXEC attempt log; they do not describe current host state.
+
+G5 host-2 UAT is **PARTIAL**: pairing, session open/turn stream, PTY, model/settings, negative matrix 3/3, attachment protocol and controlled visible-turn multi-tab PASS. F2 delta/snapshot rail-loss root cause is confirmed and awaits owner disposition; F3 wrong-session send was NOT REPRODUCED; extension-dialog adapter gate is BLOCKED/NOT VERIFIED because ProDesk `pi-ask` custom TUI did not reach the web adapter. G6 off-tailnet remains UNVERIFIED; TUI↔Web handoff remains pre-existing spec-BLOCKED and out of this host-2 G5 scope, not a G5 failure. G4 Serve `47900` remains explicitly excluded.
+
+Cleanup is complete: six lane test devices removed (owner SM-A556E preserved); CDP unit restored from backup with empty diff and no `9222` listener; local relay/tunnels closed. No r4/source edit or new host deployment was performed.
+
+### Owner dispositions (2026-11-21, via ask_user — closes the open G5 questions)
+
+1. **F2 → deferred into the next r4 batch** (with any other pending fixes; one combined deploy + fresh no-turn reconfirm later). Root cause + fix seam stay recorded in the RCA section below and in the bug backlog candidate; r3 ships as-is with reload-heals degradation.
+2. **Extension-dialog gate → laptop evidence accepted** for the shared apps/web adapter path (laptop UAT 2026-11-19 PASS: questionnaire→ui.respond); host-2 recorded as known-gap BLOCKED/NOT VERIFIED, no re-test planned.
+3. **G6 → UNVERIFIED accepted and documented** (no external vantage in this run; gateway is tailnet-only by design and Serve config confirmed tailnet-only).
+4. **Evidence-only commit approved** for the receipt + UAT screenshots (no source changes).
+
+G5 host-2 therefore closes as **PARTIAL→dispositioned**: all authorized gates executed; remaining items are either deferred (F2→r4), accepted via alternate evidence (extension dialog), or explicitly accepted as UNVERIFIED (G6). Handoff remains the pre-existing spec-BLOCKED out-of-scope path. Any future r4 deploy still requires the mandatory fresh owner no-turn reconfirm immediately before T20 promote + apply.
 
 
 ## R3 rebuild + successful apply (2026-11-20 16:0x–16:25 local)
@@ -20,6 +33,8 @@ R3 artifacts: AppImage `24087eb4b821fa5ebc40be8de7c44b48f97381a145cf4236a041b1bc
 **Apply PASS** (terminal `3a83c45c`): fresh owner no-turn reconfirm (`Xác nhận không turn`) → T20 re-pin PASS (terminal `009778cc`, canary `220bdadeff62`, registry `b0a828dc7a6e`, stamp `20261120T162355Z`) → `LIX_DEPLOY_RESULT status=installed app_asar_sha256=6a3a8547… stage_cleanup=pass`. Post-deploy verify (terminal `f8d95cff`): service active NRestarts=0, live asar sha == pin, gateway listening + HTTP responding, T20 pin intact (`9cf819d2…`), rollback 0.7.13 retained, journal zero error lines.
 
 Incident evidence recorded in build receipt `incident_recovery_evidence` (r2 error + recovery hashes + reconfirm answer YES).
+
+**Deploy provenance commits (pi-app main, local commit, NOT pushed — release workflow gate)**: packaging fix `a845e1a`, receipts `35e2e18`. The deployed r3 artifact was built from a working tree content-identical to `a845e1a` (no edits between build and commit; tree clean post-commit).
 
 ## EXEC attempt log (2026-11-20 15:36–15:44 local)
 
@@ -85,3 +100,108 @@ Historical preflight evidence: `.agent-workbench/lix-web/prodesk-preflight-20261
 - No changes to `packages/coding-agent/**` (T1 closed at `96404ff8ee`).
 - Candidate plan: `.agent-workbench/lix-web/deploy-candidate-host2-0.7.14-20261120.md`; latest push `msg_20261120071956_4ab0a606fe6f`.
 - Parent path-B/owner-gate evidence: `msg_20261120071937_ec95f0c87c7e` + direct gate evidence `msg_20261120072026_bacc835c062d`.
+
+## G5/G7 — UAT progress (2026-11-20 16:3x–16:5x local)
+
+**G7 browser-pair + pairing gate: PASS.**
+- Fresh pairing generated via CDP `ipc:remote.regeneratePairing` on the running app (parent-specified path; unit temporarily patched with `--remote-debugging-port=9222` loopback — backup `pi-desktop-app.service.bak-20261120-uat-cdp`, revert after UAT).
+- Isolated UAT browser cannot reach tailnet/LAN directly (sandboxed networking): built local web+ws relay on `127.0.0.1:47980` (serves `apps/web/dist` + splices WS upgrades to `prodesk-home.tailff3893.ts.net:47900`; static 200, upgrade 101 verified).
+- Pair offer filtered to the single working endpoint (`ws://127.0.0.1:47980`) before pairing (offer endpoints are host-side LAN/tailnet URLs; LAN is UFW-blocked by design).
+- Flow: Quên stale host record (fresh device key required — pairToken only sent on first pairing of a key, `handshake.ts:27`) → paste filtered offer → Ghép nối.
+- Host-side evidence (CDP `ipc:remote.status`): device `d_eDWuE2qlcWr6` name "Li Web" platform Chrome role operator **online:true**; pairing token consumed; old Android `d_wRjm7laVr3Q7` untouched (offline).
+- Web UI evidence: host chip `prodesk-home` green "Trực tuyến"; session rail lists real host sessions (sync-prodesk, chào, kaneo-card smoke, deploy-lane, picron-triage, PiCron warning triage, news sessions). Screenshot: `uat-host2-pair-online.png`.
+- Note: re-pair creates a NEW device identity by design (one-shot token); the revoked owner phone device `d_1KMwKB5lqkyU` cannot be "re-paired" from the lane — owner repeats the same QR/paste flow on the phone when needed.
+
+**UAT environment (temporary, remove after G5):** local serve+relay `127.0.0.1:47980` (script `%TEMP%/lix-webserver-47980.js`), CDP 9222 flag, SSH tunnel 19222→9222.
+
+### Pairing gate — second driver (real Chrome, 2026-11-21)
+
+- agent_browser managed-session tools wedged mid-UAT: policy lock acquire fails because node cannot stat/exec BACKSLASH `C:\Windows\System32\...` paths (ENOENT; forward-slash path works) AND PowerShell cold start ~1.4-2s > 1s identity timeout. Runtime dist patched (process-identity.js: 5s timeout + forward-slash path join; backups `*.bak-uat-timeout-20261121`) but wrapper caches the old module → managed browser unrecoverable until extension /reload. Port patch to source post-UAT.
+- Switched UAT driver to real Chrome via chrome_devtools CDP. Real Chrome's proxy blocks 100.65.x directly (fetch/WS fail) → same relay path (ws://127.0.0.1:47980).
+- Re-paired: fresh token via CDP regenerate → Quên stale record → filtered offer (endpoint 127.0.0.1:47980) → Ghép nối → **host chip green online**, full session rail.
+- Host-side evidence (`ipc:remote.status`): new device `d_VWmkyI4p49gv` name "Li Web" platform Chrome **online:true**; token consumed. Previous managed-browser device `d_eDWuE2qlcWr6` now offline (tab lost).
+- Screenshot: `uat-host2-chrome-pair-online.png`.
+- Cleanup note: after UAT, revoke lane test devices `d_eDWuE2qlcWr6` + `d_VWmkyI4p49gv` from LiX desktop Auth → Devices (owner action or lane if authorized).
+
+### G5 gates — Brave driver (2026-11-21, corrected)
+
+**Correction (parent review):** turn.send ran in session `prodesk-tab: Mitra production preflight`, NOT "chào" (first rail click didn't change selection; workbench restored most-recent session). The red `error: error` timeline entry in the turn-send PNG is a HISTORICAL errored event from that session's earlier preflight run (terminal_request error state; positioned immediately BEFORE our `Trả lời đúng một từ: pong` turn; content matches the session's read-only discovery work). Not a rendering bug. Corrected chào-session evidence: `uat-host2-chao-session-open.png` (chào selected, history "Chào. Có gì cần làm không..." + "mày có thể làm gì" rendered).
+
+**Allowlist finding resolution (parent decision):** `session.open forbidden` on "+" new-session = EXPECTED fail-closed per spec negative set (path outside allowed project). Allowlist = `/home/quoc` only, exact-match; recorded as post-UAT backlog for owner product decision. Do NOT broaden during UAT.
+
+**Terminal PTY gate: PASS.** Inspector → Terminal opens a live host shell (`quoc@prodesk-home:~$`); typed `echo li-web-uat-ok` → command echoed + output `li-web-uat-ok` + fresh prompt. Evidence: `uat-host2-terminal-pty-brave.png`.
+
+**F2 (part of consolidated client-state triage below; root cause confirmed).**
+- Observed after the "+" attempt and after a later session update: the rail collapsed to one row or empty while the host still had 25 allowed sessions; page reload restored the full snapshot. Evidence: `uat-host2-f2-partial-rail.png`.
+- Root cause is delta/snapshot mismatch, not a persisted-data loss: `SessionHub.flushList` emits only dirty rows + removed keys (`src/main/remote/session-hub.ts:800-819`), while the browser's `sessions.update` handler replaces its whole list (`apps/web/src/workbench/workbench-store.ts:99-108,247-251`). Full `session.watchList` after reload returns the 25-row snapshot (`Workbench.tsx:126-136`). Details + bounded fix seam are in the consolidated RCA section below; owner decision (authorize fix lane vs defer) remains pending.
+
+**Pairing state note:** Brave pairing survived as device `d_VfShiKzUOYw_` (online). Test devices to revoke after UAT: `d_eDWuE2qlcWr6`, `d_VWmkyI4p49gv`, `d_VfShiKzUOYw_` (last one only after all gates finish).
+
+### G5 gates — negative matrix, attachment, multi-tab (2026-11-21)
+
+**Negative matrix: PASS (3/3, fail-closed).**
+- evil Origin `https://evil.example` → HTTP **403** on `/ws` upgrade (node ws probe via tailnet `100.65.131.116:47900`).
+- Replayed spent pair token (fresh identity) → handshake error **pair_used**.
+- Fresh paired device revoked via `ipc:remote.revokeDevice` → live socket closed with **4006 'revoked'** (gateway.ts:406; 4004 = connection.ts auth-close path — both coded fail-closed; earlier laptop UAT observed 4004-web/4006-android, node probe got 4006 per gateway.ts). Probe device self-revoked in test.
+
+**Attachment gate: PASS (≤10 MiB, prompt-only preserved).**
+- `attachment.upload` 1 MiB via node client → saved `/home/quoc/.config/pi-desktop/clipboard-images/pi-clipboard-a9def71c-uat-att-1mib.bin` (1,048,576 B); `attachment.get` round-trip byte-identical.
+- 11 MiB → rejected fail-closed at TWO layers: zod schema cap (`data ≤ 13,981,016 chars` = base64 of 10 MiB) + rpc decoded-bytes check (`attachment too large`, rpc.ts:143).
+- Prompt-only UI contract unchanged (Composer.tsx:99-118 — upload inserts @file reference, never starts a turn); client-side validation covered by features/upload.test.ts (T3).
+- UI file-picker flow NOT exercised interactively (Playwright filechooser unsupported + native dialog would open on the user's real Brave); UI validation is unit-tested, protocol pipeline verified end-to-end above.
+
+**Multi-tab gate: PASS (controlled visible-turn proof; no duplicate).**
+- Two Brave tabs, same host + same session (`chào`), controlled marker sent in tab 1; each `.timeline` shows exactly one user marker + one `MULTITAB_OK` reply, and both bottom-scrolled screenshots visibly show the turn. Evidence: `uat-host2-multitab-visible-final-bottom-tab1.png` / `uat-host2-multitab-visible-final-bottom-tab2.png`.
+- Handoff-active aspect: out of scope for this G5 host-2 run; the pre-existing TUI↔Web handoff remains spec-BLOCKED, not a G5 failure.
+
+**F3 wrong-session send:** NOT REPRODUCED; see the consolidated client-state RCA below. The earlier pong artifacts showed Mitra selected, so they did not prove chào was selected.
+
+**Test-device tally (closure = removeDevice, all EXCEPT owner SM-A556E):** `d_eDWuE2qlcWr6`, `d_VWmkyI4p49gv`, `d_VfShiKzUOYw_` (Brave, current driver — LAST), `d_4YkoMjb26gq6` (revoked, record remains), `d_R87sIoEjP0Kj`, `d_JV5IwrxYNAGB`.
+
+**Model/settings gate evidence (accepted by parent):** full host model catalog (OpenAI/Anthropic/Google/Z.ai/GLM/DeepSeek/Xiaomi/Grok lists) + thinking levels (off→max) render in composer pickers; per-session model.set RPC exists (rpc.ts:137-139); no host-side mutation exercised on owner sessions during UAT.
+
+### G5 consolidated client-state RCA — 2026-11-21 (before any source fix)
+
+**F2 session-rail loss — ROOT CAUSE CONFIRMED (source mismatch: delta vs snapshot).**
+- Server contract is incremental: `src/main/remote/session-hub.ts:800-819` flushes only dirty rows (`keys → summaries`) plus a separate `removed` list, then emits `sessions.update { sessions: mine, removed? }`.
+- Client treats that delta as a complete snapshot: `apps/web/src/workbench/workbench-store.ts:99-108` assigns `slice.sessions = sessions`; event handler `:247-251` routes the incremental event straight to that replacement setter. A one-row update therefore replaces the 25-row inbox with one row; a removed-only event supplies an empty `sessions` array and yields an empty rail.
+- Full snapshots use the same setter legitimately: `apps/web/src/workbench/Workbench.tsx:126-136` receives `session.watchList` and sets all rows. Reload calls `session.watchList` again; fresh snapshot restores all 25.
+- Repro evidence: screenshot `uat-host2-f2-partial-rail.png` shows exactly 1 rail row (`prodesk-tab: Mitra production preflight`) while the host's `ipc:session.list('/home/quoc')` returns 25 rows. Page reload rehydrates 25 rows. This is NOT a `refreshRowsQuiet` throw path: `SessionHub.refreshRowsQuiet()` catches and preserves rows (`session-hub.ts:159-172`); `loadRows()` prunes only after `listSessions()` resolves (`:675-703`).
+- Minimal fix seam (not applied): preserve full-snapshot setter for watchList, add a distinct delta-merge action for `sessions.update` (upsert `p.sessions`, remove only `p.removed`, keep other rows). Regression tests need one-row delta + removal-only delta + full snapshot.
+
+**F3 wrong-session send — NOT REPRODUCED; parent retracted the prior P1 patch order.**
+- Parent was right that the earlier pong artifacts show `prodesk-tab: Mitra production preflight` selected; those artifacts do NOT prove that `chào` was selected when pong was sent.
+- Fresh controlled verification: reload → 25 rows → click the actual `button.session-row` whose title is `chào`; after 7s, selected row is `chào` and timeline renders chào history. Send `UAT F3 check 2026-11-21: reply exactly MULTITAB_OK`; host-side `ipc:session.list` shows `chào updatedAt=2026-11-21T02:37:56.468Z`, while Mitra remains `2026-11-21T02:19:12.070Z`.
+- Two Brave tabs both selected `chào`; each `.timeline` had exactly one user marker and one assistant `MULTITAB_OK`. Bottom-scrolled screenshots with the visible turn: `uat-host2-multitab-visible-final-bottom-tab1.png`, `uat-host2-multitab-visible-final-bottom-tab2.png`.
+- Therefore do not patch a guessed F3 fix yet: the source path `Workbench.tsx:109-123, 236-258, 386-414` selects/stores one `sessionKey` and binds composer callbacks to that same key; the earlier UAT driver did not establish selection identity. Need a deterministic failing repro with selected row + send target evidence before calling this a client data-integrity bug.
+
+**Timeline-empty-on-restore symptom — not reproduced on clean reload.** Two clean reloads with 25 rows and one explicit `chào` row click loaded the session history within 7s; no banner/error. Earlier blank-timeline screenshots were taken during the same ambiguous browser-driver/session-selection period and had stale Context stats, so retain as a symptom within this triage, not a verified third bug.
+
+**Handoff gate:** TUI↔Web owner handoff remains the pre-existing spec-documented BLOCKED path (interactive TUI claim hook absent). It is **out of scope for this host-2 G5 assignment, not a G5 failure**; do not claim PASS.
+
+**Authority boundary:** no pi-app source edits, r4 build, or redeploy performed. Current peer mission owns `pi-mono-li/packages/coding-agent/**`; its parent mission is `pi-mono-li` `packages/**, scripts/**, docs/**`; current coordination status shows no active grant (old T1 grant revoked). Existing assignment authorizes host-2 G1/G2 deploy + UAT but does not manifest-write-own `apps/web/**`. Before any source fix/rebuild, parent must create/dispatch the correctly scoped pi-app task/run. Any subsequent host apply still requires the mandatory fresh owner no-turn reconfirm immediately before T20 promote+apply.
+
+
+### G5 extension-dialog probe — blocked on host UI adapter route (2026-11-21)
+
+- Real ProDesk session `chào`: sent a no-mutation prompt to invoke built-in Pi `ask_user` with a harmless Alpha/Beta question. It returned timeline tool result `error` → `UNSUPPORTED_DESKTOP_UI: custom TUI requires an adapter interaction protocol`; no web `.extension-dialogs`/`ui.request` appeared. Screenshot `uat-host2-extension-ui-unsupported.png`.
+- Source confirms this path: `src/worker/desktop-ui-bridge.ts:213-215` rejects `custom()` without `interactArgs`/`lastAskPayload`. Browser `ask_user_question` card exists, but this attempt did **not** reach that supported adapter envelope. Thus host-2 extension-dialog gate remains **BLOCKED/NOT VERIFIED**, not a pass and not yet a client dialog rendering failure. Need identify the adapter-backed invocation before any further UAT; no source/host mutation was made.
+- Composer was cleared after the probe; session left idle.
+
+
+### UAT cleanup closure (2026-11-21)
+
+- Device cleanup via host IPC: for each lane test identity, `ipc:remote.revokeDevice` reported `revoked:true`, then `ipc:remote.removeDevice` reported absent. IDs: `d_eDWuE2qlcWr6`, `d_VWmkyI4p49gv`, `d_4YkoMjb26gq6` (already revoked), `d_R87sIoEjP0Kj`, `d_JV5IwrxYNAGB`, `d_VfShiKzUOYw_` (Brave, revoked last). Final `ipc:remote.status` contains exactly owner device `d_wRjm7laVr3Q7` (SM-A556E), online=false/revoked=false. No owner identity touched.
+- No active turns before service cleanup: host `ipc:session.list('/home/quoc')` → 25 sessions, `running=0`.
+- CDP cleanup: restored `/home/quoc/.config/systemd/user/pi-desktop-app.service` from `pi-desktop-app.service.bak-20261120-uat-cdp`; `diff -q` empty. The terminal batch returned timeout/cancelled after ~123s, but independent SSH postcondition verified restore completed: systemd user service active, ExecStart has no `--remote-debugging-port`, port 9222 listener count 0, gateway 47900 listener count 1, NRestarts=0, MainPID 530022.
+- Laptop local UAT cleanup: owned Brave tabs had already closed; stopped exact owned SSH tunnel process (verified cmdline `ssh -f -N -L 19222:127.0.0.1:9222 prodesk-home`) and Node relay (verified PID commandline `lix-webserver-47980.js`). Final listener counts: 19222=0, 47980=0, 54790=0, 14791=0, 14790=0.
+- Temporary probe source files created for negative/attachment checks are removed from repo after results were recorded; no app source changes made. G5 remains PARTIAL: extension-dialog gate is BLOCKED/NOT VERIFIED (built-in `pi-ask` custom TUI did not reach adapter UI); F2 P2 owner decision pending; F3 NOT REPRODUCED; G6 off-tailnet UNVERIFIED; TUI↔Web handoff spec-BLOCKED/out-of-scope.
+
+
+### Local managed-browser diagnostic cleanup (2026-11-21)
+
+- To diagnose the native agent_browser policy-lock failure, local runtime `C:/Users/quocn/.pi/agent/extensions/pi-agent-browser-native/dist/.../process-identity.js` was temporarily changed (1s→5s identity timeout + forward-slash PowerShell path); exact pre-change backup SHA-256 `2467fda598e5285ff8725b249f9bf2ebb2e9d5e21ad155625f912ef1d5ac5600` restored byte-identically, debug copy removed, `node --check` PASS. No source or ProDesk extension changes.
+- Verified regression evidence on original runtime: `readProcessStartIdentity(process.pid)` returned undefined in 1047ms with 1s cap; forward-slash PowerShell executable + 5s cap produced an identity. Candidate recorded as `iss_20261121031421_d8f0686607` (P2; separate local agent-browser issue, outside LiX release scope).
+
+
+**Cleanup restart note:** restoring the original CDP-free unit required `systemctl --user restart pi-desktop-app`. During stop, old PID 3632281 exited `code=dumped, status=4/ILL` and systemd logged `Failed with result 'core-dump'`; the unit then started new PID 530022. Postcondition verified active/running, NRestarts=0, gateway 47900 listening and HTTP probe 404. `coredumpctl info 3632281` returned no retained dump; no further restart/mutation performed. Parent informed for triage; this is not evidence of a failed steady-state service.
