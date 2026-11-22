@@ -291,3 +291,27 @@ Cleanup:
 - Read-only T20 check after UAT: registry `b0a828dc7a6e`, canary `220bdadeff62`, service active. No T20 mutation by this worker.
 
 Verdict: scoped R4 UAT **PASS** — F2 delta merge, `turn.send` + stream, and visible one-copy multi-tab verified on host-2 R4 runtime. G5's scoped R4 UAT item is complete; G6 off-tailnet remains UNVERIFIED; TUI↔Web handoff remains pre-existing spec-BLOCKED out of scope; G4 Serve excluded. Full web typecheck remains BASELINE BLOCKED (missing `apps/web/src/test/host-sim.ts`) as documented above.
+
+## R5 create→watchList→open live UAT (2026-11-22) — PASS via approved local relay
+
+Authorization: parent confirmed owner approval for exactly two controlled app-unit restarts; restart #1 enabled only loopback CDP, restart #2 restored the exact original unit. No diagnostic restart, deploy/apply, T20 edit, Serve/firewall/DNS change, or turn was performed.
+
+Preflight (terminal `c0c916f0-bd7a-48d1-9808-00ceabfd0068`): host current `/home/quoc/apps/pi-desktop/0.7.14-3e78241b`; app.asar `3e78241b652f185c8391c65b21a24615efd8420f0e40d4d1d2ddf8ba485b8f18`; service active/NRestarts=0; gateway :47900=1; CDP :9222=0; original user unit SHA `9475f265093eb6b857b7cdd44143e16019a3ac12c3ea61839bcf8c8bd161d0d2`. T20 baseline: registry SHA `b0a828dc7a6ea24436c35cb84248f16b8bfbe731f384c1c0352c12d46b15f12c`; canary SHA `220bdadeff624b1dee22dec319b8379cb8e4aefabfa8eb71fc0e7a8be8da138c`.
+
+Connectivity finding: production `https://li.quoc.app` loaded, but host IPC reported only `ws://` LAN/Tailscale endpoints. The HTTPS PWA rejects `ws://` and requires `wss://` (`apps/web/src/transport/endpoint.ts:6-11, 59-61`); no WSS endpoint was advertised. Parent kept this as a separate connectivity gap and authorized the previously proven local-relay route; no Serve/tunnel/firewall/DNS changes.
+
+Setup: built `apps/web/dist` from clean source `li-web/fix-create-open` HEAD `686344e1355727c8af9daaf805205be40d22e447` (`npm run web:build` PASS). Restart #1 terminal `89622942-5423-4132-a627-bbed6ffaa24b`: exact backup `/home/quoc/.config/systemd/user/pi-desktop-app.service.bak-20261122-r5-uat-cdp` SHA `9475f265…`; only `--remote-debugging-port=9222` added; CDP bound exactly `127.0.0.1:9222`; service active/NRestarts=0, R5 asar unchanged, gateway=1. Fixed SSH tunnel 19222→9222 + local static/WebSocket relay 127.0.0.1:47981 used only for this test; pair token stayed in relay memory and is not recorded.
+
+UAT evidence (local PWA from the exact R5 source build; browser tab `1341357748`):
+- Host chip reached “Trực tuyến”; existing stale local test key was forgotten before pairing.
+- New test device `d_vsaU6IsaEB2N` (“Li Web”, Chrome) paired. Host IPC showed owner SM-A556E `d_wRjm7laVr3Q7` still present/unrevoked; prior R4 test device `d_rVPNhkhnMcxE` already revoked.
+- UI baseline 26 session rows. Clicking the real “Tạo phiên mới” control increased the rail to 27, selected the new row, showed no UI errors, and displayed the empty timeline placeholder “Chưa có nội dung — gửi tin nhắn đầu tiên.” This follows `Workbench.onCreate` (`apps/web/src/workbench/Workbench.tsx:199-207`): session.create → refreshSessions/session.watchList → openSession/session.open. Created session key: `/home/quoc/.pi/agent/sessions/--home-quoc--/2026-11-22T08-00-55-239Z_01a20245-bfc7-73a6-b46d-ca2d3ac975c0.jsonl`.
+- No `turn.send` was issued. Host IPC after creation: workerCount=1, runningCount=0; file-based session.list returned 26 rows because the new transcript is still provisional/not disk-visible. Screenshot crop (host online + selected provisional row + empty timeline; other session titles cropped out): local temp `C:/Users/quocn/AppData/Local/Temp/uat-r5-create-open-crop.png`; Kaneo asset `h3mxdy4jnqajf89kdey28vs9` (`uat-r5-create-open-crop.png`).
+
+Cleanup and final verification:
+- Revoked test device through `ipc:remote.revokeDevice` (terminal `2a45346e-4987-49c1-859f-b62ae8baa3be`); host status confirmed `d_vsaU6IsaEB2N` revoked/offline, owner SM-A556E unchanged/unrevoked. Browser-local test key was forgotten.
+- Before restart #2, fresh host IPC showed `workerCount=1`, `runningCount=0`; session.list runningReported=0. Ask_user no-turn form initially timed out; parent obtained fresh owner “Xác nhận no-turn” immediately before restart #2. The unit file had already been restored byte-identically and daemon-reloaded without restart while awaiting that confirmation.
+- Restart #2 terminal `6c08ef02-bdb0-4362-9963-ca4ec23b1e78`: one controlled restart only. Final PASS: service active, NRestarts=0, MainPID 3757773, current R5 path and asar hash unchanged, unit and backup both SHA `9475f265…` and `cmp` equal, ExecStart has no CDP flag, :9222=0, :47900=1. T20 hashes remained exactly the baseline values above.
+- Laptop cleanup terminal `dab8e581-5137-413a-bad1-9641e6d1da6a`: exact relay process tree terminated (0 remaining); local :47981 and :19222 listeners=0. No relay/tunnel remains.
+
+Verdict: **R5 create→watchList→open PASS via the parent-approved local relay/local build route, with zero turns.** Direct production-origin pairing remains unavailable until an approved WSS path exists; this task did not enable one. No application source, deploy pins, T20, or host config other than the temporary app unit flag (restored byte-identically) changed.
