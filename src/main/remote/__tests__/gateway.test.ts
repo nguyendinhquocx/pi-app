@@ -37,6 +37,9 @@ async function reconnect(c: NodeRemoteClient): Promise<NodeRemoteClient> {
 const patchesOf = (c: NodeRemoteClient): TurnPatch[] =>
   c.events.filter((e) => e.m === 'turn.patch').flatMap((e) => (e.p as { patches: TurnPatch[] }).patches)
 
+/** iss_20261121165413 F-03: strictly longer than the hub's ANNOUNCE_PENDING_MS (10 min). */
+const ANNOUNCE_LEASE_FOR_TEST_MS = 11 * 60_000
+
 const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms))
 
 beforeEach(async () => {
@@ -524,6 +527,49 @@ describe('sessions', () => {
     await expect(c.call('session.open', { sessionKey: secretFile })).rejects.toMatchObject({ err: { code: 'forbidden' } })
     // A crafted wire key that merely looks like a transcript in a non-allowed project stays denied.
     await expect(c.call('session.open', { sessionKey: '/work/secret/crafted-iss-20261121165413.jsonl' })).rejects.toMatchObject({ err: { code: 'forbidden' } })
+  })
+
+  // iss_20261121165413 F-04: an announced session must be scoped to its own project in watchList
+  // snapshots, exactly like disk rows — no cross-project provisional leak.
+  it('scopes announced sessions to the requested project in watchList (iss_20261121165413 F-04)', async () => {
+    await gw.stop()
+    host.dispose()
+    host = new FakeHost({ projects: ['/work/pi-app', '/work/other'] })
+    host.store.set('remote', { enabled: true, port: 47900, hostId: 'h_test', devices: [], projects: ['/work/pi-app', '/work/other'] })
+    host.addSession('/work/pi-app', 'old', [{ user: 'a', answer: 'b' }])
+    gw = new RemoteGateway(host)
+    gw.endpointHosts = () => [{ host: '127.0.0.1', kind: 'lan' }]
+    await gw.start({ port: 0, host: '127.0.0.1' })
+    host.sink = gw.sink
+
+    const c = await pairNew()
+    const created = await c.call('session.create', { projectId: '/work/other' })
+    const scopedAway = await c.call('session.watchList', { projectId: '/work/pi-app' })
+    expect(scopedAway.sessions.some((s) => s.sessionKey === created.sessionKey)).toBe(false)
+    const scopedOwn = await c.call('session.watchList', { projectId: '/work/other' })
+    expect(scopedOwn.sessions.some((s) => s.sessionKey === created.sessionKey)).toBe(true)
+    const unscoped = await c.call('session.watchList', {})
+    expect(unscoped.sessions.some((s) => s.sessionKey === created.sessionKey)).toBe(true)
+  })
+
+  // iss_20261121165413 F-03: once the announce lease expires without a transcript, loadRows prunes
+  // the provisional row and session.open degrades to a clean authorization failure — no crash,
+  // no resurrected access.
+  it('expires the announce lease and then refuses the session gracefully (iss_20261121165413 F-03)', async () => {
+    let now = Date.now()
+    await gw.stop()
+    gw = new RemoteGateway(host, () => now)
+    gw.endpointHosts = () => [{ host: '127.0.0.1', kind: 'lan' }]
+    await gw.start({ port: 0, host: '127.0.0.1' })
+    host.sink = gw.sink
+
+    const c = await pairNew()
+    const created = await c.call('session.create', { projectId: '/work/pi-app' })
+    const fresh = await c.call('session.open', { sessionKey: created.sessionKey })
+    expect(fresh).toMatchObject({ kind: 'snapshot', turns: [] })
+    now += ANNOUNCE_LEASE_FOR_TEST_MS
+    await c.call('session.watchList', {})
+    await expect(c.call('session.open', { sessionKey: created.sessionKey })).rejects.toMatchObject({ err: { code: 'forbidden' } })
   })
 
   it('a phone-created session opens empty, streams its first run, then tells the desktop list', async () => {

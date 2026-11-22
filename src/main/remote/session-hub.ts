@@ -762,9 +762,16 @@ export class SessionHub {
     // does not include yet so the phone rail shows the session it just created.
     const listedKeys = new Set(listed.map((r) => normalizeSessionFileKey(r.sessionFile)))
     const now = this.now()
-    const announced = [...this.rows.values()].filter(
-      (r) => typeof r.provisionalUntil === 'number' && r.provisionalUntil > now && !listedKeys.has(normalizeSessionFileKey(r.sessionFile)),
-    )
+    // iss_20261121165413 F-01: announced rows are scoped exactly like disk rows — allowed-set
+    // membership plus the requested project filter — so watchList snapshots agree with flushList
+    // deltas and never leak another project's provisional session.
+    const allowedKeys = new Set(projects.map((p) => normalizeSessionFileKey(p).replace(/\/+$/, '')))
+    const announced = [...this.rows.values()].filter((r) => {
+      if (!(typeof r.provisionalUntil === 'number' && r.provisionalUntil > now)) return false
+      if (listedKeys.has(normalizeSessionFileKey(r.sessionFile))) return false
+      const pk = normalizeSessionFileKey(r.projectId).replace(/\/+$/, '')
+      return allowedKeys.has(pk)
+    })
     const rows = [...listed, ...announced]
     const pending = this.ui.pendingBySession()
     return rows.map((r) => this.summaryFor(r, pending)).sort((a, b) => b.updatedAt - a.updatedAt)
