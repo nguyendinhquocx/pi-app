@@ -8,11 +8,11 @@
     <title>Li Web</title>
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- CSP (spec T3). frame-ancestors only works as an HTTP header — see public/_headers.
-         Dev note: the Vite dev server widens connect-src for HMR (see vite.config.ts). -->
+    <!-- frame-ancestors only works as an HTTP header — see public/_headers.
+         The exact hash permits only the theme bootstrap below; dev CSP widening is in vite.config.ts. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; connect-src 'self' wss://*.ts.net; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+      content="default-src 'none'; script-src 'self' 'sha256-VwP8+kAgHVxwYvtGkb7sWat2Kn23WZOnKjfCFc2BTcE='; connect-src 'self' wss://*.ts.net; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'none'"
     />
     <script>
       // Anti-FOUC: restore theme before React mounts (localStorage lix-web-ui, LiX pattern).

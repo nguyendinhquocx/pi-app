@@ -2,7 +2,7 @@ import QRCode from 'qrcode'
 import type { Role } from '@shared/remote'
 import { RemoteGateway, type GatewayStatus } from './remote/gateway'
 import { createElectronRemoteHost } from './remote-host-electron'
-import { detectTailnetName } from './remote/tailnet'
+import { detectTailnetName, detectTailnetServeHostname } from './remote/tailnet'
 
 /**
  * Owns the single RemoteGateway: created lazily, started when the user enables it (or at boot
@@ -10,20 +10,34 @@ import { detectTailnetName } from './remote/tailnet'
  */
 
 let gateway: RemoteGateway | null = null
+let serveHostname: string | null = null
 
 function instance(): RemoteGateway {
-  if (!gateway) gateway = new RemoteGateway(createElectronRemoteHost())
+  if (!gateway) gateway = new RemoteGateway(createElectronRemoteHost(() => serveHostname))
   return gateway
 }
 
 const TAILNET_TTL_MS = 60_000
 let tailnetCheckedAt = 0
+let tailnetRefresh: Promise<void> | null = null
 
-/** Refresh the MagicDNS endpoint at most once a minute (the CLI call takes a few ms to seconds). */
+/** Refresh MagicDNS + the exact active Serve route at most once a minute; overlapping callers share the same probe. */
 async function refreshTailnet(gw: RemoteGateway): Promise<void> {
+  if (tailnetRefresh) return tailnetRefresh
   if (Date.now() - tailnetCheckedAt < TAILNET_TTL_MS) return
-  tailnetCheckedAt = Date.now()
-  gw.tailnetName = await detectTailnetName().catch(() => null)
+
+  const refresh = (async () => {
+    const tailnetName = await detectTailnetName().catch(() => null)
+    gw.tailnetName = tailnetName
+    serveHostname = await detectTailnetServeHostname(tailnetName, gw.boundPort).catch(() => null)
+    tailnetCheckedAt = Date.now()
+  })()
+  tailnetRefresh = refresh
+  try {
+    await refresh
+  } finally {
+    if (tailnetRefresh === refresh) tailnetRefresh = null
+  }
 }
 
 export type RemoteStatus = GatewayStatus & { qrSvg?: string }

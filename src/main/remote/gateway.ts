@@ -264,7 +264,7 @@ export class RemoteGateway {
     }
     // Origin + Host checks run BEFORE handleUpgrade: a mismatched browser context never reaches
     // the handshake and never opens a WebSocket frame.
-    if (!originAllowed(req.headers.origin, this.auth.config.serve?.hostname)) {
+    if (!originAllowed(req.headers.origin, this.serveHostname())) {
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
       return
     }
@@ -303,7 +303,7 @@ export class RemoteGateway {
     if (req.method === 'OPTIONS' && m) {
       // Preflight for the browser PWA; allow only the approved origins.
       const origin = req.headers.origin
-      if (typeof origin === 'string' && originAllowed(origin, this.auth.config.serve?.hostname)) {
+      if (typeof origin === 'string' && originAllowed(origin, this.serveHostname())) {
         res.writeHead(204, {
           'access-control-allow-origin': origin,
           'access-control-allow-methods': 'GET, OPTIONS',
@@ -322,7 +322,7 @@ export class RemoteGateway {
       const asset = await this.assets.load(m[1])
       if (asset) {
         const origin = req.headers.origin
-        const allowOrigin = typeof origin === 'string' && originAllowed(origin, this.auth.config.serve?.hostname) ? origin : undefined
+        const allowOrigin = typeof origin === 'string' && originAllowed(origin, this.serveHostname()) ? origin : undefined
         res.writeHead(200, {
           'content-type': 'application/javascript; charset=utf-8',
           'content-length': String(asset.body.length),
@@ -363,15 +363,21 @@ export class RemoteGateway {
   /** This machine's Tailscale MagicDNS name (`pc.tail1234.ts.net`), found once the gateway starts. */
   tailnetName: string | null = null
 
+  /** The Electron adapter reports only the active, exact Tailscale Serve route; tests/older adapters may use persisted config. */
+  private serveHostname(): string | undefined {
+    if (typeof this.port.serveConfig === 'function') return this.port.serveConfig() ?? undefined
+    return this.auth.config.serve?.hostname
+  }
+
   endpointInfo(): EndpointInfo[] {
     const hosts = this.endpointHosts()
     const all = this.tailnetName ? [...hosts, { host: this.tailnetName, kind: 'tailscale' as const }] : hosts
     const out = all.map(({ host, kind }) => ({ url: `ws://${host.includes(':') ? `[${host}]` : host}:${this.boundPort}`, kind }))
-    // Tailscale Serve mapping (owner-configured, activation is a separate release gate): a wss
-    // endpoint on 443 lets the HTTPS PWA connect without mixed-content violations.
-    const serve = this.auth.config.serve?.hostname
-    const serveTcpPort = this.auth.config.serve?.tcpPort
-    if (serve && serveTcpPort) out.push({ url: `wss://${serve}:${serveTcpPort}`, kind: 'tailscale' })
+    // The Electron adapter reports only its exact active HTTPS /ws route. The persisted host/tcp
+    // hint remains a compatibility fallback for older adapters that lack a live Serve reader.
+    const serve = this.serveHostname()
+    const legacyTcpPort = typeof this.port.serveConfig === 'function' ? undefined : this.auth.config.serve?.tcpPort
+    if (serve && legacyTcpPort) out.push({ url: `wss://${serve}:${legacyTcpPort}`, kind: 'tailscale' })
     if (serve) out.push({ url: `wss://${serve}/ws`, kind: 'tailscale' })
     return out
   }

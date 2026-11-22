@@ -47,6 +47,8 @@ export class FakeHost implements RemoteHostPort {
   capabilities: Record<string, string[]> = {}
   cacheWarming: CacheWarming = 'streaming'
   sink: RemoteTapSink | null = null
+  /** Optional live Tailscale Serve hostname reported by the production host adapter. */
+  serveConfig?: () => string | null
   /** Created sessions whose file pi has not written yet (it does so on the first reply). */
   readonly unwritten = new Set<string>()
   private seq = 0

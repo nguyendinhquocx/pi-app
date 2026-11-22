@@ -3,7 +3,7 @@
 # index.html là fallback khi hosting không áp file này.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self' wss://*.ts.net; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'sha256-VwP8+kAgHVxwYvtGkb7sWat2Kn23WZOnKjfCFc2BTcE='; connect-src 'self' wss://*.ts.net; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
   X-Robots-Tag: noindex, nofollow
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff

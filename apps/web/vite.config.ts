@@ -14,7 +14,7 @@ import react from '@vitejs/plugin-react'
  */
 
 const PROD_CSP =
-  "default-src 'none'; script-src 'self'; connect-src 'self' wss://*.ts.net; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+  "default-src 'none'; script-src 'self' 'sha256-VwP8+kAgHVxwYvtGkb7sWat2Kn23WZOnKjfCFc2BTcE='; connect-src 'self' wss://*.ts.net; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'none'"
 
 const DEV_CSP = PROD_CSP.replace(
   "connect-src 'self' wss://*.ts.net",

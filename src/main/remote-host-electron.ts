@@ -95,11 +95,12 @@ function sendToRenderer(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
 }
 
-export function createElectronRemoteHost(): RemoteHostPort {
+export function createElectronRemoteHost(serveConfig: () => string | null = () => null): RemoteHostPort {
   return {
     hostName: () => hostname(),
     appVersion: () => app.getVersion(),
     trustedProjects,
+    serveConfig,
 
     async listSessions(projectId: string): Promise<HostSessionRow[]> {
       const r = await invokeHandler<{ sessions?: ListedSession[] }>('ipc:session.list', { workspaceId: projectId })

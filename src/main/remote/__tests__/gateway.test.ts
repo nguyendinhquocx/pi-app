@@ -729,6 +729,30 @@ describe('upgrade origin and host policy', () => {
     expect(originAllowed('https://evil-x.tailff3893.ts.net', serve)).toBe(false)
   })
 
+  it('advertises WSS only when the live host adapter confirms the active Serve route', () => {
+    const serve = 'prodesk-home.tailff3893.ts.net'
+    host.store.set('remote', {
+      enabled: true,
+      port: 47900,
+      hostId: 'h_test',
+      devices: [],
+      projects: ['/work/pi-app'],
+      serve: { hostname: serve, tcpPort: 8443 }, // persisted hints alone must not advertise a possibly stale endpoint
+    })
+    host.serveConfig = () => null
+    const inactive = new RemoteGateway(host)
+    inactive.endpointHosts = () => [{ host: '192.168.1.23', kind: 'lan' }]
+    expect(inactive.endpoints()).not.toContain(`wss://${serve}/ws`)
+
+    host.serveConfig = () => serve
+    const active = new RemoteGateway(host)
+    active.endpointHosts = () => [{ host: '192.168.1.23', kind: 'lan' }]
+    expect(active.endpoints()).toContain(`wss://${serve}/ws`)
+    expect(active.endpoints()).not.toContain(`wss://${serve}:8443`)
+    const offer = decodePairLink(active.regeneratePairing()!.link)!
+    expect(offer.endpoints).toContain(`wss://${serve}/ws`)
+  })
+
   it('GET asset CORS follows the configured Serve Origin allowlist', async () => {
     await gw.stop()
     const serve = 'x.tailff3893.ts.net'

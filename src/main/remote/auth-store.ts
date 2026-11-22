@@ -25,7 +25,7 @@ export type RemoteStoredConfig = {
   devices: DeviceRecord[]
   /** Workspace paths remote clients may see and create sessions in. */
   projects: string[]
-  /** Tailscale Serve mapping (read-only mirror of the owner-approved host setting). */
+  /** Legacy persisted Serve hint; the Electron adapter now reports only the active verified Serve route. */
   serve?: {
     hostname: string
     /** Optional TLS-terminated TCP lane (`tailscale serve --tls-terminated-tcp=<port>`): the
