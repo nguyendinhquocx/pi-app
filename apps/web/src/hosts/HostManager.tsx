@@ -313,13 +313,16 @@ export function HostManager({ keyStore, socketFactory, initialDialogOpen = false
               <span className={`host-dot ${dotClass}`} aria-hidden="true" />
               <div className="host-main">
                 <div className="host-name">{host.hostName}</div>
-                <div className="host-meta" title={cs?.detail ?? undefined}>
-                  {cs?.permissionDenied ? cs.detail : cs?.detail ? `${label} · ${cs.detail}` : label}
-                </div>
+                {/* Online hosts stay quiet: the green dot carries the state (owner UAT 2026-11-24). */}
+                {(cs?.permissionDenied || cs?.detail || (cs && cs.state !== 'online')) && (
+                  <div className="host-meta" title={cs?.detail ?? undefined}>
+                    {cs?.permissionDenied ? cs.detail
+                      : online ? (cs?.detail ?? null)
+                        : cs?.detail ? `${label} · ${cs.detail}` : label}
+                  </div>
+                )}
               </div>
-              <button onClick={() => void connectHost(host.hostId)} disabled={online}>
-                {online ? 'Đang trực tuyến' : 'Kết nối'}
-              </button>
+              {!online && <button onClick={() => void connectHost(host.hostId)}>Kết nối</button>}
               {online && <button onClick={() => closeHost(host.hostId)}>Đóng tạm</button>}
               {forgetTarget === host.hostId ? (
                 <div className="forget-confirm" role="alertdialog" aria-label={`Xác nhận quên ${host.hostName}`}>
@@ -334,14 +337,12 @@ export function HostManager({ keyStore, socketFactory, initialDialogOpen = false
           )
         })
       )}
-      <p className="notice">Quên chỉ xoá khoá trình duyệt; thu hồi quyền trong LiX desktop → Auth → Devices.</p>
     </section>
   )
 
   const pairPanel = (
     <section className="host-dialog-section" aria-labelledby="pair-heading">
       <h2 id="pair-heading">Ghép nối host mới</h2>
-      <p className="notice">Mở Remote/Pair trong LiX desktop, rồi quét QR hoặc dán pair link.</p>
       <QrScanner onResult={(text) => void doPair(text)} onError={(message) => setPairError(`Camera: ${message}`)} />
       <textarea
         ref={pairTextRef}
@@ -354,7 +355,6 @@ export function HostManager({ keyStore, socketFactory, initialDialogOpen = false
       {pairSuccess && <p className="notice success" role="status">{pairSuccess}</p>}
       <div className="pair-actions">
         <button className="primary" disabled={!pairText.trim()} onClick={() => void doPair(pairText)}>Ghép nối</button>
-        {!qrScanSupported() && <span className="notice">Trình duyệt này không hỗ trợ quét QR — dán link vẫn dùng được.</span>}
         {!policy.secure && <span className="notice">HTTP dev cho phép ws:// nội bộ; bản HTTPS production chỉ dùng wss:// qua Tailscale Serve.</span>}
       </div>
     </section>
@@ -420,7 +420,9 @@ export function HostManager({ keyStore, socketFactory, initialDialogOpen = false
                 <span className={`host-dot ${dotClass}`} aria-hidden="true" />
                 <span className="host-option-copy">
                   <strong>{host.hostName}</strong>
-                  <small>{state?.permissionDenied ? state.detail : state?.detail ? `${label} · ${state.detail}` : label}</small>
+                  {!(state?.state === 'online' && !state?.detail && !state?.permissionDenied) && (
+                    <small>{state?.permissionDenied ? state.detail : state?.state === 'online' ? (state?.detail ?? null) : state?.detail ? `${label} · ${state.detail}` : label}</small>
+                  )}
                 </span>
               </button>
             )

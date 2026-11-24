@@ -10,7 +10,6 @@ import { Composer, type ModelOption } from './Composer'
  */
 
 afterEach(cleanup)
-
 const sessionKey = 'proj/s1.jsonl'
 
 const MODELS: ModelOption[] = [
@@ -19,6 +18,11 @@ const MODELS: ModelOption[] = [
   { id: 'deepseek/deepseek-flash', name: 'DeepSeek Flash', provider: 'deepseek', group: 'apiKey' },
   { id: 'antigravity/gemini-4-argon', name: 'Gemini 4 Argon', provider: 'antigravity', group: 'login' },
 ]
+
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 const baseActions = {
   onSend: vi.fn(async () => undefined),
@@ -52,20 +56,22 @@ function openPicker(): void {
   fireEvent.click(screen.getByRole('button', { name: /^Model:/ }))
 }
 
-describe('Model picker (spec T4)', () => {
-  it('renders every available model grouped by provider — none dropped', () => {
+describe('Model picker (spec T4, LiX-style recents + collapsed groups)', () => {
+  it('current provider group opens by default; every model stays reachable via group toggles', () => {
     renderComposer(MODELS, vi.fn(async () => undefined))
     openPicker()
     expect(document.activeElement).toBe(screen.getByLabelText('Tìm model'))
     const listbox = screen.getByRole('listbox', { name: 'Models' })
-    expect(listbox).toBeTruthy()
-    const options = within(listbox).getAllByRole('option')
-    expect(options).toHaveLength(MODELS.length)
-    // Current model is marked.
-    expect(options.find((o) => o.getAttribute('aria-selected') === 'true')?.getAttribute('data-model-id')).toBe('openai-codex/gpt-6-luna')
-    // Provider groups render as section labels.
+    // Only the current model's provider group is expanded at first.
+    const visible = within(listbox).getAllByRole('option')
+    expect(visible).toHaveLength(1)
+    expect(visible[0].getAttribute('data-model-id')).toBe('openai-codex/gpt-6-luna')
+    expect(visible[0].getAttribute('aria-selected')).toBe('true')
     const text = listbox.textContent ?? ''
     for (const provider of ['openai-codex', 'zai', 'deepseek', 'antigravity']) expect(text).toContain(provider)
+    // Expanding the remaining groups exposes the full catalog — none dropped.
+    for (const toggle of within(listbox).getAllByRole('button', { name: /zai|deepseek|antigravity/ })) fireEvent.click(toggle)
+    expect(within(listbox).getAllByRole('option')).toHaveLength(MODELS.length)
   })
 
   it('search filters by id/name/provider; no-result offers a concise recovery message', () => {
@@ -87,6 +93,8 @@ describe('Model picker (spec T4)', () => {
     const onSetModel = vi.fn((id: string) => new Promise<void>((resolve) => { resolveSet = resolve }))
     renderComposer(MODELS, onSetModel)
     openPicker()
+    // Non-current provider groups start collapsed — search exposes the target directly.
+    fireEvent.change(screen.getByLabelText('Tìm model'), { target: { value: 'glm' } })
     fireEvent.click(screen.getByRole('option', { name: /GLM 5.3 Flash/ }))
 
     // Popover closed, trigger already shows the new model while model.set is still pending.
@@ -112,22 +120,35 @@ describe('Model picker (spec T4)', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Model:/ }))
   })
 
-  it('keyboard combobox: ArrowDown moves the active option, Enter picks it', async () => {
+  it('keyboard combobox: expanding a group then ArrowDown/Enter picks the highlighted model', async () => {
     const onSetModel = vi.fn(async () => undefined)
     renderComposer(MODELS, onSetModel)
     openPicker()
+    fireEvent.click(screen.getByRole('button', { name: /zai/ }))
     const input = screen.getByLabelText('Tìm model')
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     expect(input.getAttribute('aria-activedescendant')).toBeTruthy()
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => expect(onSetModel).toHaveBeenCalledWith('deepseek/deepseek-flash'))
+    await waitFor(() => expect(onSetModel).toHaveBeenCalledWith('zai/glm-5.3-flash'))
+  })
+
+  it('a picked model joins the recents group on reopen and is not duplicated in its provider group', async () => {
+    renderComposer(MODELS, vi.fn(async () => undefined))
+    openPicker()
+    fireEvent.change(screen.getByLabelText('Tìm model'), { target: { value: 'glm' } })
+    fireEvent.click(screen.getByRole('option', { name: /GLM 5.3 Flash/ }))
+    await waitFor(() => expect(screen.queryByRole('listbox', { name: 'Models' })).toBeNull())
+    openPicker()
+    const listbox = screen.getByRole('listbox', { name: 'Models' })
+    expect(within(listbox).getByText('Gần đây')).toBeTruthy()
+    expect(within(listbox).getAllByRole('option', { name: /GLM 5.3 Flash/ })).toHaveLength(1)
   })
 
   it('a failed model.set rolls the optimistic pick back and surfaces the error', async () => {
     const onSetModel = vi.fn(async () => { throw new Error('host từ chối') })
     renderComposer(MODELS, onSetModel)
     openPicker()
+    fireEvent.change(screen.getByLabelText('Tìm model'), { target: { value: 'deepseek' } })
     fireEvent.click(screen.getByRole('option', { name: /DeepSeek Flash/ }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('host từ chối'))
     // Trigger falls back to the previous model.

@@ -91,7 +91,7 @@ export function SessionRail({
           placeholder="Tìm phiên…"
           aria-label="Tìm phiên hoặc tin nhắn đầu tiên"
         />
-        <button className="new-session" aria-label="Tạo phiên mới" disabled={!firstProjectId} onClick={() => void run(() => actions.onCreate(firstProjectId))} title="Tạo phiên mới">
+        <button className="new-session" aria-label="Tạo phiên mới" onClick={() => void run(() => actions.onCreate(firstProjectId))} title="Tạo phiên mới">
           <Plus size={18} aria-hidden="true" />
         </button>
       </div>

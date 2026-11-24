@@ -27,9 +27,9 @@ describe('parity matrix (spec T4: finite T0-based full-parity gate)', () => {
     for (const row of T0_ROWS) expect(covered.has(row), `T0 row ${row} missing from parity matrix`).toBe(true)
   })
 
-  it('parity-required explicit cases are visible: export, theme, fork/rewind, Agents', () => {
+  it('parity-required explicit cases are visible: export, theme, Agents; rewind/fork excluded by owner UAT', () => {
     const find = (part: string) => PARITY_MATRIX.find((row) => row.feature.includes(part))
-    expect(find('Message actions: rewind and fork')?.status).toBe('browser-ready')
+    expect(find('Message actions: rewind and fork')).toMatchObject({ status: 'excluded', reason: expect.any(String) })
     expect(find('Session export Markdown/HTML')?.status).toBe('browser-ready')
     expect(find('Session export raw JSON')).toMatchObject({ status: 'excluded', reason: expect.any(String) })
     expect(find('Appearance/theme editor')).toMatchObject({ status: 'excluded', reason: expect.any(String) })

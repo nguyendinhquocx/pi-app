@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUp, ChevronDown, Paperclip } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronRight, Paperclip } from 'lucide-react'
 import type { CommandInfo } from '@shared/remote'
 import type { ContextStats, SessionUsage } from '@shared/remote'
 import { prepareAttachment, AttachmentTooLargeError, type PreparedAttachment } from '../features/upload'
@@ -26,9 +26,30 @@ function messageId(): string {
   return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const RECENT_MODELS_KEY = 'li-web-recent-models'
+
+/** Device-local recent models (spec T2: device-local prefs never reach the host). */
+export function readRecentModels(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_MODELS_KEY)
+    const parsed = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(parsed) ? parsed.filter((m): m is string => typeof m === 'string').slice(0, 5) : []
+  } catch {
+    return []
+  }
+}
+
+function rememberRecentModel(id: string): void {
+  try {
+    const next = [id, ...readRecentModels().filter((m) => m !== id)].slice(0, 5)
+    localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify(next))
+  } catch { /* private mode */ }
+}
+
 const MODE_LABEL: Record<'prompt' | 'steer' | 'followUp', string> = { prompt: 'Gửi', steer: 'Steer', followUp: 'Follow-up' }
 
-/** Searchable model popover (spec T4 UX contract: closed/open/results/no-result, keyboard-first). */
+/** Searchable model popover (spec T4 UX contract): recents first, provider groups collapsed
+ * except the active one — mirrors the LiX desktop picker instead of dumping the whole catalog. */
 function ModelPicker({ models, current, sessionKey, onSetModel, onError }: {
   models: ModelOption[]
   current: string | null
@@ -39,6 +60,7 @@ function ModelPicker({ models, current, sessionKey, onSetModel, onError }: {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   // Optimistic selection (spec T4): reflect the picked model immediately, never let the last
   // turn's meta.model overwrite it before the next turn arrives.
   const [pending, setPending] = useState<string | null>(null)
@@ -71,18 +93,65 @@ function ModelPicker({ models, current, sessionKey, onSetModel, onError }: {
     if (!q) return models
     return models.filter((m) => `${m.id} ${m.name} ${m.provider ?? ''}`.toLowerCase().includes(q))
   }, [models, query])
+  const searching = query.trim().length > 0
+  const recentModels = useMemo(() => {
+    if (searching) return []
+    const recents = readRecentModels()
+    const seen = new Set<string>()
+    const rows: ModelOption[] = []
+    for (const id of recents) {
+      const m = filtered.find((item) => item.id === id)
+      if (m && !seen.has(m.id)) { rows.push(m); seen.add(m.id) }
+    }
+    return rows
+  }, [filtered, searching])
   const grouped = useMemo(() => {
     const map = new Map<string, ModelOption[]>()
     for (const m of filtered) {
+      if (!searching && recentModels.some((r) => r.id === m.id)) continue
       const key = m.provider || 'Khác'
       const list = map.get(key) ?? []
       list.push(m)
       map.set(key, list)
     }
     return [...map.entries()]
-  }, [filtered])
-  const flat = useMemo(() => grouped.flatMap(([, list]) => list), [grouped])
+  }, [filtered, recentModels, searching])
+  const visibleGroups = useMemo(
+    () => grouped.map(([provider, list]) => ({
+      provider,
+      list,
+      open: searching || collapsed[provider] === undefined ? provider === (models.find((m) => m.id === effective)?.provider || 'Khác') || searching : !collapsed[provider],
+    })),
+    [grouped, collapsed, effective, models, searching],
+  )
+  const flat = useMemo(
+    () => [...recentModels, ...visibleGroups.flatMap((g) => (g.open ? g.list : []))],
+    [recentModels, visibleGroups],
+  )
   const currentName = models.find((m) => m.id === effective)?.name ?? effective
+
+  const renderOption = (m: ModelOption) => {
+    const index = flat.indexOf(m)
+    const selected = m.id === effective
+    return (
+      <li key={m.id}>
+        <button
+          id={`model-opt-${index}`}
+          role="option"
+          aria-selected={selected}
+          data-model-id={m.id}
+          className={`model-option ${index === active ? 'active' : ''}`}
+          onMouseEnter={() => setActive(index)}
+          onClick={() => void pick(m.id)}
+        >
+          <span className="model-option-name">{m.name || m.id}</span>
+          {m.group && <span className="model-option-group">{m.group}</span>}
+          {selected && <span className="model-option-check" aria-hidden="true">✓</span>}
+          {selected && <span className="sr-only">đang dùng</span>}
+        </button>
+      </li>
+    )
+  }
 
   const close = (): void => {
     setOpen(false)
@@ -93,6 +162,7 @@ function ModelPicker({ models, current, sessionKey, onSetModel, onError }: {
   const pick = async (id: string): Promise<void> => {
     setOpen(false)
     setQuery('')
+    rememberRecentModel(id)
     setPending(id)
     setModelChangeInFlight(true)
     triggerRef.current?.focus()
@@ -167,33 +237,27 @@ function ModelPicker({ models, current, sessionKey, onSetModel, onError }: {
             <p className="picker-empty" role="status">Không có model khớp “{query}”.</p>
           ) : (
             <ul id="model-option-list" role="listbox" aria-label="Models" className="model-list">
-              {grouped.map(([provider, list]) => (
-                <li key={provider} className="model-group">
-                  <div className="model-group-label">{provider}</div>
+              {recentModels.length > 0 && (
+                <li className="model-group model-group-recent">
+                  <div className="model-group-label">Gần đây</div>
                   <ul role="presentation">
-                    {list.map((m) => {
-                      const index = flat.indexOf(m)
-                      const selected = m.id === effective
-                      return (
-                        <li key={m.id}>
-                          <button
-                            id={`model-opt-${index}`}
-                            role="option"
-                            aria-selected={selected}
-                            data-model-id={m.id}
-                            className={`model-option ${index === active ? 'active' : ''}`}
-                            onMouseEnter={() => setActive(index)}
-                            onClick={() => void pick(m.id)}
-                          >
-                            <span className="model-option-name">{m.name || m.id}</span>
-                            {m.group && <span className="model-option-group">{m.group}</span>}
-                            {selected && <span className="model-option-check" aria-hidden="true">✓</span>}
-                            {selected && <span className="sr-only">đang dùng</span>}
-                          </button>
-                        </li>
-                      )
-                    })}
+                    {recentModels.map((m) => renderOption(m))}
                   </ul>
+                </li>
+              )}
+              {visibleGroups.map(({ provider, list, open }) => (
+                <li key={provider} className={`model-group ${open ? '' : 'model-group-collapsed'}`}>
+                  <button
+                    type="button"
+                    className="model-group-label model-group-toggle"
+                    aria-expanded={open}
+                    onClick={() => setCollapsed((c) => ({ ...c, [provider]: open }))}
+                  >
+                    {open ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
+                    {provider}
+                    <span className="model-group-count">{list.length}</span>
+                  </button>
+                  {open && <ul role="presentation">{list.map((m) => renderOption(m))}</ul>}
                 </li>
               ))}
             </ul>
@@ -346,6 +410,7 @@ export function Composer({
   onSetModel,
   onSetThinking,
   actions,
+  landing = false,
 }: {
   sessionKey: string
   running: boolean
@@ -360,6 +425,8 @@ export function Composer({
   onSetModel(modelId: string): Promise<void>
   onSetThinking(level: string): Promise<void>
   actions: ComposerActions
+  /** Landing mode: no session open yet — the first message creates it (LiX-style empty state). */
+  landing?: boolean
 }) {
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'prompt' | 'steer' | 'followUp'>('prompt')
@@ -372,10 +439,12 @@ export function Composer({
   const send = async (): Promise<void> => {
     const trimmed = text.trim()
     if (!trimmed) return
-    setError(null)
     const effectiveMode = running && mode === 'prompt' ? 'steer' : mode
     try {
       await actions.onSend(trimmed, effectiveMode, messageId())
+      // Only clear the error on success — wiping it before the attempt makes the banner flash
+      // and the layout jump every time the user re-presses Enter on a failing send.
+      setError(null)
       setText('')
       setMode(running ? 'followUp' : 'prompt')
     } catch (e) {
@@ -440,7 +509,7 @@ export function Composer({
   const nearWindowLimit = pct >= 80
 
   return (
-    <section className="composer" aria-label="Composer">
+    <section className={`composer ${landing ? 'composer-landing' : ''}`.trim()} aria-label="Composer">
       {slashMatches.length > 0 && (
         <ul className="slash-popover" role="listbox" aria-label="Slash commands">
           {slashMatches.map((c) => (
@@ -475,7 +544,9 @@ export function Composer({
               void send()
             }
           }}
-          placeholder={running ? 'Đang chạy — gửi steer/follow-up…' : 'Gõ tin nhắn, / lệnh, @file…'}
+          placeholder={landing
+            ? 'Tin nhắn đầu tiên trở thành tiêu đề phiên…'
+            : running ? 'Đang chạy — gửi steer/follow-up…' : 'Gõ tin nhắn, / lệnh, @file…'}
           aria-label="Tin nhắn"
         />
         <div className="composer-footer">

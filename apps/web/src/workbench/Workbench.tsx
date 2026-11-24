@@ -12,7 +12,7 @@ import { Inspector, downloadExport, type InspectorTab } from './Inspector'
 import { ExtensionDialogs } from './ExtensionDialogs'
 import { SettingsPanel, loadSettings, type SettingsData } from './SettingsPanel'
 import type { PreparedAttachment } from '../features/upload'
-import { Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Menu, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Sun } from 'lucide-react'
 
 /**
  * Workbench shell (spec T4 UX contract): host rail → session rail → timeline/composer →
@@ -63,6 +63,20 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false)
   const [layout, setLayout] = useState<WorkbenchLayout>(loadLayout)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1280 : window.innerWidth)
+  const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme)
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = current === 'dark' ? 'light' : 'dark'
+      document.documentElement.classList.toggle('dark', next === 'dark')
+      try {
+        const raw = localStorage.getItem('lix-web-ui')
+        const parsed = raw ? (JSON.parse(raw) as { state?: Record<string, unknown> }) : {}
+        localStorage.setItem('lix-web-ui', JSON.stringify({ ...parsed, state: { ...(parsed.state ?? {}), theme: next } }))
+      } catch { /* private mode */ }
+      return next
+    })
+  }, [])
   const layoutWidths = useMemo(() => resolveWorkbenchWidths(layout, viewportWidth), [layout, viewportWidth])
   const inspectorIsModal = viewportWidth <= MOBILE_BREAKPOINT || (viewportWidth < TABLET_WIDE_BREAKPOINT && layout.railOpen)
   const mobileToggleRef = useRef<HTMLButtonElement | null>(null)
@@ -300,31 +314,41 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
 
   const timelineActions = useMemo(
     () => ({
-      onRewind: async (sk: string, anchor: string) => {
-        if (!active) return
-        await rpc(active.conn, 'turn.rewind', { sessionKey: sk, anchor })
-        await openSession(active.conn, active.hostId, sk)
-      },
-      onFork: async (sk: string, anchor: string) => {
-        if (!active) return
-        const r = await rpc(active.conn, 'session.fork', { sessionKey: sk, anchor })
-        await refreshSessions(active.conn)
-        await openSession(active.conn, active.hostId, r.sessionKey)
-      },
       onToolDetail: async (sk: string, toolCallId: string) => {
         if (!active) return ''
         const r = await rpc(active.conn, 'turn.toolDetail', { sessionKey: sk, toolCallId })
         return r.output ?? (r.node.preview ?? r.node.fallbackText)
       },
     }),
-    [active, openSession, refreshSessions],
+    [active],
   )
 
   const composerActions: ComposerActions = useMemo(
     () => ({
       onSend: async (text, mode, clientMessageId) => {
-        if (!active || !sessionKey) throw new Error('Chưa chọn phiên')
-        await rpc(active.conn, 'turn.send', { sessionKey, text, mode, clientMessageId })
+        if (!active) throw new Error('Chưa chọn host')
+        if (!sessionKey) {
+          // Landing (LiX-style empty state): the first message creates the session, then sends.
+          const projects = await rpc(active.conn, 'project.list', {})
+          const projectId = slice?.selectedProjectId ?? projects.projects[0]?.id
+          if (!projectId) throw new Error('Host chưa có project khả dụng để tạo phiên.')
+          const created = await rpc(active.conn, 'session.create', { projectId })
+          await refreshSessions(active.conn)
+          await openSession(active.conn, active.hostId, created.sessionKey)
+          await rpc(active.conn, 'turn.send', { sessionKey: created.sessionKey, text, mode: 'prompt', clientMessageId })
+          return
+        }
+        const send = () => rpc(active.conn, 'turn.send', { sessionKey, text, mode, clientMessageId })
+        try {
+          await send()
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e)
+          // A desktop restart drops the in-memory session registry ("No session") even though
+          // the transcript still exists: reopen from disk and retry exactly once.
+          if (!/no session/i.test(message)) throw e
+          await openSession(active.conn, active.hostId, sessionKey)
+          await send()
+        }
       },
       onAbort: async () => {
         if (!active || !sessionKey) throw new Error('Chưa chọn phiên')
@@ -349,7 +373,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
         })
       },
     }),
-    [active, sessionKey],
+    [active, sessionKey, openSession, refreshSessions, slice?.selectedProjectId],
   )
 
   const inspectorProps = {
@@ -410,6 +434,37 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
     },
     timelineTurns: timeline?.turns ?? [],
     sessionTitle: selectedSummary?.title ?? 'session',
+    settingsPanel: active && sessionKey ? (
+      <div className="settings-panel-wrap">
+        <SettingsPanel
+          hostId={active.hostId}
+          conn={active.conn}
+          sessionKey={sessionKey}
+          data={settings[active.hostId] ?? null}
+          hostVersions={connections.map((c) => ({
+            hostId: c.hostId,
+            appVersion: hostStatuses[c.hostId]?.appVersion ?? c.conn.hello?.version ?? '?',
+            sdkVersion: hostStatuses[c.hostId]?.sdkVersion ?? '?',
+          }))}
+          onDataRefresh={async () => {
+            const data = await loadSettings(active.conn, sessionKey)
+            setSettings((s) => ({ ...s, [active.hostId]: data }))
+          }}
+        />
+        <div className="settings-actions">
+          <button
+            onClick={() => {
+              void (async () => {
+                const data = await loadSettings(active.conn, sessionKey)
+                setSettings((s) => ({ ...s, [active.hostId]: data }))
+              })()
+            }}
+          >
+            Tải settings
+          </button>
+        </div>
+      </div>
+    ) : undefined,
   }
 
   if (connections.length === 0) {
@@ -444,6 +499,14 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           {layout.railOpen ? <PanelLeftClose size={18} aria-hidden="true" /> : <PanelLeftOpen size={18} aria-hidden="true" />}
         </button>
         <div className="topbar-spacer" />
+        <button
+          className="inspector-toggle"
+          aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          title={theme === 'dark' ? 'Giao diện sáng' : 'Giao diện tối'}
+          onClick={toggleTheme}
+        >
+          {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+        </button>
         {sessionKey && (
           <button
             ref={inspectorToggleRef}
@@ -471,8 +534,8 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
         className={`workbench-main ${layout.railOpen ? 'rail-open' : 'rail-closed'} ${layout.inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${mobileSessionListOpen ? 'session-drawer-open' : ''}`.trim()}
         style={{ '--rail-w': `${layoutWidths.railWidth}px`, '--inspector-w': `${layoutWidths.inspectorWidth}px` } as CSSProperties}
       >
-        {mobileSessionListOpen && <div className="scrim session-scrim" aria-hidden="true" onClick={() => setMobileSessionListOpen(false)} />}
-        {layout.inspectorOpen && <div className="scrim inspector-scrim" aria-hidden="true" onClick={() => setLayout((l) => ({ ...l, inspectorOpen: false }))} />}
+        {mobileSessionListOpen && viewportWidth <= MOBILE_BREAKPOINT && <div className="scrim session-scrim" aria-hidden="true" onClick={() => setMobileSessionListOpen(false)} />}
+        {layout.inspectorOpen && inspectorIsModal && <div className="scrim inspector-scrim" aria-hidden="true" onClick={() => setLayout((l) => ({ ...l, inspectorOpen: false }))} />}
         <SessionRail
           footer={hostPicker}
           mobileOpen={mobileSessionListOpen && viewportWidth <= MOBILE_BREAKPOINT}
@@ -496,7 +559,28 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           />
         )}
         <div className="workbench-center">
-          {!sessionKey && <div className="empty big">Chọn một phiên để mở workbench.</div>}
+          {!sessionKey && (
+            <div className="empty-landing">
+              <h2>Phiên mới</h2>
+              <p>Tin nhắn đầu tiên trở thành tiêu đề phiên.</p>
+              <Composer
+                sessionKey={''}
+                running={false}
+                queue={{ steering: [], followUp: [] }}
+                commands={[]}
+                context={null}
+                usage={null}
+                model={null}
+                thinking={null}
+                thinkingLevels={[]}
+                models={[]}
+                onSetModel={async () => {}}
+                onSetThinking={async () => {}}
+                actions={composerActions}
+                landing
+              />
+            </div>
+          )}
           {sessionKey && timeline && (
             <>
               <ExtensionDialogs
@@ -581,36 +665,6 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           </>
         )}
       </div>
-      {active && sessionKey && (
-        <details className="workbench-settings">
-          <summary>Host &amp; session settings</summary>
-          <SettingsPanel
-            hostId={active.hostId}
-            conn={active.conn}
-            sessionKey={sessionKey}
-            data={settings[active.hostId] ?? null}
-            hostVersions={connections.map((c) => ({
-              hostId: c.hostId,
-              appVersion: hostStatuses[c.hostId]?.appVersion ?? c.conn.hello?.version ?? '?',
-              sdkVersion: hostStatuses[c.hostId]?.sdkVersion ?? '?',
-            }))}
-            onDataRefresh={async () => {
-              const data = await loadSettings(active.conn, sessionKey)
-              setSettings((s) => ({ ...s, [active.hostId]: data }))
-            }}
-          />
-          <button
-            onClick={() => {
-              void (async () => {
-                const data = await loadSettings(active.conn, sessionKey)
-                setSettings((s) => ({ ...s, [active.hostId]: data }))
-              })()
-            }}
-          >
-            Tải settings
-          </button>
-        </details>
-      )}
     </div>
   )
 }
@@ -625,7 +679,8 @@ export type WorkbenchLayout = { railOpen: boolean; railWidth: number; inspectorO
 
 export const LAYOUT_KEY = 'li-web-layout'
 export const RAIL_MIN = 240
-export const RAIL_MAX = 720
+/** Roomy cap: the effective ceiling stays min(half viewport, viewport − 360px center floor). */
+export const RAIL_MAX = 1600
 export const INSPECTOR_MIN = 280
 export const INSPECTOR_MAX = 380
 export const MIN_CENTER_WIDTH = 360
@@ -757,3 +812,13 @@ export function ResizeSeparator({ className, label, min, max, value, onChange, i
 
 // SessionSummary type re-declared locally to avoid widening the import surface in this shell.
 type SessionSummaryFor = import('@shared/remote').SessionSummary
+
+/** Device-local theme (same key the anti-FOUC bootstrap in main.tsx reads). */
+function loadTheme(): 'light' | 'dark' {
+  try {
+    const raw = localStorage.getItem('lix-web-ui')
+    const theme = raw ? ((JSON.parse(raw).state ?? {}) as { theme?: unknown }).theme : null
+    if (theme === 'light' || theme === 'dark') return theme
+  } catch { /* first run */ }
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+}

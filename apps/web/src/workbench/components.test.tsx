@@ -425,8 +425,8 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     expect(document.activeElement).toBe(screen.getByLabelText('Tên mới cho src/a.ts'))
   })
 
-  it('timeline hover actions are real rewind/fork controls; scroll-near-top pages older history', async () => {
-    const actions = { onRewind: vi.fn(async () => undefined), onFork: vi.fn(async () => undefined), onToolDetail: vi.fn(async () => 'tool output') }
+  it('timeline has no rewind/fork chrome; tool detail still works; scroll-near-top pages older history', async () => {
+    const actions = { onToolDetail: vi.fn(async () => 'tool output') }
     const onLoadOlder = vi.fn(async () => undefined)
     const timelineTurn: Turn = {
       ...turns[0],
@@ -434,21 +434,31 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     }
     const timeline = { ...emptyTimeline(), turns: [timelineTurn], hasOlder: true }
     render(<Timeline timeline={timeline} sessionKey={sessionKey} actions={actions} onLoadOlder={onLoadOlder} />)
+    // Owner UAT 2026-11-24: rewind/fork hover controls are gone from the chat surface.
+    expect(screen.queryByRole('button', { name: /rewind/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /fork/i })).toBeNull()
     // Spec T3: success tools render no raw `ok` label.
     expect(document.body.textContent).not.toMatch(/\bok\b/)
     // Spec T3: auto-load replaces the old button — scrolling near the top triggers the page load.
     const log = document.querySelector('.timeline') as HTMLElement
     fireEvent.scroll(log)
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(sessionKey, 'a1'))
-    fireEvent.click(screen.getByRole('button', { name: 'Quay lại đây (rewind)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
-    await_a_tick(() => expect(actions.onRewind).toHaveBeenCalledWith(sessionKey, 'a1'))
-    fireEvent.click(screen.getByRole('button', { name: 'Nhánh mới từ đây (fork)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
-    await_a_tick(() => expect(actions.onFork).toHaveBeenCalledWith(sessionKey, 'a1'))
     fireEvent.click(screen.getByRole('button', { name: /bash/ }))
     await_a_tick(() => expect(actions.onToolDetail).toHaveBeenCalledWith(sessionKey, 'c1'))
     await waitFor(() => expect(screen.getByText('tool output')).toBeTruthy())
+  })
+
+  it('copy chips copy user text and answer, flipping to a check after copying', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    const actions = { onToolDetail: vi.fn(async () => '') }
+    const turnWithAnswer: Turn = { ...turns[0], answer: 'Answer body' }
+    render(<Timeline timeline={{ ...emptyTimeline(), turns: [turnWithAnswer] }} sessionKey={sessionKey} actions={actions} onLoadOlder={vi.fn(async () => undefined)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Sao chép tin nhắn' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(turnWithAnswer.user.text))
+    expect(screen.getByRole('button', { name: 'Đã sao chép' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Sao chép câu trả lời' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Answer body'))
   })
 
   it('export produces markdown + sanitized html (rows NEW/JSON-excluded)', () => {

@@ -24,7 +24,7 @@ export const PARITY_MATRIX: MatrixRow[] = [
   { t0: '3', feature: 'Home view / temporary-chat sandbox', status: 'excluded', methods: [], reason: 'Desktop sandbox-folder concept; no remote RPC in v1.' },
   { t0: '4', feature: 'Timeline: turns, markdown, code, state patches', status: 'browser-ready', methods: ['session.open', 'turn.page'], test: 'workbench/timeline-store.test.ts' },
   { t0: '5', feature: 'Tool cards and detail previews', status: 'browser-ready', methods: ['turn.toolDetail'], test: 'workbench/components.test.tsx' },
-  { t0: '6', feature: 'Message actions: rewind and fork', status: 'browser-ready', methods: ['turn.rewind', 'session.fork'], test: 'workbench/branch-flow.test.ts' },
+  { t0: '6', feature: 'Message actions: rewind and fork', status: 'excluded', methods: [], reason: 'Owner UAT 2026-11-24 removed the rewind/fork hover chrome from the chat surface; turn.rewind/session.fork stay available host-side but have no web UI.' },
   { t0: '7', feature: 'Timeline older-page scrubber', status: 'browser-ready', methods: ['turn.page'], test: 'workbench/components.test.tsx' },
   { t0: '8', feature: 'Session tree / branch overlay', status: 'browser-ready', methods: ['session.branches', 'session.switchBranch', 'turn.rewind'], test: 'workbench/branch-flow.test.ts' },
   { t0: '9', feature: 'Fork overlay', status: 'browser-ready', methods: ['session.fork', 'session.clone'], test: 'workbench/branch-flow.test.ts' },

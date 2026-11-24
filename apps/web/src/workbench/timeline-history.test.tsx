@@ -83,7 +83,7 @@ describe('older-page lifecycle (spec T3)', () => {
 })
 
 describe('Timeline auto-page + states (spec T3 UX contract)', () => {
-  const actions = { onRewind: vi.fn(async () => undefined), onFork: vi.fn(async () => undefined), onToolDetail: vi.fn(async () => '') }
+  const actions = { onToolDetail: vi.fn(async () => '') }
   const base = { ...emptyTimeline(), hasOlder: true, turns: [makeTurn({ id: 't1', anchor: 'a1', user: { text: 'old message' } })] }
 
   function renderTimeline(timeline: SessionTimeline, onLoadOlder: (sk: string, before: string) => Promise<void>) {

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Bot, GitBranch, RotateCcw } from 'lucide-react'
+import { Bot, Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -17,8 +17,6 @@ import { anchorAdjustment } from './timeline-store'
  */
 
 export type TimelineActions = {
-  onRewind(sessionKey: string, anchor: string): Promise<void>
-  onFork(sessionKey: string, anchor: string): Promise<void>
   onToolDetail(sessionKey: string, toolCallId: string): Promise<string>
 }
 
@@ -33,6 +31,27 @@ export function keepAnchorWithin8px(prevHeight: number, newHeight: number): numb
 
 function statusClass(status: string): string {
   return status === 'running' ? 'live' : status === 'error' ? 'error' : ''
+}
+
+/** Hover-only copy chip (LiX pattern): icon flips to a check for a moment after copying. */
+function CopyButton({ getText, label }: { getText: () => string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<number | null>(null)
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current) }, [])
+  const onCopy = () => {
+    const text = getText()
+    if (!text) return
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true)
+      if (timer.current !== null) window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setCopied(false), 1600)
+    }).catch(() => undefined)
+  }
+  return (
+    <button type="button" className="copy-chip" onClick={onCopy} aria-label={copied ? 'Đã sao chép' : label} title={copied ? 'Đã sao chép' : label}>
+      {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+    </button>
+  )
 }
 
 /** Quiet tool row (spec T3): success renders no raw `ok` label; running keeps a small cue;
@@ -79,26 +98,14 @@ const ToolCard = memo(function ToolCard({ step, sessionKey, onDetail }: { step: 
 })
 
 function TurnView({ turn, sessionKey, actions }: { turn: Turn; sessionKey: string; actions: TimelineActions }) {
-  const [confirming, setConfirming] = useState<'rewind' | 'fork' | null>(null)
   return (
     <article className={`turn ${turn.status}`} data-turn-id={turn.id}>
       <div className="turn-user">
         <span className="turn-sender">Bạn</span>
         <p>{turn.user.text}</p>
-        <div className="turn-hover-actions">
-          <button className="turn-action" onClick={() => setConfirming(confirming === 'rewind' ? null : 'rewind')} aria-label="Quay lại đây (rewind)"><RotateCcw size={14} aria-hidden="true" /> Rewind</button>
-          <button className="turn-action" onClick={() => setConfirming(confirming === 'fork' ? null : 'fork')} aria-label="Nhánh mới từ đây (fork)"><GitBranch size={14} aria-hidden="true" /> Fork</button>
+        <div className="turn-actions-row turn-user-actions">
+          <CopyButton getText={() => turn.user.text} label="Sao chép tin nhắn" />
         </div>
-        {confirming && (
-          <div className="confirm-strip" role="alertdialog" aria-label={`Xác nhận ${confirming}`}>
-            <span>{confirming === 'rewind' ? 'Quay phiên về tin nhắn này?' : 'Tạo nhánh mới từ tin nhắn này?'}</span>
-            <button className="primary" onClick={() => {
-              void (confirming === 'rewind' ? actions.onRewind(sessionKey, turn.anchor) : actions.onFork(sessionKey, turn.anchor))
-              setConfirming(null)
-            }}>Xác nhận</button>
-            <button onClick={() => setConfirming(null)}>Huỷ</button>
-          </div>
-        )}
       </div>
       <div className="turn-assistant">
         <div className="assistant-avatar" aria-hidden="true"><Bot size={17} /></div>
@@ -134,6 +141,11 @@ function TurnView({ turn, sessionKey, actions }: { turn: Turn; sessionKey: strin
           {turn.error && <p className={`turn-error ${turn.error.kind}`}>{turn.error.kind}: {turn.error.text}</p>}
         </div>
       </div>
+      {turn.answer && (
+        <div className="turn-actions-row">
+          <CopyButton getText={() => turn.answer ?? ''} label="Sao chép câu trả lời" />
+        </div>
+      )}
     </article>
   )
 }

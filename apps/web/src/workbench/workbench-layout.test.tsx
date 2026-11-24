@@ -93,7 +93,7 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
 
   it('respects saved preferences and dynamically clamps widths to keep the desktop center readable', async () => {
     seedStore('proj/s1.jsonl')
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ railOpen: true, railWidth: 999, inspectorOpen: true, inspectorWidth: 300 }))
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ railOpen: true, railWidth: RAIL_MAX + 999, inspectorOpen: true, inspectorWidth: 300 }))
     expect(loadLayout().railWidth).toBe(RAIL_MAX)
     render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }]} />)
     const sep = screen.getByRole('separator', { name: 'Độ rộng panel phiên' })

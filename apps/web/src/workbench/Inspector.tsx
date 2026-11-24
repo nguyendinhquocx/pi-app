@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Download, Ellipsis, File, Folder, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 import type { ContextStats, SessionUsage, BranchInfo, Turn, DiffLine } from '@shared/remote'
@@ -15,7 +15,7 @@ import { agentRunsFromTurns } from './agent-runs'
  * Panels collapse without changing semantic focus order.
  */
 
-export type InspectorTab = 'review' | 'files' | 'context' | 'tree' | 'agents' | 'terminal'
+export type InspectorTab = 'review' | 'files' | 'context' | 'tree' | 'agents' | 'terminal' | 'settings'
 
 /** Terminal palette follows the app theme (spec T4): light = white/black, dark = dark surface. */
 export const TERMINAL_THEMES = {
@@ -56,6 +56,8 @@ export type InspectorProps = {
   onExport(format: 'markdown' | 'html'): void
   timelineTurns: Turn[]
   sessionTitle: string
+  /** Host & session settings (moved out of the workbench footer by owner UAT 2026-11-24). */
+  settingsPanel?: ReactNode
   modal?: boolean
 }
 
@@ -155,7 +157,7 @@ export function Inspector(props: InspectorProps) {
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const exportTriggerRef = useRef<HTMLButtonElement | null>(null)
   const exportMenuRef = useRef<HTMLDivElement | null>(null)
-  const tabs: InspectorTab[] = ['terminal', 'context', 'review', 'files', 'tree', 'agents']
+  const tabs: InspectorTab[] = ['terminal', 'context', 'review', 'files', 'tree', 'agents', 'settings']
 
   useEffect(() => {
     setCurrentDirectory('.')
@@ -242,7 +244,7 @@ export function Inspector(props: InspectorProps) {
             tabIndex={tab === t ? 0 : -1}
             onClick={() => onTab(t)}
           >
-            {t === 'review' ? 'Review' : t === 'files' ? 'Files' : t === 'context' ? 'Context' : t === 'tree' ? 'Tree' : t === 'agents' ? 'Agents' : 'Terminal'}
+            {t === 'review' ? 'Review' : t === 'files' ? 'Files' : t === 'context' ? 'Context' : t === 'tree' ? 'Tree' : t === 'agents' ? 'Agents' : t === 'settings' ? 'Settings' : 'Terminal'}
           </button>
         ))}
       </div>
@@ -398,6 +400,7 @@ export function Inspector(props: InspectorProps) {
           />
         )}
         {tab === 'terminal' && <TerminalPane sessionKey={sessionKey} conn={conn} />}
+        {tab === 'settings' && props.settingsPanel}
       </div>
     </aside>
   )
