@@ -273,9 +273,10 @@ export const useUIStore = create<UIState>()(
   composerPrefill: null,
   composerPrefillMode: 'replace' as const,
   setComposerPrefill: (text) => set({ composerPrefill: text, composerPrefillMode: 'replace' }),
-  appendComposerPrefill: (text) => {
-    const snippet = String(text || '').trimEnd()
-    if (!snippet) return
+  appendComposerPrefill: (text, opts) => {
+    const raw = String(text || '')
+    const snippet = opts?.preserveTrailingNewlines ? raw : raw.trimEnd()
+    if (!snippet.trim()) return
     set((s) => {
       if (s.composerPrefill != null && s.composerPrefillMode === 'append') {
         return {
@@ -346,6 +347,11 @@ export const useUIStore = create<UIState>()(
         sidebarActiveSessionsOpen: s.sidebarActiveSessionsOpen,
         sessionLastActiveAt: pruneExpiredRecentSessions(s.sessionLastActiveAt),
         rightPanelWidth: s.rightPanelWidth,
+        rightPanelBrowserWidth: s.rightPanelBrowserWidth,
+        pinnedSessions: s.pinnedSessions,
+        pinnedSessionMeta: s.pinnedSessionMeta,
+        browserStageRatio: s.browserStageRatio,
+        browserStageLastOpenMode: s.browserStageLastOpenMode,
         rightPanelCollapsed: s.rightPanelCollapsed,
         rightPanelRailIcons: s.rightPanelRailIcons,
         rightPanelExpandedOnNarrow: s.rightPanelExpandedOnNarrow,

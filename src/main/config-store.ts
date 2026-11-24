@@ -4,7 +4,16 @@ import type { BackgroundSettings } from '@shared/background'
 import type { CustomCssOverride, CustomTheme } from '@shared/custom-theme'
 import { defaultAgentPurgeConfig } from '@shared/agent-purge'
 import { DEFAULT_ICON_THEME, type IconTheme } from '@shared/icon-theme'
-import { DEFAULT_TIMELINE_MAX_AUTO_EXPANDED_TOOLS, DEFAULT_TIMELINE_VISIBLE_TURNS } from '@shared/timeline-settings'
+import {
+  DEFAULT_TIMELINE_MAX_AUTO_EXPANDED_TOOLS,
+  DEFAULT_TIMELINE_USER_MESSAGE_STYLE,
+  DEFAULT_TIMELINE_VISIBLE_TURNS,
+  type TimelineUserMessageStyle,
+} from '@shared/timeline-settings'
+import {
+  DEFAULT_UI_CUSTOMIZATION,
+  type UiCustomization,
+} from '@shared/ui-customization'
 import { projectDisplayNameKey, uniqueWorkspacePaths, workspacePathsEqual } from '@shared/workspace-path'
 import { bindSecretStoreBacking } from './secret-store'
 import { nextRecentProjects, workspaceRealPathsEqual } from './recent-projects'
@@ -77,10 +86,26 @@ export interface StoreSchema {
   /** 时间线当前 run 内同时自动展开的工具详情数量上限 */
   timelineMaxAutoExpandedTools: number
   timelineVisibleTurns: number
+  timelineUserMessageStyle: TimelineUserMessageStyle
+  uiCustomization: UiCustomization
   /** 侧栏会话显示名，键为规范化后的 sessionFile 绝对路径 */
   sessionDisplayNames: Record<string, string>
   /** 侧栏项目/目录自定义显示名，键为 projectDisplayNameKey(path, isRepositoryGroup) */
   projectDisplayNames: Record<string, string>
+  /** 侧栏收藏置顶的会话文件列表 */
+  pinnedSessions: string[]
+  /** 收藏置顶会话的元数据快照（防跨项目/冷启动消失） */
+  pinnedSessionMeta: Record<
+    string,
+    {
+      sessionFile: string
+      sessionId: string
+      workspacePath: string
+      title: string
+      kind: 'project' | 'sandbox'
+      pinnedAt: number
+    }
+  >
   /** 从侧栏列表中移除/隐藏的 Git worktree 路径 */
   hiddenWorktrees: string[]
   /** 语音输入 ASR 配置 */
@@ -138,6 +163,9 @@ const storeOptions: StoreOptions<StoreSchema> & { projectName: string } = {
       context: true,
       intercom: false,
       tree: true,
+      browser: true,
+      worktrees: true,
+      github: true,
     },
     rightPanelOrder: [],
     language: defaultAppLanguage(),
@@ -164,8 +192,12 @@ const storeOptions: StoreOptions<StoreSchema> & { projectName: string } = {
     sessionWorkerIdleTimeoutMinutes: 15,
     timelineMaxAutoExpandedTools: DEFAULT_TIMELINE_MAX_AUTO_EXPANDED_TOOLS,
     timelineVisibleTurns: DEFAULT_TIMELINE_VISIBLE_TURNS,
+    timelineUserMessageStyle: DEFAULT_TIMELINE_USER_MESSAGE_STYLE,
+    uiCustomization: DEFAULT_UI_CUSTOMIZATION,
     sessionDisplayNames: {},
     projectDisplayNames: {},
+    pinnedSessions: [],
+    pinnedSessionMeta: {},
     hiddenWorktrees: [],
     asrConfig: {
       provider: 'codex-asr-builtin',

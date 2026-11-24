@@ -6,6 +6,17 @@ import type { WorkerLiveSnapshot } from '@renderer/lib/session-worker-sync'
 import type { SessionAttention } from '@renderer/lib/session-attention'
 import type { SubagentSessionGroup } from '@renderer/lib/subagent-session-types'
 import type { SessionState } from '@renderer/stores/session-state'
+import type { TimelineUserMessageStyle } from '@shared/timeline-settings'
+import type { UiCustomization } from '@shared/ui-customization'
+
+export interface PinnedSessionRecord {
+  sessionFile: string
+  sessionId: string
+  workspacePath: string
+  title: string
+  kind: 'project' | 'sandbox'
+  pinnedAt: number
+}
 
 export interface SessionItem {
   sessionId: string
@@ -203,7 +214,7 @@ export interface UIState {
   composerPrefillMode: 'replace' | 'append'
   setComposerPrefill: (text: string | null) => void
   /** Append snippet to composer (line refs, etc.) without wiping the draft */
-  appendComposerPrefill: (text: string) => void
+  appendComposerPrefill: (text: string, opts?: { preserveTrailingNewlines?: boolean }) => void
   activePanel: string
   setActivePanel: (p: string) => void
   rightPanelCatalog: RightPanelCatalogItem[]
@@ -252,6 +263,10 @@ export interface UIState {
   setTimelineMaxAutoExpandedTools: (n: number) => void
   timelineVisibleTurns: number
   setTimelineVisibleTurns: (n: number) => void
+  timelineUserMessageStyle: TimelineUserMessageStyle
+  setTimelineUserMessageStyle: (style: TimelineUserMessageStyle) => void
+  uiCustomization: UiCustomization
+  setUiCustomization: (next: UiCustomization | Partial<UiCustomization>) => void
   sidebarWidth: number
   setSidebarWidth: (w: number) => void
   sidebarCollapsed: boolean
@@ -264,6 +279,16 @@ export interface UIState {
   setSidebarActiveSessionsOpen: (open: boolean) => void
   rightPanelWidth: number
   setRightPanelWidth: (w: number) => void
+  rightPanelBrowserWidth: number
+  setRightPanelBrowserWidth: (w: number) => void
+  pinnedSessions: string[]
+  pinnedSessionMeta: Record<string, PinnedSessionRecord>
+  setPinnedSessions: (files: string[], meta?: Record<string, PinnedSessionRecord>) => void
+  upsertPinnedSessionMeta: (sessionFile: string, patch: Partial<Omit<PinnedSessionRecord, 'sessionFile'>>) => void
+  togglePinSession: (
+    sessionFile: string,
+    meta?: Partial<Omit<PinnedSessionRecord, 'sessionFile' | 'pinnedAt'>>,
+  ) => boolean
   rightPanelCollapsed: boolean
   /** Keep a column of panel icons while the right panel is collapsed (default: off, nothing shows). */
   rightPanelRailIcons: boolean
@@ -274,6 +299,15 @@ export interface UIState {
   filesPreviewChatExpand: boolean
   /** Built-in browser fills the chat column (mutually exclusive with filesPreviewChatExpand). */
   browserChatExpand: boolean
+  /** Non-intrusive Browser Stage layout: closed | split-50 (5:5) | split-70 (3:7) | full. */
+  browserStageMode: 'closed' | 'split-50' | 'split-70' | 'full'
+  /** Custom split width share for Browser Stage (0.32..0.84, default 0.50). */
+  browserStageRatio: number
+  /** Last non-closed mode remembered so toggling reopens where the user left off. */
+  browserStageLastOpenMode: 'split-50' | 'split-70' | 'full'
+  setBrowserStageMode: (mode: 'closed' | 'split-50' | 'split-70' | 'full') => void
+  setBrowserStageRatio: (ratio: number) => void
+  toggleBrowserStage: () => void
   lastModel: string | null
   lastThinking: string | null
   rememberModel: (model: string) => void

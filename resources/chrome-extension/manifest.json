@@ -8,10 +8,15 @@
     "debugger",
     "tabs",
     "tabGroups",
+    "cookies",
     "storage",
     "alarms",
     "downloads",
     "notifications"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"

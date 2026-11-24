@@ -26,13 +26,26 @@ import { ensureWorkspaceWorkerOnBoot } from '@renderer/lib/ensure-workspace-work
 import { refreshComposerRunDisplay } from '@renderer/lib/composer-run-display'
 import { useExtensionUIStore } from '@renderer/stores/extension-ui-store'
 import { useTranslation } from 'react-i18next'
-import { Settings as SettingsIcon } from '@renderer/components/icons'
+import { FolderGit2, GitFork, Globe, Settings as SettingsIcon } from '@renderer/components/icons'
+import { useBrowserStore } from '@renderer/features/browser/browser-store'
+import { usePanelIntentStore } from '@renderer/stores/panel-intent-store'
+import { cn } from '@renderer/lib/utils'
 import { buildRightPanelTabs } from '@renderer/lib/right-panel-catalog'
 import { useRightPanelHidden } from '@renderer/lib/use-right-panel-hidden'
-import { RightPanelTabs } from '@renderer/features/shell/right-panel-tabs'
+import { isRightPanelHidden } from '@renderer/lib/right-panel-visibility'
+import { RightDock } from '@renderer/features/shell/right-dock'
+import { isPanelVisibleInRightDock, useRightDockStore } from '@renderer/stores/right-dock-store'
 import { loadNormalizedRightPanelPrefs } from '@renderer/lib/right-panel-runtime'
-import { normalizeTimelineMaxAutoExpandedTools, normalizeTimelineVisibleTurns } from '@shared/timeline-settings'
-import { SidePanelHost } from '@renderer/features/side-panels/side-panel-host'
+import {
+  normalizeTimelineMaxAutoExpandedTools,
+  normalizeTimelineUserMessageStyle,
+  normalizeTimelineVisibleTurns,
+} from '@shared/timeline-settings'
+import { normalizeUiCustomization } from '@shared/ui-customization'
+import { applyUserMessageStyleToDocument } from '@renderer/features/settings/settings-draft'
+import { applyUiCustomizationToDocument } from '@renderer/lib/theme/apply-ui-customization'
+import { usePanelNavigationSuppression } from '@renderer/lib/panel-animation-guard'
+
 import { ExtensionUIHost } from '@renderer/features/extension-ui/extension-ui-host'
 import { AppToaster } from '@renderer/components/app/app-toaster'
 import { markExtensionNotifyAppReady } from '@renderer/lib/extension-notify-policy'
@@ -69,6 +82,7 @@ type View = 'main' | 'settings'
 const SettingsPage = lazy(() =>
   import('@renderer/features/settings/settings-page').then((m) => ({ default: m.SettingsPage })),
 )
+
 const ModelPicker = lazy(() =>
   import('@renderer/features/composer/model-picker').then((m) => ({ default: m.ModelPicker })),
 )
@@ -108,6 +122,27 @@ export default function App() {
   const [studioSeedTheme, setStudioSeedTheme] = useState<import('@shared/custom-theme').CustomTheme | undefined>(undefined)
   const activePanel = useUIStore((s) => s.activePanel)
   const rightPanelHidden = useRightPanelHidden()
+  const dockBottomTabs = useRightDockStore((s) => s.bottomTabIds)
+  const dockTopActive = useRightDockStore((s) => s.topActive)
+  const dockBottomActive = useRightDockStore((s) => s.bottomActive)
+  const browserTabCount = useBrowserStore((s) => s.order.length)
+  const browserAgentBusy = useBrowserStore((s) => Boolean(s.agentAction))
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = window.piDesktop?.platform === 'darwin' ? e.metaKey : e.ctrlKey
+      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        const hidden = isRightPanelHidden({
+          collapsed: useUIStore.getState().rightPanelCollapsed,
+          expandedOnNarrow: useUIStore.getState().rightPanelExpandedOnNarrow,
+          windowWidth: window.innerWidth,
+        })
+        usePanelIntentStore.getState().toggleRightPanelTab('browser', !hidden)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const modelPickerOpen = useUIStore((s) => s.modelPickerOpen)
   const thinkingPickerOpen = useUIStore((s) => s.thinkingPickerOpen)
   const setActivePanel = useUIStore((s) => s.setActivePanel)
@@ -126,6 +161,7 @@ export default function App() {
   const setWorkspace = useUIStore((s) => s.setWorkspace)
   const pendingExtensionConfig = useUIStore((s) => s.pendingExtensionConfig)
   const currentWorkspace = useUIStore((s) => s.currentWorkspace)
+  const historySessionFile = useUIStore((s) => s.historySessionFile)
   const projectDisplayNames = useUIStore((s) => s.projectDisplayNames)
   const terminalOpen = useTerminalStore((s) => s.open)
   const terminalHeight = useTerminalStore((s) => s.height)
@@ -220,6 +256,22 @@ export default function App() {
         .invoke('settings.get', { key: 'timelineVisibleTurns' })
         .then((res) => {
           useUIStore.getState().setTimelineVisibleTurns(normalizeTimelineVisibleTurns(res?.settings?.timelineVisibleTurns))
+        })
+        .catch(() => {})
+      void ipcClient
+        .invoke('settings.get', { key: 'timelineUserMessageStyle' })
+        .then((res) => {
+          const style = normalizeTimelineUserMessageStyle(res?.settings?.timelineUserMessageStyle)
+          useUIStore.getState().setTimelineUserMessageStyle(style)
+          applyUserMessageStyleToDocument(style)
+        })
+        .catch(() => {})
+      void ipcClient
+        .invoke('settings.get', { key: 'uiCustomization' })
+        .then((res) => {
+          const cfg = normalizeUiCustomization(res?.settings?.uiCustomization)
+          useUIStore.getState().setUiCustomization(cfg)
+          applyUiCustomizationToDocument(cfg)
         })
         .catch(() => {})
       prefetchAvailableModels()
@@ -375,8 +427,12 @@ export default function App() {
   })
   const panelPrefs =
     gitData?.isRepo === false ? { ...rightPanelPrefs, review: false } : rightPanelPrefs
+  const navSuppressed = usePanelNavigationSuppression(`${currentWorkspace || ''}::${historySessionFile || ''}`)
   const PANELS = buildRightPanelTabs(rightPanelCatalog, panelPrefs, t, rightPanelOrder)
-  const activeCatalogItem = rightPanelCatalog.find((c) => c.id === activePanel)
+  // Subscribe to dock slices so sidebar footer highlights update immediately on split/tab switch
+  void dockBottomTabs
+  void dockTopActive
+  void dockBottomActive
 
   const isHomeMode =
     !currentSessionId && timelineItemCount === 0 && !ephemeralSandboxDraft && !historyLoading
@@ -446,12 +502,84 @@ export default function App() {
                 />
               </SidebarContent>
               <SidebarActiveSessionsDrawer />
-              <div className="border-t border-border/50 p-1.5">
-                <SidebarItem
-                  label={t('sidebar.settings')}
-                  icon={<SettingsIcon className="h-4 w-4" />}
+              <div className="flex h-10 shrink-0 items-center gap-0.5 border-t border-border/35 px-2">
+                <button
+                  type="button"
                   onClick={() => setView('settings')}
-                />
+                  className="nav-row flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[12px] font-medium text-foreground-secondary transition-colors hover:text-foreground"
+                >
+                  <SettingsIcon className="h-[15px] w-[15px] shrink-0 opacity-80" strokeWidth={1.65} />
+                  <span className="sidebar-label-fade truncate">{t('sidebar.settings')}</span>
+                </button>
+                {currentWorkspace && !ephemeralSandboxDraft ? (
+                  <>
+                    <button
+                      type="button"
+                      title={t('common:panel.worktrees')}
+                      aria-label={t('common:panel.worktrees')}
+                      aria-pressed={!rightPanelHidden && isPanelVisibleInRightDock('worktrees')}
+                      onClick={() =>
+                        usePanelIntentStore.getState().toggleRightPanelTab('worktrees', !rightPanelHidden)
+                      }
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground',
+                        !rightPanelHidden &&
+                          isPanelVisibleInRightDock('worktrees') &&
+                          'bg-[var(--bg-active)] text-foreground',
+                      )}
+                    >
+                      <FolderGit2 className="h-[15px] w-[15px]" strokeWidth={1.65} />
+                    </button>
+                    <button
+                      type="button"
+                      title={t('common:panel.github')}
+                      aria-label={t('common:panel.github')}
+                      aria-pressed={!rightPanelHidden && isPanelVisibleInRightDock('github')}
+                      onClick={() =>
+                        usePanelIntentStore.getState().toggleRightPanelTab('github', !rightPanelHidden)
+                      }
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground',
+                        !rightPanelHidden &&
+                          isPanelVisibleInRightDock('github') &&
+                          'bg-[var(--bg-active)] text-foreground',
+                      )}
+                    >
+                      <GitFork className="h-[15px] w-[15px]" strokeWidth={1.65} />
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  data-pi-slot="sidebar-browser-toggle"
+                  title={
+                    browserTabCount > 0
+                      ? `${t('browser:stage.toggleTooltip')} (${browserTabCount})`
+                      : t('browser:stage.toggleTooltip')
+                  }
+                  aria-label={t('browser:stage.toggleTooltip')}
+                  aria-pressed={!rightPanelHidden && isPanelVisibleInRightDock('browser')}
+                  onClick={() =>
+                    usePanelIntentStore.getState().toggleRightPanelTab('browser', !rightPanelHidden)
+                  }
+                  className={cn(
+                    'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-foreground-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground',
+                    !rightPanelHidden &&
+                      isPanelVisibleInRightDock('browser') &&
+                      'bg-[var(--bg-active)] text-foreground',
+                  )}
+                >
+                  <Globe className="h-[15px] w-[15px]" strokeWidth={1.65} />
+                  {browserTabCount > 0 || browserAgentBusy ? (
+                    <span
+                      className={cn(
+                        'absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--brand)]',
+                        browserAgentBusy && 'animate-pulse',
+                      )}
+                      aria-hidden
+                    />
+                  ) : null}
+                </button>
               </div>
             </Sidebar>
           }
@@ -487,20 +615,12 @@ export default function App() {
           }
           right={
             <RightPanel>
-              <RightPanelTabs
+              <RightDock
                 panels={PANELS}
-                activePanel={activePanel}
-                setActivePanel={setActivePanel}
+                catalog={rightPanelCatalog}
+                rightPanelHidden={rightPanelHidden}
+                navSuppressed={navSuppressed}
               />
-              {!rightPanelHidden ? (
-                <div className="flex-1 overflow-hidden">
-                  <ErrorBoundary label="panel">
-                    <Suspense fallback={<ShellSuspenseFallback label={t('common:loading')} />}>
-                      <SidePanelHost item={activeCatalogItem} />
-                    </Suspense>
-                  </ErrorBoundary>
-                </div>
-              ) : null}
             </RightPanel>
           }
           bottom={<TerminalDrawer />}

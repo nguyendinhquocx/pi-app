@@ -1,5 +1,4 @@
-const codeEl = document.getElementById('code')
-const statusEl = document.getElementById('status')
+const isZh = /^zh\b/i.test(navigator.language || '')
 
 const LABELS = {
   unpaired: 'Not paired yet.',
@@ -9,25 +8,38 @@ const LABELS = {
   rejected: 'LiX rejected the code. Copy a fresh one.',
 }
 
-async function showStatus() {
-  const { status } = await chrome.storage.session.get('status')
-  statusEl.textContent = LABELS[status] || LABELS.unpaired
-  statusEl.className = status === 'connected' ? 'ok' : status === 'rejected' ? 'bad' : ''
+$('togglePairBtn').onclick = () => {
+  forceShowPair = !forceShowPair
+  void render()
 }
 
-document.getElementById('save').addEventListener('click', async () => {
-  const m = /^pi-bridge:(\d{2,5}):([A-Za-z0-9_-]{16,128})$/.exec(codeEl.value.trim())
+$('borrowBtn').onclick = async () => {
+  await rpc('popup.borrowActive')
+  void render()
+}
+
+$('detachBtn').onclick = async () => {
+  await rpc('popup.detachAll')
+  $('msg').textContent = T.detachedToast
+  void render()
+}
+
+$('returnAllBtn').onclick = async () => {
+  await rpc('popup.returnAll')
+  void render()
+}
+
+$('save').onclick = async () => {
+  const m = /^pi-bridge:(\d{2,5}):([A-Za-z0-9_-]{16,128})$/.exec($('code').value.trim())
   if (!m) {
-    statusEl.textContent = 'That is not a pairing code (pi-bridge:PORT:TOKEN).'
-    statusEl.className = 'bad'
+    $('msg').textContent = T.badCode
     return
   }
   await chrome.storage.local.set({ port: Number(m[1]), token: m[2] })
-  codeEl.value = ''
-  setTimeout(showStatus, 600)
-})
+  $('code').value = ''
+  forceShowPair = false
+  setTimeout(render, 500)
+}
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'session' && changes.status) void showStatus()
-})
-void showStatus()
+chrome.storage.onChanged.addListener(() => void render())
+void render()
