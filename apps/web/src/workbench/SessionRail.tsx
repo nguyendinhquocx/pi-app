@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ProjectInfo, SessionSummary } from '@shared/remote'
+import { Ellipsis, Plus, Search } from 'lucide-react'
 import { useWorkbench } from './workbench-store'
 
 /**
@@ -25,6 +26,8 @@ export function SessionRail({
   selectedSessionKey,
   actions,
   className = '',
+  footer,
+  mobileOpen = false,
 }: {
   hostId: string
   sessions: SessionSummary[]
@@ -34,6 +37,8 @@ export function SessionRail({
   selectedSessionKey: string | null
   actions: SessionRailActions
   className?: string
+  footer?: ReactNode
+  mobileOpen?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [menuFor, setMenuFor] = useState<string | null>(null)
@@ -71,8 +76,9 @@ export function SessionRail({
   const firstProjectId = selectedProjectId ?? sessions.find((session) => session.sessionKey === selectedSessionKey)?.projectId ?? projects[0]?.id ?? ''
 
   return (
-    <nav className={`session-rail ${className}`.trim()} aria-label={`Sessions on ${hostId}`}>
+    <nav id="session-rail" className={`session-rail ${className}`.trim()} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen || undefined} aria-label={`Sessions on ${hostId}`} tabIndex={mobileOpen ? -1 : undefined}>
       <div className="rail-search">
+        <Search className="rail-search-icon" size={17} aria-hidden="true" />
         {projects.length > 1 && (
           <select aria-label="Project" value={selectedProjectId ?? 'all'} onChange={(event) => onSelectProject(event.target.value === 'all' ? null : event.target.value)}>
             <option value="all">Tất cả project</option>
@@ -85,8 +91,8 @@ export function SessionRail({
           placeholder="Tìm phiên…"
           aria-label="Tìm phiên hoặc tin nhắn đầu tiên"
         />
-        <button className="primary" disabled={!firstProjectId} onClick={() => void run(() => actions.onCreate(firstProjectId))} title="Tạo phiên mới">
-          +
+        <button className="new-session" aria-label="Tạo phiên mới" disabled={!firstProjectId} onClick={() => void run(() => actions.onCreate(firstProjectId))} title="Tạo phiên mới">
+          <Plus size={18} aria-hidden="true" />
         </button>
       </div>
       {notice && (
@@ -111,7 +117,11 @@ export function SessionRail({
                 aria-current={s.sessionKey === selectedSessionKey ? 'true' : undefined}
               >
                 <span className="session-title">{s.title || s.sessionKey}</span>
-                {s.status === 'running' && <span className="running-badge" aria-label="đang chạy">▸</span>}
+                {s.preview && <span className="session-preview">{s.preview}</span>}
+                <span className="session-meta">
+                  <small>{formatSessionTime(s.updatedAt)}</small>
+                  {s.status === 'running' && <span className="live-dot" role="img" aria-label="Đang chạy" />}
+                </span>
               </button>
             )}
             {renameFor !== s.sessionKey && <button
@@ -122,7 +132,7 @@ export function SessionRail({
                 setMenuFor(menuFor === s.sessionKey ? null : s.sessionKey)
               }}
             >
-              ⋯
+              <Ellipsis size={16} aria-hidden="true" />
             </button>}
             {menuFor === s.sessionKey && (
               <div className="context-menu" role="menu" onClick={(event) => event.stopPropagation()}>
@@ -141,6 +151,19 @@ export function SessionRail({
           </li>
         ))}
       </ul>
+      {footer && <div className="rail-footer">{footer}</div>}
     </nav>
   )
+}
+
+function formatSessionTime(updatedAt: number): string {
+  const date = new Date(updatedAt)
+  if (!Number.isFinite(date.getTime())) return ''
+  const elapsedMs = Date.now() - date.getTime()
+  if (elapsedMs < 60_000) return 'vừa xong'
+  if (elapsedMs < 60 * 60_000) return `${Math.floor(elapsedMs / 60_000)} phút`
+  if (date.toDateString() === new Date().toDateString()) {
+    return `Hôm nay, ${date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+  }
+  return date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'short' })
 }

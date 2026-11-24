@@ -1,0 +1,1434 @@
+<!doctype html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Li · design preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #fff;
+      --surface: #f9fafb;
+      --surface-2: #f2f3f5;
+      --hover: #f0f0f0;
+      --selected: #eff0f6;
+      --ink: #12141a;
+      --secondary: #454d5f;
+      --muted: #6b7280;
+      --border: #dfe0e6;
+      --border-soft: #f2f3f5;
+      --brand: #7583b2;
+      --brand-soft: #eff0f6;
+      --live: #16823c;
+      --warn: #a55b00;
+      --error: #a12b2b;
+      --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --motion: 150ms cubic-bezier(.22, 1, .36, 1);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1f1f1f;
+      --surface: #252526;
+      --surface-2: #2b2b2b;
+      --hover: #313338;
+      --selected: #303137;
+      --ink: #e4e4e4;
+      --secondary: #b6bac4;
+      --muted: #9297a3;
+      --border: #3b3b3d;
+      --border-soft: #303032;
+      --brand: #a0a8c4;
+      --brand-soft: #2b2b2b;
+      --live: #66bd7a;
+      --warn: #d7a34d;
+      --error: #dc7777;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    .mobile-only { display: none !important; }
+    .desktop-only { display: inline-flex; }
+    html, body { min-width: 320px; min-height: 100%; margin: 0; }
+    body {
+      background: #f2f3f5;
+      color: var(--ink);
+      font: 13px/1.5 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    html[data-theme="dark"] body { background: #181819; }
+    button, input, textarea { color: inherit; font: inherit; }
+    button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      cursor: pointer;
+      padding: 0 10px;
+      transition: background var(--motion), color var(--motion);
+    }
+    button:disabled { color: var(--muted); cursor: default; }
+    @media (hover:hover) and (pointer:fine) {
+      button:not(:disabled):hover { background: var(--hover); }
+      .session-row:hover, .host-option:hover, .model-option:hover, .file-row:hover { background: var(--hover); }
+      .timeline .tool-toggle:not(:disabled):hover { background: transparent; }
+    }
+    button:active { background: var(--hover); }
+    :where(button, a, [role="option"], [role="menuitemradio"], [tabindex]):focus-visible {
+      outline: 0;
+      background-color: var(--hover);
+      position: relative;
+    }
+    :where(button, a, [role="option"], [role="menuitemradio"], [tabindex]):focus-visible::before {
+      content: "";
+      position: absolute;
+      inset-inline-start: 2px;
+      top: 8px;
+      bottom: 8px;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--ink);
+    }
+    input, textarea {
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+    }
+    input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+    .icon { width: 18px; height: 18px; flex: none; display: inline-block; vertical-align: middle; }
+    .icon svg { width: 100%; height: 100%; display: block; }
+    .muted { color: var(--secondary); }
+    .quiet { color: var(--secondary); }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+    .preview-shell { width: min(1600px, 100%); margin: 0 auto; padding: 14px 16px 16px; }
+    .preview-toolbar {
+      position: relative; display: flex; align-items: center; gap: 12px; min-height: 46px; margin-bottom: 10px;
+      color: #383b42;
+    }
+    html[data-theme="dark"] .preview-toolbar { color: #d5d5d5; }
+    .preview-title { display: flex; align-items: center; gap: 9px; flex: none; }
+    .preview-mark { font-size: 15px; font-weight: 650; letter-spacing: -.05em; color: var(--ink); }
+    .preview-caption { display: flex; flex-direction: column; line-height: 1.2; }
+    .preview-caption strong { font-size: 12px; font-weight: 600; }
+    .preview-caption small { margin-top: 3px; color: #666a73; font-size: 10px; }
+    html[data-theme="dark"] .preview-caption small { color: #a3a3aa; }
+    .scene-switcher { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; margin-inline: auto; }
+    .scene-switcher::-webkit-scrollbar { display: none; }
+    .scene-switcher button, .theme-switch button {
+      min-height: 34px; flex: none; padding: 0 10px; border-radius: 8px; color: #565963; font-size: 11px; white-space: nowrap;
+    }
+    html[data-theme="dark"] .scene-switcher button, html[data-theme="dark"] .theme-switch button { color: #c2c2c8; }
+    .scene-switcher button[aria-pressed="true"], .theme-switch button[aria-pressed="true"] { background: #e5e6eb; color: #17181c; font-weight: 600; }
+    html[data-theme="dark"] .scene-switcher button[aria-pressed="true"], html[data-theme="dark"] .theme-switch button[aria-pressed="true"] { background: #38383b; color: #fff; }
+    .theme-switch { display: flex; align-items: center; gap: 2px; flex: none; padding: 2px; border-radius: 10px; background: rgba(255,255,255,.56); }
+    html[data-theme="dark"] .theme-switch { background: #252526; }
+    .app-frame {
+      --rail-width: 280px;
+      --rail-grip: 8px;
+      --inspector-width: 0px;
+      --inspector-grip: 0px;
+      width: 100%; height: min(850px, calc(100dvh - 88px)); min-height: 600px;
+      display: grid; grid-template-rows: 56px minmax(0, 1fr); overflow: hidden;
+      background: var(--bg); border: 1px solid #e1e2e6; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.035); position: relative; isolation: isolate;
+    }
+    html[data-theme="dark"] .app-frame { border-color: #343436; box-shadow: 0 2px 12px rgba(0,0,0,.16); }
+    .app-frame[data-inspector-open="true"] { --inspector-width: 310px; --inspector-grip: 8px; }
+    .app-frame[data-rail-hidden="true"] { --rail-width: 0px; --rail-grip: 0px; }
+    @media (min-width: 769px) {
+      .app-frame[data-rail-hidden="true"] .session-rail, .app-frame[data-rail-hidden="true"] .left-splitter { display: none; }
+    }
+    .app-topbar {
+      min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      position: relative; z-index: 10; background: var(--bg);
+    }
+    .icon-button { width: 44px; min-width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--secondary); }
+    .host-picker { position: relative; min-width: 0; }
+    .host-trigger {
+      min-width: 0; max-width: min(340px, 40vw); display: flex; align-items: center; gap: 9px;
+      padding: 0 10px; text-align: left; border-radius: 9px;
+    }
+    .host-trigger .host-label { font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .host-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); flex: none; }
+    .host-dot.offline { background: var(--muted); }
+    .host-dot.connecting { background: var(--warn); }
+    .host-trigger .chevron { color: var(--muted); margin-inline-start: 2px; }
+    .topbar-spacer { flex: 1; min-width: 0; }
+    .rail-footer .host-picker, .rail-footer .host-trigger { width: 100%; max-width: none; }
+    .rail-footer .host-menu { top: auto; right: auto; bottom: calc(100% + 6px); left: 0; width: 100%; }
+    .host-menu, .model-popover, .small-menu {
+      position: absolute; z-index: 50; background: var(--bg); border: 1px solid var(--border-soft);
+      border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.05);
+    }
+    .host-menu { inset: calc(100% + 5px) auto auto 0; width: min(310px, calc(100vw - 24px)); padding: 6px; }
+    .menu-heading { margin: 8px 9px 4px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    .host-option { width: 100%; display: flex; align-items: center; gap: 9px; text-align: left; padding: 6px 9px; border-radius: 8px; }
+    .host-option .host-option-copy { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; flex: 1; }
+    .host-option .host-option-copy strong { font-weight: 500; }
+    .host-option small { color: var(--secondary); font-size: 11px; }
+    .host-option[aria-checked="true"] { background: transparent; font-weight: 600; }
+    .host-option[aria-checked="true"] .host-option-copy strong { font-weight: 700; }
+    .host-menu .menu-add { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; padding: 4px 9px; color: var(--secondary); }
+    .app-grid {
+      min-height: 0; min-width: 0; display: grid;
+      grid-template-columns: minmax(0,var(--rail-width)) var(--rail-grip) minmax(0,1fr) var(--inspector-grip) minmax(0,var(--inspector-width));
+      position: relative;
+    }
+    .session-rail { grid-column: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 12px 10px 10px 12px; overflow: hidden; background: var(--bg); }
+    .left-splitter { grid-column: 2; }
+    .workbench-center { grid-column: 3; }
+    .inspector-splitter { grid-column: 4; }
+    .inspector-panel { grid-column: 5; }
+    .app-frame[data-empty="true"] .workbench-center { grid-column: 1; }
+    .rail-search-row { display: flex; align-items: center; gap: 4px; margin: 5px 0 9px; }
+    .new-session { width: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; color: var(--secondary); }
+    .rail-search {
+      min-width: 0; flex: 1; height: 44px; display: flex; align-items: center; gap: 7px; padding: 0 9px;
+      background: var(--surface); border-radius: 9px; margin: 0; color: var(--muted); position: relative;
+    }
+    .rail-search input { width: 100%; height: 100%; font-size: 12px; }
+    .rail-search:has(input:focus-visible) { background: var(--surface-2); }
+    .session-list { min-height: 0; flex: 1; list-style: none; padding: 0; margin: 4px 0 0; overflow-y: auto; scrollbar-width: none; }
+    .session-list::-webkit-scrollbar, .timeline::-webkit-scrollbar, .inspector-content::-webkit-scrollbar { display: none; }
+    .rail-footer { position: relative; flex: none; padding: 8px 8px 10px; }
+    .session-row {
+      width: 100%; min-height: 54px; display: flex; flex-direction: column; align-items: stretch; justify-content: center;
+      gap: 2px; border-radius: 9px; padding: 6px 9px; text-align: left; margin: 1px 0;
+    }
+    .session-row[aria-current="page"] strong { font-weight: 650; }
+    .session-row strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 520; }
+    .session-row small { color: var(--secondary); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-meta { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+    .session-meta small { color: var(--muted); }
+    .session-item { display: flex; align-items: center; gap: 1px; margin: 1px 0; }
+    .session-item .session-row { flex: 1; min-width: 0; width: auto; margin: 0; }
+    .session-menu-trigger { width: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; color: var(--muted); }
+    .session-menu-trigger .icon { width: 15px; height: 15px; }
+    .session-edit { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
+    .session-edit input { flex: 1; min-width: 0; min-height: 44px; padding: 0 8px; background: var(--surface-2); border-radius: 9px; font-size: 12px; }
+    .session-edit button { min-height: 44px; padding: 0 7px; color: var(--secondary); font-size: 10px; white-space: nowrap; }
+    .session-list-empty { padding: 10px 9px; color: var(--muted); font-size: 11px; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); flex: none; }
+    .splitter { width: 8px; cursor: col-resize; position: relative; touch-action: none; z-index: 4; }
+    .splitter::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: transparent; }
+    @media (hover:hover) and (pointer:fine) { .splitter:hover::after { background: var(--border); } }
+    .splitter:focus-visible { outline: 0; }
+    .splitter:focus-visible::after { left: 2px; width: 3px; background: var(--ink); }
+    .workbench-center { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; position: relative; container: workbench / inline-size; }
+    .timeline-wrap { min-width: 0; min-height: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+    .timeline {
+      flex: 1; min-width: 0; min-height: 0; height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: none;
+      padding: 15px clamp(14px, 3vw, 30px) 18px; display: flex; flex-direction: column; align-items: center;
+    }
+    .timeline-inner { width: min(100%, 760px); min-width: 0; }
+    .history-status { min-height: 25px; text-align: center; color: var(--muted); font-size: 10px; padding: 2px 0 7px; }
+    .history-status.error { min-height: 44px; color: var(--secondary); }
+    .history-status button { min-height: 44px; padding: 0 10px; margin-left: 5px; font-size: 10px; font-weight: 550; }
+    .history-status[aria-busy="true"] { color: var(--secondary); }
+    .day-marker { display: flex; justify-content: center; margin: 5px 0 20px; color: var(--muted); font-size: 10px; }
+    .turn { display: flex; flex-direction: column; align-items: stretch; margin: 0 0 24px; gap: 9px; }
+    .user-turn { align-self: flex-end; max-width: min(88%, 620px); padding: 10px 13px; border-radius: 12px; background: var(--surface-2); line-height: 1.55; }
+    .user-turn p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .assistant-turn { align-self: stretch; max-width: 100%; color: var(--ink); line-height: 1.65; }
+    .assistant-turn p { margin: 0 0 8px; }
+    .assistant-turn ul { margin: 7px 0 0; padding-inline-start: 21px; }
+    .assistant-turn li { margin: 4px 0; }
+    .turn-time { align-self: center; color: var(--muted); font-size: 10px; margin: -12px 0 16px; }
+    .thinking { color: var(--secondary); font-size: 11px; }
+    .thinking summary { cursor: pointer; width: fit-content; min-height: 44px; display: flex; align-items: center; padding: 0 8px; margin-left: -8px; border-radius: 7px; }
+    .thinking-body { border-left: 2px solid var(--border); padding: 5px 0 5px 10px; margin: 2px 0 4px; }
+    .tool-row { border-radius: 8px; display: flex; flex-direction: column; }
+    .tool-toggle { min-height: 44px; width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; padding: 0 8px; color: var(--secondary); }
+    .tool-toggle strong { color: var(--ink); font-size: 11px; font-weight: 550; }
+    .tool-toggle .tool-state { font-size: 10px; margin-left: auto; }
+    .tool-state.failed { color: var(--secondary); }
+    .tool-state.running { color: var(--secondary); }
+    .tool-detail { margin: 0 8px 8px 32px; padding: 8px 10px; color: var(--secondary); background: var(--surface); border-radius: 8px; font: 11px/1.5 var(--mono); white-space: pre-wrap; }
+    .jump-latest {
+      position: absolute; right: 18px; bottom: 14px; min-height: 38px; padding: 0 13px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 3px 12px rgba(0,0,0,.08); font-size: 11px; font-weight: 550;
+    }
+    .jump-latest[hidden] { display: none; }
+    .composer { padding: 9px 18px 13px; background: var(--bg); position: relative; }
+    .composer-field { position: relative; width: min(100%, 820px); margin: 0 auto; padding: 10px 11px 7px; background: var(--surface); border-radius: 14px; }
+    .composer-field:has(textarea:focus-visible) { background: var(--surface-2); }
+    .composer-field textarea { display: block; width: 100%; min-height: 48px; max-height: 144px; resize: none; line-height: 1.55; font-size: 13px; padding: 2px 4px; }
+    .composer-footer { min-height: 42px; display: flex; align-items: center; gap: 5px; padding-top: 5px; }
+    .composer-left, .composer-right { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .composer-right { margin-left: auto; }
+    .compact-control { min-height: 34px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--secondary); border-radius: 8px; white-space: nowrap; font-size: 11px; }
+    .attach-button { width: 36px; min-width: 36px; padding: 0; }
+    .send-button { min-width: 68px; padding: 0 14px; color: #202126; background: #e9e9ec; font-weight: 600; }
+    @container workbench (max-width: 560px) {
+      .composer-footer { flex-wrap: wrap; gap: 2px; }
+      .composer-left { width: 100%; }
+      .composer-right { width: 100%; margin-left: 0; justify-content: space-between; flex-wrap: wrap; }
+    }
+    html[data-theme="dark"] .send-button { background: #3a3a3d; color: var(--ink); }
+    .send-button:disabled { opacity: .55; }
+    .context-cue { display: flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 10px; white-space: nowrap; padding: 0 5px; }
+    .context-meter { width: 30px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .context-meter i { display: block; width: 84%; height: 100%; background: var(--brand); }
+    .model-wrap, .thinking-wrap, .mode-wrap, .export-wrap { position: relative; }
+    .model-trigger { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    .model-popover {
+      width: min(350px, calc(100vw - 24px)); bottom: calc(100% + 7px); right: 0; padding: 9px;
+    }
+    .model-popover h3 { font-size: 11px; font-weight: 600; margin: 8px 7px 3px; color: var(--secondary); }
+    .model-search { min-height: 40px; width: 100%; padding: 0 10px; border-radius: 8px; background: var(--surface); font-size: 12px; }
+    .model-list { max-height: min(360px, 48vh); overflow: auto; padding-top: 3px; scrollbar-width: none; }
+    .model-option { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; text-align: left; border-radius: 8px; font-size: 11px; }
+    .model-option[aria-selected="true"] { background: var(--selected); font-weight: 600; }
+    .model-option span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .model-option small { color: var(--secondary); font-size: 10px; }
+    .no-models { padding: 15px 8px 8px; color: var(--secondary); font-size: 11px; }
+    .clear-search { min-height: 32px; padding: 0 8px; color: var(--secondary); font-size: 11px; }
+    .small-menu { bottom: calc(100% + 6px); right: 0; width: 155px; padding: 5px; }
+    .small-menu button { width: 100%; min-height: 44px; display: flex; align-items: center; text-align: left; padding: 0 9px; font-size: 11px; }
+    .session-action-menu { width: 168px; }
+    .menu-danger { color: var(--error); }
+    .menu-confirm { padding: 10px 4px 6px; }
+    .menu-confirm strong { display: block; font-size: 12px; }
+    .menu-confirm p { margin: 4px 0 10px; color: var(--secondary); font-size: 10px; line-height: 1.5; }
+    .menu-confirm-actions { display: flex; gap: 6px; }
+    .menu-confirm-actions button { width: auto; min-height: 44px; padding: 0 10px; font-size: 10px; justify-content: center; }
+    .inspector-panel { min-width: 0; min-height: 0; display: none; flex-direction: column; background: var(--bg); overflow: hidden; }
+    .app-frame[data-inspector-open="true"] .inspector-panel { display: flex; }
+    .inspector-head { min-height: 47px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 13px; }
+    .inspector-head h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 600; }
+    .inspector-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; padding: 0 7px 5px; scrollbar-width: none; }
+    .inspector-tabs::-webkit-scrollbar { display: none; }
+    .inspector-tabs button { flex: none; min-height: 44px; padding: 0 9px; color: var(--secondary); font-size: 11px; border-radius: 8px; }
+    .inspector-tabs button[aria-selected="true"] { background: transparent; color: var(--ink); font-weight: 700; }
+    .inspector-content { min-height: 0; flex: 1; overflow: auto; padding: 13px 14px 16px; border-top: 1px solid var(--border-soft); scrollbar-width: none; }
+    .panel-title { margin: 0 0 10px; font-size: 12px; font-weight: 600; }
+    .context-row { display: flex; justify-content: space-between; gap: 10px; margin: 12px 0; font-size: 11px; }
+    .context-row span:last-child { color: var(--secondary); font-variant-numeric: tabular-nums; }
+    .meter-large { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin: 10px 0 7px; }
+    .meter-large i { display: block; height: 100%; width: 84%; background: var(--brand); border-radius: inherit; }
+    .panel-note { color: var(--secondary); font-size: 11px; line-height: 1.6; margin: 14px 0; }
+    .file-create { display: flex; align-items: center; gap: 5px; padding: 5px 0 10px; }
+    .file-create input { width: 100%; min-height: 44px; background: var(--surface); border-radius: 8px; padding: 0 8px; font-size: 11px; }
+    .file-create button { min-height: 44px; padding: 0 9px; font-size: 11px; }
+    .file-list { list-style: none; padding: 0; margin: 0; }
+    .file-row { min-height: 44px; display: flex; align-items: center; gap: 2px; border-radius: 8px; padding: 2px 3px 2px 6px; }
+    .file-open { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; text-align: left; padding: 0 5px; font-size: 11px; overflow: hidden; }
+    .file-open span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .file-menu-trigger { width: 44px; min-width: 44px; min-height: 44px; padding: 0; color: var(--secondary); }
+    .file-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; color: var(--secondary); font-size: 10px; }
+    .file-preview-header button { min-height: 44px; padding: 0 8px; font-size: 10px; }
+    .file-preview { margin-top: 5px; padding: 10px; background: var(--surface); border-radius: 9px; color: var(--secondary); font: 10px/1.55 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .review-file { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 11px; }
+    .review-file code { min-width: 0; flex: 1; overflow-wrap: anywhere; font: 11px var(--mono); }
+    .add-count { color: var(--live); font-size: 10px; }
+    .remove-count { color: var(--error); font-size: 10px; }
+    .terminal-view { background: var(--bg); border-radius: 8px; font: 11px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+    .terminal-view .prompt { color: var(--secondary); }
+    .terminal-view .terminal-dim { color: var(--muted); }
+    .tree-row { min-height: 30px; padding-left: 10px; color: var(--secondary); font: 11px/1.6 var(--mono); }
+    .tree-row.current { color: var(--ink); font-weight: 600; }
+    .agent-row { padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+    .agent-row strong { display: block; font-size: 11px; font-weight: 550; }
+    .agent-row small { color: var(--secondary); font-size: 10px; }
+    .inspector-splitter { background: transparent; }
+    .backdrop { display: none; position: absolute; inset: 0; z-index: 25; background: rgba(15,16,18,.22); }
+    .app-frame[data-mobile-drawer="true"] .backdrop { display: block; }
+    .empty-state { position: absolute; inset: 0; z-index: 6; background: var(--bg); min-height: 0; display: flex; align-items: center; justify-content: center; padding: 28px; text-align: center; }
+    .app-frame[data-empty="true"] .app-grid { grid-template-columns: minmax(0,1fr); }
+    .app-frame[data-empty="true"] .session-rail, .app-frame[data-empty="true"] .splitter, .app-frame[data-empty="true"] .inspector-panel { display: none !important; }
+    .app-frame[data-empty="true"] .host-picker, .app-frame[data-empty="true"] #railToggle, .app-frame[data-empty="true"] #inspectorToggle, .app-frame[data-empty="true"] .timeline-wrap, .app-frame[data-empty="true"] .composer { display: none !important; }
+    .empty-state-inner { width: min(360px, 100%); }
+    .empty-state h2 { margin: 0 0 7px; font-size: 15px; font-weight: 600; }
+    .empty-state p { margin: 0 0 18px; color: var(--secondary); font-size: 12px; }
+    .empty-state button { background: var(--surface-2); min-width: 118px; font-weight: 550; }
+    .notice-inline { color: var(--secondary); font-size: 11px; }
+    dialog {
+      width: min(520px, calc(100vw - 28px)); max-height: min(760px, calc(100dvh - 40px));
+      border: 1px solid var(--border-soft); border-radius: 16px; padding: 0; color: var(--ink); background: var(--bg);
+      box-shadow: 0 20px 60px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.08); overflow: auto;
+    }
+    dialog::backdrop { background: rgba(17,18,20,.28); }
+    .dialog-header { display: flex; align-items: center; gap: 8px; padding: 16px 18px 12px; }
+    .dialog-header h2 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
+    .dialog-close { padding: 0 8px; color: var(--secondary); }
+    .dialog-tabs { display: flex; gap: 3px; padding: 0 14px 8px; }
+    .dialog-tabs button { min-height: 44px; padding: 0 12px; color: var(--secondary); font-size: 11px; }
+    .dialog-tabs button[aria-selected="true"] { background: var(--selected); color: var(--ink); font-weight: 600; }
+    .dialog-body { padding: 3px 18px 18px; }
+    .dialog-host-list { display: flex; flex-direction: column; gap: 4px; }
+    .dialog-host-row { min-height: 54px; display: flex; align-items: center; gap: 9px; padding: 4px 4px 4px 7px; border-radius: 9px; }
+    .dialog-host-copy { display: flex; flex-direction: column; line-height: 1.35; flex: 1; min-width: 0; }
+    .dialog-host-copy strong { font-weight: 550; font-size: 12px; }
+    .dialog-host-copy small { color: var(--secondary); font-size: 10px; }
+    .dialog-host-row .secondary-action { min-height: 44px; padding: 0 6px; font-size: 10px; color: var(--secondary); }
+    .pair-form { display: flex; flex-direction: column; gap: 10px; }
+    .pair-help { margin: 0; color: var(--secondary); font-size: 11px; line-height: 1.6; }
+    .pair-link-field { min-height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 11px; background: var(--surface); border-radius: 9px; position: relative; }
+    .pair-link-field input { width: 100%; font: 11px var(--mono); }
+    .pair-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .pair-actions button { min-height: 44px; padding: 0 12px; font-size: 11px; }
+    .pair-primary { background: var(--surface-2); font-weight: 600; }
+    .pair-status { min-height: 18px; margin: 0; color: var(--secondary); font-size: 11px; }
+    .pair-retry { align-self: flex-start; min-height: 44px; padding: 0 10px; color: var(--secondary); font-size: 11px; }
+    .pair-confirm { margin-top: 9px; padding: 12px; background: var(--surface); border-radius: 10px; }
+    .pair-confirm strong { display: block; font-size: 12px; }
+    .pair-confirm p { margin: 4px 0 9px; color: var(--secondary); font-size: 10px; }
+    .pair-confirm-actions { display: flex; gap: 6px; }
+    .pair-confirm-actions button { min-height: 36px; font-size: 10px; }
+    .pair-danger { color: var(--error); }
+    .export-menu { min-width: 130px; top: calc(100% + 4px); bottom: auto; }
+    .toast { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 60; padding: 8px 12px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 10px; box-shadow: 0 5px 20px rgba(0,0,0,.15); white-space: nowrap; }
+    .toast[hidden] { display: none; }
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .app-frame { --rail-width: 280px; }
+      .app-grid { grid-template-columns: minmax(0,var(--rail-width)) minmax(0,1fr); }
+      .session-rail { display: flex; }
+      .workbench-center { grid-column: 2; }
+      .left-splitter, .inspector-splitter { display: none; }
+      .composer-footer { flex-wrap: wrap; gap: 2px; }
+      .composer-left { width: 100%; }
+      .composer-right { width: 100%; margin-left: 0; justify-content: space-between; flex-wrap: wrap; }
+      .inspector-panel { position: absolute; z-index: 35; inset: 0 0 0 auto; width: min(360px, 44vw); border-left: 1px solid var(--border-soft); box-shadow: -10px 0 30px rgba(0,0,0,.08); }
+      .app-frame[data-inspector-open="true"] .backdrop { display: block; }
+      .app-frame[data-inspector-open="true"] .inspector-panel { display: flex; }
+      .app-frame[data-inspector-open="true"] .backdrop { z-index: 24; }
+      .app-frame[data-inspector-open="true"] .inspector-panel { z-index: 35; }
+      /* Right-only state (rail collapsed + Inspector open): dock Inspector as a real grid track beside main — no overlay, no overlap. */
+      .app-frame[data-rail-hidden="true"][data-inspector-open="true"]:not([data-empty="true"]) .app-grid { grid-template-columns: minmax(0,1fr) minmax(0, min(var(--inspector-width), 44vw)); }
+      .app-frame[data-rail-hidden="true"][data-inspector-open="true"] .workbench-center { grid-column: 1; }
+      .app-frame[data-rail-hidden="true"][data-inspector-open="true"] .inspector-panel { position: static; z-index: auto; inset: auto; width: auto; box-shadow: none; grid-column: 2; }
+      .app-frame[data-rail-hidden="true"][data-inspector-open="true"] .backdrop { display: none; }
+    }
+    @media (min-width: 1000px) and (max-width: 1024px) {
+      .app-frame[data-rail-hidden="false"][data-inspector-open="true"] .app-grid { grid-template-columns: minmax(0,var(--rail-width)) minmax(0,1fr) minmax(0,var(--inspector-width)); }
+      .app-frame[data-rail-hidden="false"][data-inspector-open="true"] .workbench-center { grid-column: 2; }
+      .app-frame[data-rail-hidden="false"][data-inspector-open="true"] .inspector-panel { position: static; inset: auto; z-index: auto; width: auto; grid-column: 3; border-left: 1px solid var(--border-soft); box-shadow: none; }
+      .app-frame[data-rail-hidden="false"][data-inspector-open="true"] .backdrop { display: none; }
+    }
+    @media (min-width: 769px) and (max-width: 999px) {
+      .app-frame[data-rail-hidden="false"][data-inspector-open="true"] .app-topbar { z-index: 40; }
+    }
+    @media (max-width: 768px) {
+      .preview-shell { padding: 8px 8px 10px; }
+      .mobile-only { display: inline-flex !important; }
+      .desktop-only { display: none !important; }
+      .preview-toolbar { flex-wrap: wrap; gap: 5px 8px; min-height: 66px; margin-bottom: 7px; }
+      .preview-title { width: 100%; padding-right: 100px; }
+      .scene-switcher { order: 3; width: 100%; margin: 0; }
+      .theme-switch { position: absolute; right: 8px; top: 8px; }
+      .app-frame { height: calc(100dvh - 91px); min-height: 540px; border-radius: 10px; grid-template-rows: 54px minmax(0,1fr); }
+      .app-topbar { gap: 4px; padding: 0 7px; }
+      .host-trigger { gap: 6px; max-width: min(190px, 47vw); padding: 0 7px; }
+      .host-trigger .host-label { font-size: 11px; }
+      .rail-footer .host-trigger { max-width: none; }
+      .app-grid { display: block; }
+      .session-rail { display: none; position: absolute; z-index: 40; inset: 0 auto 0 0; width: min(320px, 86vw); box-shadow: 12px 0 32px rgba(0,0,0,.13); }
+      .app-frame[data-mobile-drawer="true"] .session-rail { display: flex; }
+      .left-splitter, .inspector-splitter { display: none !important; }
+      .workbench-center { height: 100%; grid-template-rows: minmax(0,1fr) auto; }
+      .timeline { padding: 12px 12px 16px; }
+      .user-turn { max-width: 92%; }
+      .composer { padding: 7px 8px max(8px, env(safe-area-inset-bottom)); }
+      .composer-field { padding: 8px 8px 6px; }
+      .composer-field textarea { min-height: 43px; }
+      .composer-footer { gap: 1px; flex-wrap: wrap; }
+      .composer-left { width: 100%; }
+      .composer-right { width: 100%; margin-left: 0; justify-content: space-between; }
+      .compact-control { min-height: 44px; padding: 0 6px; font-size: 10px; }
+      .model-trigger { max-width: 114px; }
+      .thinking-trigger { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+      .context-cue { padding: 0 2px; }
+      .context-meter { display: none; }
+      .send-button { min-width: 48px; padding: 0 9px; }
+      .attach-button { width: 36px; min-width: 36px; }
+      .inspector-panel { display: none; position: fixed; z-index: 40; inset: auto 0 0; width: 100%; height: min(58dvh, 520px); max-height: 74dvh; border-radius: 18px 18px 0 0; box-shadow: 0 -12px 36px rgba(0,0,0,.16); padding-bottom: env(safe-area-inset-bottom); }
+      .app-frame[data-inspector-open="true"] .inspector-panel { display: flex; }
+      .inspector-head { min-height: 44px; padding-inline: 14px; }
+      .inspector-tabs { padding-inline: 9px; }
+      .inspector-content { padding-inline: 15px; }
+      .backdrop { position: fixed; z-index: 25; }
+      .app-frame[data-inspector-open="true"] .backdrop { display: block; }
+      .app-frame[data-inspector-open="true"] .inspector-panel { z-index: 40; }
+      .jump-latest { right: 11px; bottom: 10px; }
+      dialog { width: 100%; max-width: none; max-height: min(84dvh, 690px); margin: auto 0 0; border-radius: 18px 18px 0 0; }
+      dialog::backdrop { background: rgba(17,18,20,.24); }
+      .dialog-header { padding-inline: 16px; }
+    }
+    @media (max-width: 360px) {
+      .host-trigger { max-width: min(150px, 43vw); }
+      .host-trigger .chevron { display: none; }
+      .composer-right { gap: 0; }
+      .thinking-trigger { max-width: 68px; }
+      .model-trigger { max-width: 104px; }
+      .context-cue { font-size: 9px; }
+      .scene-switcher button { padding-inline: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <header class="preview-toolbar" aria-label="Điều khiển bản preview">
+      <div class="preview-title">
+        <span class="preview-mark">Li</span>
+        <span class="preview-caption"><strong>Workbench · design preview</strong><small>Dữ liệu tổng hợp · không kết nối host</small></span>
+      </div>
+      <nav class="scene-switcher" aria-label="Chọn view mô phỏng" role="toolbar">
+        <button type="button" data-scene="workbench" aria-pressed="true">Workbench</button>
+        <button type="button" data-scene="pairing" aria-pressed="false">Ghép host</button>
+        <button type="button" data-scene="pairPermission" aria-pressed="false">Pair · quyền mạng</button>
+        <button type="button" data-scene="history" aria-pressed="false">Lịch sử dài</button>
+        <button type="button" data-scene="historyError" aria-pressed="false">Lỗi tải lịch sử</button>
+        <button type="button" data-scene="model" aria-pressed="false">Model picker</button>
+        <button type="button" data-scene="files" aria-pressed="false">Files</button>
+        <button type="button" data-scene="terminal" aria-pressed="false">Terminal</button>
+        <button type="button" data-scene="empty" aria-pressed="false">Chưa kết nối</button>
+      </nav>
+      <div class="theme-switch" role="group" aria-label="Chế độ màu của preview">
+        <button type="button" data-theme-choice="light" aria-pressed="true">Sáng</button>
+        <button type="button" data-theme-choice="dark" aria-pressed="false">Tối</button>
+      </div>
+    </header>
+
+    <div class="app-frame" id="appFrame" data-rail-hidden="false" data-inspector-open="false" data-mobile-drawer="false">
+      <header class="app-topbar">
+        <button type="button" class="icon-button mobile-only" id="mobileSessions" aria-label="Mở danh sách phiên" aria-expanded="false" title="Phiên">{{ICON:menu}}</button>
+        <button type="button" class="icon-button desktop-only" id="railToggle" aria-label="Thu gọn danh sách phiên" aria-expanded="true" title="Danh sách phiên">{{ICON:left}}</button>
+        <div class="topbar-spacer"></div>
+        <button type="button" class="icon-button" id="inspectorToggle" aria-label="Mở Inspector" aria-expanded="false" title="Inspector">{{ICON:right}}</button>
+      </header>
+
+      <div class="backdrop" id="drawerBackdrop" hidden></div>
+      <div class="app-grid" id="appGrid">
+        <nav class="session-rail" id="sessionRail" aria-label="Danh sách phiên">
+          <div class="rail-search-row">
+            <label class="rail-search">
+              <span class="icon" aria-hidden="true">{{ICON:search}}</span>
+              <input id="sessionSearch" type="search" placeholder="Tìm phiên…" aria-label="Tìm phiên">
+            </label>
+            <button type="button" class="new-session" id="newSession" aria-label="Tạo phiên mới" title="Tạo phiên mới">{{ICON:plus}}</button>
+          </div>
+          <ul class="session-list" id="sessionList"></ul>
+          <div class="rail-footer">
+            <div class="host-picker">
+              <button type="button" class="host-trigger" id="hostTrigger" aria-haspopup="menu" aria-expanded="false">
+                <span class="host-dot" role="img" aria-label="Trực tuyến"></span>
+                <span class="host-label" id="activeHostLabel">Laptop · demo</span>
+                <span class="icon chevron" aria-hidden="true">{{ICON:chevron}}</span>
+              </button>
+              <div class="host-menu" id="hostMenu" role="menu" hidden>
+                <p class="menu-heading">Host đã ghép</p>
+                <button type="button" class="host-option" role="menuitemradio" aria-checked="true" data-host="Laptop · demo">
+                  <span class="host-dot" aria-hidden="true"></span><span class="host-option-copy"><strong>Laptop · demo</strong><small>LiX desktop · trực tuyến</small></span>
+                </button>
+                <button type="button" class="host-option" role="menuitemradio" aria-checked="false" data-host="ProDesk · demo">
+                  <span class="host-dot" aria-hidden="true"></span><span class="host-option-copy"><strong>ProDesk · demo</strong><small>LiX desktop · trực tuyến</small></span>
+                </button>
+                <button type="button" class="menu-add" id="hostMenuAdd"><span class="icon" aria-hidden="true">{{ICON:plus}}</span>Thêm host</button>
+              </div>
+            </div>
+          </div>
+        </nav>
+        <div class="splitter left-splitter" id="leftSplitter" role="separator" aria-label="Điều chỉnh chiều rộng danh sách phiên" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="340" aria-valuenow="280" tabindex="0"></div>
+
+        <section class="workbench-center" id="workbenchCenter" aria-label="Phiên hội thoại">
+          <div class="timeline-wrap">
+            <div class="timeline" id="timeline" role="log" aria-live="off" tabindex="0" aria-label="Lịch sử hội thoại">
+              <div class="timeline-inner" id="timelineInner"></div>
+            </div>
+            <button type="button" class="jump-latest" id="jumpLatest" hidden>Về cuối</button>
+          </div>
+          <form class="composer" id="composerForm">
+            <div class="composer-field">
+              <label class="sr-only" for="promptInput">Tin nhắn</label>
+              <textarea id="promptInput" rows="2" placeholder="Gửi tin nhắn tới LiX…"></textarea>
+              <div class="composer-footer">
+                <div class="composer-left">
+                  <button type="button" class="compact-control attach-button" id="attachButton" aria-label="Đính kèm tệp" title="Đính kèm tệp">{{ICON:paperclip}}</button>
+                  <div class="mode-wrap">
+                    <button type="button" class="compact-control" id="modeTrigger" aria-haspopup="menu" aria-expanded="false">Gửi <span class="icon" aria-hidden="true">{{ICON:chevron}}</span></button>
+                    <div class="small-menu" id="modeMenu" role="menu" hidden>
+                      <button type="button" role="menuitem" data-mode="Gửi">Gửi</button>
+                      <button type="button" role="menuitem" data-mode="Steer">Steer</button>
+                      <button type="button" role="menuitem" data-mode="Follow-up">Follow-up</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-right">
+                  <div class="model-wrap">
+                    <button type="button" class="compact-control model-trigger" id="modelTrigger" aria-haspopup="dialog" aria-expanded="false" aria-label="Model: GLM-5.3 Flash">GLM-5.3 Flash <span class="icon" aria-hidden="true">{{ICON:chevron}}</span></button>
+                    <div class="model-popover" id="modelPopover" role="dialog" aria-label="Chọn model" hidden>
+                      <label class="sr-only" for="modelSearch">Tìm model theo tên, provider hoặc group</label>
+                      <input class="model-search" id="modelSearch" type="search" role="combobox" aria-expanded="true" aria-controls="modelList" aria-autocomplete="list" placeholder="Tìm model…">
+                      <div class="model-list" id="modelList" role="listbox" aria-label="Model khả dụng"></div>
+                    </div>
+                  </div>
+                  <div class="thinking-wrap">
+                    <button type="button" class="compact-control thinking-trigger" id="thinkingTrigger" aria-haspopup="menu" aria-expanded="false">Thinking · Medium <span class="icon" aria-hidden="true">{{ICON:chevron}}</span></button>
+                    <div class="small-menu" id="thinkingMenu" role="menu" hidden>
+                      <button type="button" role="menuitemradio" aria-checked="false" data-thinking="Off">Off</button>
+                      <button type="button" role="menuitemradio" aria-checked="false" data-thinking="Low">Low</button>
+                      <button type="button" role="menuitemradio" aria-checked="true" data-thinking="Medium">Medium</button>
+                      <button type="button" role="menuitemradio" aria-checked="false" data-thinking="High">High</button>
+                    </div>
+                  </div>
+                  <span class="context-cue" aria-label="Context 84 phần trăm">
+                    <span class="context-meter" aria-hidden="true"><i></i></span>84%
+                  </span>
+                  <button type="submit" class="compact-control send-button" id="sendButton" disabled>Gửi {{ICON:arrow}}</button>
+                </div>
+              </div>
+            </div>
+          </form>
+          <div class="empty-state" id="emptyState" hidden>
+            <div class="empty-state-inner">
+              <h2>Chưa có host được ghép nối</h2>
+              <p>Thêm một host LiX để mở phiên và tiếp tục công việc.</p>
+              <button type="button" id="emptyAddHost">Thêm host</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="splitter inspector-splitter" id="rightSplitter" role="separator" aria-label="Điều chỉnh chiều rộng Inspector" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="380" aria-valuenow="310" tabindex="0"></div>
+        <aside class="inspector-panel" id="inspectorPanel" aria-label="Inspector" aria-hidden="true">
+          <div class="inspector-head">
+            <h2>Inspector</h2>
+            <div class="export-wrap">
+              <button type="button" class="icon-button" id="exportTrigger" aria-label="Xuất phiên" aria-haspopup="menu" aria-expanded="false">{{ICON:dots}}</button>
+              <div class="small-menu export-menu" id="exportMenu" role="menu" hidden>
+                <button type="button" role="menuitem">Xuất Markdown</button>
+                <button type="button" role="menuitem">Xuất HTML</button>
+              </div>
+            </div>
+          </div>
+          <div class="inspector-tabs" role="tablist" aria-label="Nội dung Inspector">
+            <button type="button" role="tab" aria-selected="true" data-tab="terminal">Terminal</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="context">Context</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="review">Review</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="files">Files</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="tree">Tree</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="agents">Agents</button>
+          </div>
+          <div class="inspector-content" id="inspectorContent" role="tabpanel" tabindex="0"></div>
+        </aside>
+      </div>
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    </div>
+  </div>
+
+  <dialog id="hostDialog" aria-labelledby="dialogTitle">
+    <div class="dialog-header">
+      <h2 id="dialogTitle">Host</h2>
+      <button type="button" class="dialog-close" id="dialogClose">Đóng</button>
+    </div>
+    <div class="dialog-tabs" role="tablist" aria-label="Quản lý host">
+      <button type="button" role="tab" aria-selected="true" data-dialog-tab="hosts">Đã ghép nối</button>
+      <button type="button" role="tab" aria-selected="false" data-dialog-tab="pair">Ghép nối mới</button>
+    </div>
+    <div class="dialog-body" id="dialogBody"></div>
+  </dialog>
+
+  <script>
+    const ICONS = {
+      left: '<path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2l0 -12"/><path d="M9 4v16"/><path d="M15 10l-2 2l2 2"/>',
+      right: '<path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2l0 -12"/><path d="M15 4v16"/><path d="M9 10l2 2l-2 2"/>',
+      menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
+      plus: '<path d="M12 5l0 14"/><path d="M5 12l14 0"/>',
+      chevron: '<path d="M6 9l6 6l6 -6"/>',
+      search: '<path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/>',
+      paperclip: '<path d="M15 7l-6.5 6.5a1.5 1.5 0 0 0 3 3l6.5 -6.5a3 3 0 0 0 -6 -6l-6.5 6.5a4.5 4.5 0 0 0 9 9l6.5 -6.5"/>',
+      arrow: '<path d="M12 5l0 14"/><path d="M18 11l-6 -6"/><path d="M6 11l6 -6"/>',
+      dots: '<path d="M4 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/>',
+      folder: '<path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/>',
+      file: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M9 13l6 0"/><path d="M9 17l6 0"/>',
+      terminal: '<path d="M8 9l3 3l-3 3"/><path d="M13 15l3 0"/><path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12"/>'
+    };
+    function iconMarkup(name) {
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+    }
+    document.querySelectorAll('.icon').forEach((node) => {
+      const match = node.textContent.match(/\{\{ICON:([a-z]+)\}\}/);
+      if (match) node.innerHTML = iconMarkup(match[1]);
+    });
+    const markerWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const markerNodes = [];
+    while (markerWalker.nextNode()) if (/\{\{ICON:[a-z]+\}\}/.test(markerWalker.currentNode.nodeValue)) markerNodes.push(markerWalker.currentNode);
+    markerNodes.forEach((node) => {
+      if (node.parentElement?.classList.contains('icon')) return;
+      const parts = node.nodeValue.split(/(\{\{ICON:[a-z]+\}\})/g);
+      const fragment = document.createDocumentFragment();
+      parts.forEach((part) => {
+        const match = part.match(/^\{\{ICON:([a-z]+)\}\}$/);
+        if (match) { const wrapper = document.createElement('span'); wrapper.className = 'icon'; wrapper.innerHTML = iconMarkup(match[1]); fragment.append(wrapper); }
+        else if (part) fragment.append(document.createTextNode(part));
+      });
+      node.replaceWith(fragment);
+    });
+
+    const app = document.getElementById('appFrame');
+    const appGrid = document.getElementById('appGrid');
+    const timeline = document.getElementById('timeline');
+    const timelineInner = document.getElementById('timelineInner');
+    const jumpLatest = document.getElementById('jumpLatest');
+    const hostDialog = document.getElementById('hostDialog');
+    const dialogBody = document.getElementById('dialogBody');
+    const inspectorContent = document.getElementById('inspectorContent');
+    const modelPopover = document.getElementById('modelPopover');
+    const modelSearch = document.getElementById('modelSearch');
+    const toast = document.getElementById('toast');
+    const storedRail = Number(localStorage.getItem('li-demo-rail-width'));
+    const storedInspector = localStorage.getItem('li-demo-inspector-open');
+    const storedInspectorWidth = Number(localStorage.getItem('li-demo-inspector-width'));
+    let activeHost = 'Laptop · demo';
+    const demoHosts = new Map([['Laptop · demo', true], ['ProDesk · demo', true]]);
+    const demoConnecting = new Set();
+    let preferredRailWidth = storedRail >= 240 ? storedRail : 280;
+    let currentRailWidth = Math.min(preferredRailWidth, Math.max(240, Math.min(Math.floor(innerWidth / 2), innerWidth < 1000 ? 280 : Math.floor(innerWidth / 2))));
+    let currentInspectorWidth = storedInspectorWidth >= 280 && storedInspectorWidth <= 380 ? storedInspectorWidth : 310;
+    let dialogReturnFocus = null;
+    let activeModel = 'GLM-5.3 Flash';
+    let thinking = 'Medium';
+    let currentTab = 'terminal';
+    let currentScene = 'workbench';
+    let dialogTab = 'hosts';
+    let historyMode = false;
+    let historyError = false;
+    let olderRemaining = 0;
+    let olderLoading = false;
+    let detached = false;
+    let toastTimer;
+    let pairStatus = '';
+    let pairInputValue = '';
+    let forgetHost = '';
+    let searchQuery = '';
+    if (storedRail >= 240) app.style.setProperty('--rail-width', `${currentRailWidth}px`);
+    if (storedInspector === 'true') {
+      app.dataset.inspectorOpen = 'true';
+      document.getElementById('drawerBackdrop').hidden = false;
+      app.style.setProperty('--inspector-width', `${currentInspectorWidth}px`);
+      app.style.setProperty('--inspector-grip', '8px');
+      document.getElementById('inspectorToggle').setAttribute('aria-expanded', 'true');
+      document.getElementById('inspectorPanel').setAttribute('aria-hidden', 'false');
+    }
+    const hostLabel = document.getElementById('activeHostLabel');
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+    }
+    function showToast(message) {
+      toast.textContent = message;
+      toast.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.hidden = true; }, 2100);
+    }
+    function syncHostPresentation(name) {
+      const connecting = demoConnecting.has(name);
+      const online = demoHosts.get(name);
+      const status = connecting ? 'Đang kết nối' : online ? 'Trực tuyến' : 'Đã ngắt kết nối';
+      const triggerDot = document.querySelector('.host-trigger .host-dot');
+      triggerDot.classList.toggle('offline', !online && !connecting);
+      triggerDot.classList.toggle('connecting', connecting);
+      triggerDot.setAttribute('aria-label', status);
+      document.querySelectorAll('.host-option[data-host]').forEach((button) => {
+        const optionConnecting = demoConnecting.has(button.dataset.host);
+        const optionOnline = demoHosts.get(button.dataset.host);
+        button.querySelector('.host-dot').classList.toggle('offline', !optionOnline && !optionConnecting);
+        button.querySelector('.host-dot').classList.toggle('connecting', optionConnecting);
+        button.querySelector('small').textContent = optionConnecting ? 'LiX desktop · đang kết nối' : optionOnline ? 'LiX desktop · trực tuyến' : 'LiX desktop · đã ngắt';
+      });
+    }
+    function setHost(name) {
+      if (!demoHosts.has(name)) return;
+      activeHost = name;
+      hostLabel.textContent = name;
+      syncHostPresentation(name);
+      document.querySelectorAll('.host-option[data-host]').forEach((button) => {
+        button.setAttribute('aria-checked', String(button.dataset.host === name));
+      });
+      document.getElementById('hostMenu').hidden = true;
+      document.getElementById('hostTrigger').setAttribute('aria-expanded', 'false');
+      renderTimeline(historyMode);
+      showToast(`Đã chọn ${name} · demo`);
+    }
+    function renderTurn(turn) {
+      const user = escapeHtml(turn.user);
+      const answer = turn.answer ? `<div class="assistant-turn"><p>${escapeHtml(turn.answer)}</p></div>` : '';
+      const extra = turn.tool ? `<div class="tool-row"><button type="button" class="tool-toggle" aria-expanded="false"><strong>${escapeHtml(turn.tool)}</strong><span class="tool-state ${turn.state === 'running' ? 'running' : turn.state === 'failed' ? 'failed' : ''}">${turn.state === 'running' ? 'Đang chạy' : turn.state === 'failed' ? 'Cần xử lý' : 'Đã xong'}${turn.time ? ` · ${escapeHtml(turn.time)}` : ''}</span></button><pre class="tool-detail" hidden>${escapeHtml(turn.detail || 'Kết quả demo · không đọc hoặc ghi file thật.')}</pre></div>` : '';
+      const thinkingBlock = turn.thinking ? `<details class="thinking"><summary>Suy nghĩ · ${escapeHtml(turn.thinking)}</summary><div class="thinking-body">Tóm lược synthetic để minh họa disclosure; không phải dữ liệu phiên thật.</div></details>` : '';
+      return `<article class="turn" data-anchor="${escapeHtml(turn.id)}"><div class="user-turn"><p>${user}</p></div>${thinkingBlock}${extra}${answer}</article>`;
+    }
+    function baseTurns() {
+      return [
+        { id:'t-104', user:'Rà lại cách tự nạp lịch sử cũ. Khi đang đọc ở giữa phiên, stream mới không được kéo tao về cuối.', thinking:'0.8s', tool:'Đọc timeline store', time:'1.2s', detail:'turn.page · anchor=turn-103\nresult: 20 turns · hasOlder=true', answer:'Giữ vị trí bằng anchor của item đầu đang nhìn thấy. Khi prepend, đo lại tọa độ anchor và bù đúng phần chênh lệch vào scrollTop. Khi user rời tail, tách follow-live; chỉ nối lại khi họ chủ động về cuối.' },
+        { id:'t-105', user:'Thế lúc tải trang cũ mà request lỗi thì sao?', tool:'Kiểm tra trạng thái older-page', state:'failed', detail:'Không tự reload session. Giữ nguyên vị trí; nút tải cũ chuyển thành “Thử lại”.', answer:'Báo lỗi ngay tại đầu timeline bằng một dòng ngắn và cho thử lại. Không đổi session, không xoá nội dung đã nạp.' },
+        { id:'t-106', user:'Thử thêm một lượt dữ liệu để tao thấy cách hiển thị trạng thái.', tool:'Chuẩn bị preview state', state:'running', detail:'Đang dựng dữ liệu tổng hợp cho local preview.', answer:'Preview chỉ mô phỏng giao diện. Không có request nào gửi tới host.' },
+        { id:'t-107', user:'Và model picker phải giữ đủ mọi model server báo available.', answer:'Ừ. Search theo tên, provider hoặc group; model hiện tại được đánh dấu. Demo này dùng danh sách tổng hợp để thử cách trình bày, không khẳng định model nào đang available trên host thật.' }
+      ];
+    }
+    function makeHistoryTurn(index) {
+      return {
+        id: `history-${index}`,
+        user: `Lượt ${index}: tiếp tục kiểm tra thứ tự và anchor khi một trang cũ được prepend vào transcript.`,
+        answer: index % 3 === 0
+          ? 'Đọc lại theo mốc đang nhìn thấy; dữ liệu đến muộn không được đổi vị trí của người dùng.'
+          : 'Giữ host/session namespace hiện tại, dedupe theo anchor và chỉ nối follow-live khi người đọc quay gần cuối.'
+      };
+    }
+    function renderTimeline(long = false, showOlderError = false) {
+      historyMode = long;
+      historyError = showOlderError;
+      olderLoading = false;
+      detached = false;
+      const status = showOlderError ? 'Không tải được lượt cũ hơn. <button type="button" id="retryOlder">Thử lại</button>' : 'Hôm nay · dữ liệu tổng hợp';
+      timelineInner.innerHTML = `<div class="history-status ${showOlderError ? 'error' : ''}" id="historyStatus" role="${showOlderError ? 'alert' : 'status'}" aria-live="${showOlderError ? 'assertive' : 'polite'}">${status}</div><div class="day-marker">Hôm nay, 10:42</div>`;
+      const turns = long ? Array.from({length: 12}, (_, i) => makeHistoryTurn(89 + i)) : baseTurns();
+      timelineInner.insertAdjacentHTML('beforeend', turns.map(renderTurn).join(''));
+      olderRemaining = long ? 88 : 0;
+      timeline.scrollTop = showOlderError ? 0 : timeline.scrollHeight;
+      jumpLatest.hidden = true;
+      bindToolRows();
+      bindOlderRetry();
+    }
+    function bindOlderRetry() {
+      const retry = document.getElementById('retryOlder');
+      if (retry) retry.onclick = () => {
+        historyError = false;
+        const status = document.getElementById('historyStatus');
+        status.classList.remove('error');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.textContent = 'Đang tải lượt cũ hơn…';
+        void loadOlder();
+      };
+    }
+    function bindToolRows() {
+      document.querySelectorAll('.tool-toggle').forEach((button) => {
+        button.onclick = () => {
+          const detail = button.nextElementSibling;
+          detail.hidden = !detail.hidden;
+          button.setAttribute('aria-expanded', String(!detail.hidden));
+        };
+      });
+    }
+    async function loadOlder() {
+      if (!historyMode || historyError || olderLoading || olderRemaining <= 0) return;
+      olderLoading = true;
+      const status = document.getElementById('historyStatus');
+      if (status) { status.textContent = 'Đang tải lượt cũ hơn…'; status.setAttribute('aria-busy', 'true'); }
+      const anchor = timelineInner.querySelector('.turn');
+      const before = anchor ? anchor.getBoundingClientRect().top : 0;
+      const count = Math.min(12, olderRemaining);
+      const batchStart = olderRemaining - count + 1;
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      const batch = Array.from({length: count}, (_, i) => makeHistoryTurn(batchStart + i));
+      timelineInner.insertAdjacentHTML('afterbegin', batch.map(renderTurn).join(''));
+      olderRemaining -= count;
+      requestAnimationFrame(() => {
+        const after = anchor ? anchor.getBoundingClientRect().top : before;
+        timeline.scrollTop += after - before;
+        if (status) {
+          status.textContent = olderRemaining > 0 ? 'Đã giữ nguyên vị trí đọc · cuộn lên để xem tiếp' : 'Đã tới đầu lịch sử';
+          status.classList.remove('error');
+          status.removeAttribute('aria-busy');
+        }
+        olderLoading = false;
+        bindToolRows();
+      });
+    }
+    timeline.addEventListener('scroll', () => {
+      const distance = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight;
+      const nearBottom = distance < 48;
+      if (historyMode) {
+        detached = !nearBottom;
+        jumpLatest.hidden = !detached;
+        if (timeline.scrollTop < 36) void loadOlder();
+      }
+    }, {passive:true});
+    jumpLatest.addEventListener('click', () => {
+      timeline.scrollTo({top:timeline.scrollHeight, behavior:'auto'});
+      detached = false;
+      jumpLatest.hidden = true;
+    });
+
+    const panelContent = {
+      context: `<h3 class="panel-title">Context</h3><div class="context-row"><span>Đang dùng</span><span>84.2K / 100K</span></div><div class="meter-large" role="meter" aria-label="Context đã dùng" aria-valuemin="0" aria-valuemax="100" aria-valuenow="84"><i></i></div><p class="panel-note">84% đã dùng · gần ngưỡng cần chú ý</p><div class="context-row"><span>Model</span><span>GLM-5.3 Flash</span></div><div class="context-row"><span>Thinking</span><span>Medium</span></div><div class="context-row"><span>Host</span><span>${escapeHtml(activeHost)}</span></div>`,
+      review: `<h3 class="panel-title">Thay đổi lượt này</h3><div class="review-file"><code>apps/web/src/workbench/Timeline.tsx</code><span class="add-count">+18</span><span class="remove-count">−6</span></div><div class="review-file"><code>apps/web/src/workbench/timeline-store.ts</code><span class="add-count">+12</span><span class="remove-count">−3</span></div><p class="panel-note">Số liệu giả để xem hierarchy; không đọc Git thật.</p>`,
+      files: `<h3 class="panel-title">.</h3><form class="file-create" id="fileCreate"><label class="sr-only" for="newFileName">Tên file hoặc thư mục mới</label><input id="newFileName" placeholder="Tạo file/thư mục…"><button type="submit">Tạo</button></form><ul class="file-list"><li class="file-row"><button class="file-open" data-file="apps"><span class="icon">${inlineIcon('folder')}</span><span>apps</span></button><button class="file-menu-trigger" data-file-menu="apps" aria-label="Tuỳ chọn apps" aria-haspopup="menu">${inlineIcon('dots')}</button></li><li class="file-row"><button class="file-open" data-file="Timeline.tsx"><span class="icon">${inlineIcon('file')}</span><span>Timeline.tsx</span></button><button class="file-menu-trigger" data-file-menu="Timeline.tsx" aria-label="Tuỳ chọn Timeline.tsx" aria-haspopup="menu">${inlineIcon('dots')}</button></li><li class="file-row"><button class="file-open" data-file="Workbench.tsx"><span class="icon">${inlineIcon('file')}</span><span>Workbench.tsx</span></button><button class="file-menu-trigger" data-file-menu="Workbench.tsx" aria-label="Tuỳ chọn Workbench.tsx" aria-haspopup="menu">${inlineIcon('dots')}</button></li><li class="file-row"><button class="file-open" data-file="styles.css"><span class="icon">${inlineIcon('file')}</span><span>styles.css</span></button><button class="file-menu-trigger" data-file-menu="styles.css" aria-label="Tuỳ chọn styles.css" aria-haspopup="menu">${inlineIcon('dots')}</button></li></ul><div class="file-preview-header" id="filePreviewHeader" hidden><span id="filePreviewName">Preview</span><button type="button" id="closeFilePreview">Đóng</button></div><pre class="file-preview" id="filePreview" hidden></pre>`,
+      tree: `<h3 class="panel-title">Cây phiên</h3><div class="tree-row">project: apps/web</div><div class="tree-row">└─ session: design-review</div><div class="tree-row current">&nbsp;&nbsp;└─ turn: current</div><p class="panel-note">Cấu trúc mô phỏng; không lấy dữ liệu host.</p>`,
+      agents: `<h3 class="panel-title">Agents</h3><div class="agent-row"><strong>UI review</strong><small>Hoàn tất · preview synthetic</small></div><div class="agent-row"><strong>Test responsive</strong><small>Đang chờ · demo state</small></div>`,
+      terminal: `<h3 class="panel-title">Terminal</h3><div class="terminal-view"><span class="prompt">$</span> npm run web:typecheck\n\n<span class="terminal-dim">> li-web@0.7.14 web:typecheck</span>\n> tsc --noEmit\n\n<span class="prompt">$</span> _\n\n<span class="terminal-dim">Preview only · không chạy lệnh trên host.</span></div>`
+    };
+    function inlineIcon(name) {
+      return `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+    }
+    function setInspectorTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.inspector-tabs [role="tab"]').forEach((button) => {
+        const selected = button.dataset.tab === tab;
+        button.setAttribute('aria-selected', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      });
+      inspectorContent.innerHTML = panelContent[tab] || '';
+      inspectorContent.setAttribute('aria-label', `${tab} panel`);
+      bindFileActions();
+    }
+    function bindFileActions() {
+      const form = document.getElementById('fileCreate');
+      const closePreview = document.getElementById('closeFilePreview');
+      if (closePreview) closePreview.onclick = () => { document.getElementById('filePreviewHeader').hidden = true; document.getElementById('filePreview').hidden = true; };
+      if (form) form.onsubmit = (event) => { event.preventDefault(); const input = document.getElementById('newFileName'); if (input.value.trim()) { showToast(`Đã tạo ${input.value.trim()} · demo`); input.value = ''; } };
+      document.querySelectorAll('[data-file]').forEach((button) => button.onclick = () => {
+        const preview = document.getElementById('filePreview');
+        preview.hidden = false;
+        document.getElementById('filePreviewHeader').hidden = false;
+        document.getElementById('filePreviewName').textContent = button.dataset.file;
+        preview.textContent = button.dataset.file.endsWith('.tsx') ? `// ${button.dataset.file}\n// Preview synthetic.\nexport function Example() {\n  return null\n}` : `${button.dataset.file}/\n…`;
+      });
+      document.querySelectorAll('[data-file-menu]').forEach((button) => button.onclick = () => {
+        closeFileMenus();
+        const menu = document.createElement('div');
+        menu.className = 'small-menu'; menu.setAttribute('role','menu');
+        menu.style.position = 'fixed'; menu.style.top = `${Math.max(8, Math.min(button.getBoundingClientRect().bottom, innerHeight - 170))}px`; menu.style.right = '26px'; menu.style.bottom = 'auto'; menu.style.left = 'auto';
+        menu.innerHTML = `<button type="button" role="menuitem">Mở</button><button type="button" role="menuitem">Đổi tên</button>`;
+        menu.querySelectorAll('button').forEach((item) => item.onclick = () => { showToast(`${item.textContent} ${button.dataset.fileMenu} · demo`); menu.remove(); });
+        document.body.append(menu);
+        menu.dataset.fileMenuOpen = 'true';
+      });
+    }
+    function closeFileMenus() { document.querySelectorAll('[data-file-menu-open="true"]').forEach((node) => node.remove()); }
+    document.querySelectorAll('.inspector-tabs [role="tab"]').forEach((button) => button.addEventListener('click', () => setInspectorTab(button.dataset.tab)));
+    document.querySelector('.inspector-tabs').addEventListener('keydown', (event) => {
+      const tabs = [...document.querySelectorAll('.inspector-tabs [role="tab"]')];
+      const current = tabs.indexOf(event.target.closest('[role="tab"]'));
+      let next = current;
+      if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = tabs.length - 1;
+      else return;
+      event.preventDefault(); tabs[next].focus(); tabs[next].click();
+    });
+    setInspectorTab('terminal');
+
+    function setInspector(open, focusPanel = false) {
+      if (open && innerWidth <= 768) toggleMobileDrawer(false);
+      app.dataset.inspectorOpen = String(open);
+      app.style.setProperty('--inspector-width', open ? `${currentInspectorWidth}px` : '0px');
+      app.style.setProperty('--inspector-grip', open ? '8px' : '0px');
+      document.getElementById('drawerBackdrop').hidden = !(open || app.dataset.mobileDrawer === 'true');
+      fitSidebarsToWidth();
+      document.getElementById('rightSplitter').hidden = !open || innerWidth < 1025;
+      document.getElementById('inspectorToggle').setAttribute('aria-expanded', String(open));
+      document.getElementById('inspectorToggle').setAttribute('aria-label', open ? 'Đóng Inspector' : 'Mở Inspector');
+      document.getElementById('inspectorPanel').setAttribute('aria-hidden', String(!open));
+      localStorage.setItem('li-demo-inspector-open', String(open));
+      if (open && focusPanel) document.querySelector('.inspector-tabs [role="tab"][aria-selected="true"]')?.focus();
+      if (!open && !document.getElementById('inspectorToggle').hidden) document.getElementById('inspectorToggle').focus();
+    }
+    function setRailHidden(hidden) {
+      app.dataset.railHidden = String(hidden);
+      app.style.setProperty('--rail-width', hidden ? '0px' : `${currentRailWidth}px`);
+      app.style.setProperty('--rail-grip', hidden ? '0px' : '8px');
+      document.getElementById('railToggle').setAttribute('aria-expanded', String(!hidden));
+      document.getElementById('railToggle').setAttribute('aria-label', hidden ? 'Mở danh sách phiên' : 'Thu gọn danh sách phiên');
+      fitSidebarsToWidth();
+      document.getElementById('leftSplitter').hidden = hidden || innerWidth < 1025;
+      localStorage.setItem('li-demo-rail-hidden', String(hidden));
+    }
+    if (localStorage.getItem('li-demo-rail-hidden') === 'true') setRailHidden(true);
+    function toggleMobileDrawer(open) {
+      app.dataset.mobileDrawer = String(open);
+      document.getElementById('mobileSessions').setAttribute('aria-expanded', String(open));
+      document.getElementById('mobileSessions').setAttribute('aria-label', open ? 'Đóng danh sách phiên' : 'Mở danh sách phiên');
+      document.getElementById('drawerBackdrop').hidden = !(open || app.dataset.inspectorOpen === 'true');
+    }
+    document.getElementById('railToggle').addEventListener('click', () => setRailHidden(app.dataset.railHidden !== 'true'));
+    document.getElementById('mobileSessions').addEventListener('click', () => {
+      if (app.dataset.inspectorOpen === 'true') setInspector(false);
+      toggleMobileDrawer(app.dataset.mobileDrawer !== 'true');
+    });
+    document.getElementById('inspectorToggle').addEventListener('click', () => setInspector(app.dataset.inspectorOpen !== 'true'));
+    document.getElementById('drawerBackdrop').addEventListener('click', () => { toggleMobileDrawer(false); if (innerWidth <= 1024) setInspector(false); });
+
+    function splitLimit(side, min, max) {
+      const width = appGrid.getBoundingClientRect().width;
+      const railOpen = app.dataset.railHidden !== 'true';
+      const inspectorOpen = app.dataset.inspectorOpen === 'true';
+      const other = side === 'left'
+        ? (inspectorOpen ? currentInspectorWidth + 8 : 0)
+        : (railOpen ? currentRailWidth + 8 : 0);
+      const grip = side === 'left' ? (railOpen ? 8 : 0) : (inspectorOpen ? 8 : 0);
+      const requestedMax = side === 'left' ? Math.floor(innerWidth / 2) : max;
+      return Math.max(min, Math.min(requestedMax, Math.floor(width - 360 - other - grip)));
+    }
+    function fitSidebarsToWidth() {
+      const railOpen = app.dataset.railHidden !== 'true';
+      let rail = railOpen ? Math.min(preferredRailWidth, Math.max(240, Math.min(Math.floor(innerWidth / 2), innerWidth < 1000 ? 280 : Math.floor(innerWidth / 2)))) : 0;
+      if (innerWidth < 1000) {
+        if (rail) { currentRailWidth = rail; app.style.setProperty('--rail-width', `${rail}px`); document.getElementById('leftSplitter').setAttribute('aria-valuenow', String(rail)); }
+        return;
+      }
+      const width = appGrid.getBoundingClientRect().width;
+      let inspector = app.dataset.inspectorOpen === 'true' ? currentInspectorWidth : 0;
+      let deficit = rail + (rail ? 8 : 0) + inspector + (inspector ? 8 : 0) + 360 - width;
+      if (deficit > 0 && inspector && inspector > 280) { const shrink = Math.min(deficit, inspector - 280); inspector -= shrink; deficit -= shrink; }
+      if (deficit > 0 && rail && rail > 240) { const shrink = Math.min(deficit, rail - 240); rail -= shrink; }
+      if (rail) { currentRailWidth = rail; app.style.setProperty('--rail-width', `${rail}px`); document.getElementById('leftSplitter').setAttribute('aria-valuenow', String(rail)); }
+      if (inspector) { currentInspectorWidth = inspector; app.style.setProperty('--inspector-width', `${inspector}px`); document.getElementById('rightSplitter').setAttribute('aria-valuenow', String(inspector)); }
+      document.getElementById('leftSplitter').setAttribute('aria-valuemax', String(splitLimit('left', 240, 340)));
+      document.getElementById('rightSplitter').setAttribute('aria-valuemax', String(splitLimit('right', 280, 380)));
+    }
+    function bindSplitter(id, variable, min, max, side) {
+      const splitter = document.getElementById(id);
+      const update = (value) => {
+        const limit = splitLimit(side, min, max);
+        const px = Math.max(min, Math.min(limit, Math.round(value)));
+        app.style.setProperty(variable, `${px}px`);
+        splitter.setAttribute('aria-valuemax', String(limit));
+        splitter.setAttribute('aria-valuenow', String(px));
+        if (side === 'left') { currentRailWidth = px; preferredRailWidth = px; localStorage.setItem('li-demo-rail-width', String(px)); }
+        else { currentInspectorWidth = px; localStorage.setItem('li-demo-inspector-width', String(px)); }
+      };
+      splitter.addEventListener('pointerdown', (event) => {
+        if (innerWidth < 1025) return;
+        event.preventDefault(); splitter.setPointerCapture(event.pointerId);
+        const move = (e) => {
+          const rect = appGrid.getBoundingClientRect();
+          update(side === 'left' ? e.clientX - rect.left : rect.right - e.clientX);
+        };
+        const done = () => { splitter.removeEventListener('pointermove', move); splitter.removeEventListener('pointerup', done); splitter.removeEventListener('pointercancel', done); };
+        splitter.addEventListener('pointermove', move); splitter.addEventListener('pointerup', done, {once:true}); splitter.addEventListener('pointercancel', done, {once:true});
+      });
+      splitter.addEventListener('keydown', (event) => {
+        let value = Number(splitter.getAttribute('aria-valuenow'));
+        if (event.key === 'ArrowRight') value += side === 'left' ? 16 : -16;
+        else if (event.key === 'ArrowLeft') value += side === 'left' ? -16 : 16;
+        else if (event.key === 'Home') value = min;
+        else if (event.key === 'End') value = splitLimit(side, min, max);
+        else return;
+        event.preventDefault(); update(value);
+      });
+    }
+    bindSplitter('leftSplitter', '--rail-width', 240, 340, 'left');
+    bindSplitter('rightSplitter', '--inspector-width', 280, 380, 'right');
+    document.getElementById('leftSplitter').setAttribute('aria-valuenow', String(currentRailWidth));
+    document.getElementById('rightSplitter').setAttribute('aria-valuenow', String(currentInspectorWidth));
+    document.getElementById('rightSplitter').hidden = app.dataset.inspectorOpen !== 'true' || innerWidth < 1025;
+    document.getElementById('leftSplitter').hidden = app.dataset.railHidden === 'true' || innerWidth < 1025;
+    fitSidebarsToWidth();
+    window.addEventListener('resize', () => {
+      fitSidebarsToWidth();
+      document.getElementById('leftSplitter').hidden = app.dataset.railHidden === 'true' || innerWidth < 1025;
+      document.getElementById('rightSplitter').hidden = app.dataset.inspectorOpen !== 'true' || innerWidth < 1025;
+    });
+
+    const hostTrigger = document.getElementById('hostTrigger');
+    const hostMenu = document.getElementById('hostMenu');
+    hostTrigger.addEventListener('click', () => { hostMenu.hidden = !hostMenu.hidden; hostTrigger.setAttribute('aria-expanded', String(!hostMenu.hidden)); if (!hostMenu.hidden) hostMenu.querySelector('[role="menuitemradio"][aria-checked="true"]')?.focus(); });
+    document.querySelectorAll('.host-option[data-host]').forEach((button) => button.addEventListener('click', () => setHost(button.dataset.host)));
+    document.getElementById('hostMenuAdd').addEventListener('click', (event) => { hostMenu.hidden = true; hostTrigger.setAttribute('aria-expanded','false'); openHostDialog('pair', event.currentTarget); });
+    document.addEventListener('pointerdown', (event) => {
+      if (!event.target.closest('.host-picker')) { hostMenu.hidden = true; hostTrigger.setAttribute('aria-expanded','false'); }
+      if (!event.target.closest('.model-wrap')) closeModelPicker(false);
+      if (!event.target.closest('.mode-wrap')) document.getElementById('modeMenu').hidden = true;
+      if (!event.target.closest('.thinking-wrap')) document.getElementById('thinkingMenu').hidden = true;
+      if (!event.target.closest('.export-wrap')) document.getElementById('exportMenu').hidden = true;
+      if (!event.target.closest('[data-file-menu-open="true"]')) closeFileMenus();
+      if (!event.target.closest('.session-action-menu') && !event.target.closest('.session-menu-trigger')) closeSessionMenus();
+    });
+    hostDialog.addEventListener('click', (event) => { if (event.target === hostDialog) hostDialog.close(); });
+
+    function openHostDialog(tab = 'hosts', trigger = document.activeElement, initialStatus = '') {
+      dialogReturnFocus = trigger;
+      dialogTab = tab; forgetHost = ''; pairStatus = initialStatus; pairInputValue = '';
+      renderHostDialog();
+      hostDialog.showModal();
+      document.getElementById('dialogClose').focus();
+    }
+    function renderHostDialog() {
+      document.querySelectorAll('.dialog-tabs [role="tab"]').forEach((button) => {
+        const selected = button.dataset.dialogTab === dialogTab;
+        button.setAttribute('aria-selected', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      });
+      if (forgetHost) {
+        dialogBody.innerHTML = `<div class="pair-confirm" role="alertdialog" aria-labelledby="forgetTitle"><strong id="forgetTitle">Quên host này?</strong><p>Thao tác này xoá khóa thiết bị khỏi trình duyệt demo. Muốn thu hồi quyền ở host thật, xoá thiết bị trong LiX desktop.</p><div class="pair-confirm-actions"><button type="button" class="pair-danger" id="forgetConfirm">Quên host</button><button type="button" id="forgetCancel">Huỷ</button></div></div>`;
+        document.getElementById('forgetConfirm').onclick = () => {
+          const forgotten = forgetHost;
+          demoHosts.delete(forgotten);
+          demoConnecting.delete(forgotten);
+          showToast(`Đã quên ${forgotten} · demo`);
+          forgetHost = '';
+          document.querySelectorAll('.host-option[data-host]').forEach((option) => { if (option.dataset.host === forgotten) option.remove(); });
+          if (activeHost === forgotten && demoHosts.size) setHost(demoHosts.keys().next().value);
+          if (activeHost === forgotten && !demoHosts.size) {
+            dialogReturnFocus = document.querySelector('[data-scene="empty"]');
+            hostDialog.close();
+            setScene('empty', dialogReturnFocus);
+            return;
+          }
+          renderHostDialog();
+        };
+        document.getElementById('forgetCancel').onclick = () => { forgetHost = ''; renderHostDialog(); };
+        return;
+      }
+      if (dialogTab === 'hosts') {
+        const hostRows = [...demoHosts.entries()].map(([name, online]) => {
+          const connecting = demoConnecting.has(name);
+          const stateText = connecting ? 'Đang kết nối' : online ? 'Đang trực tuyến' : 'Đã ngắt kết nối';
+          const dotClass = connecting ? 'connecting' : online ? '' : 'offline';
+          const actionText = connecting ? 'Đang kết nối…' : online ? 'Ngắt' : 'Kết nối';
+          return `<div class="dialog-host-row"><span class="host-dot ${dotClass}"></span><span class="dialog-host-copy"><strong>${escapeHtml(name)}</strong><small>${stateText} · LiX desktop</small></span><button type="button" class="secondary-action" data-connect="${escapeHtml(name)}" ${connecting ? 'disabled' : ''}>${actionText}</button><button type="button" class="secondary-action pair-danger" data-forget="${escapeHtml(name)}">Quên</button></div>`;
+        }).join('');
+        dialogBody.innerHTML = `<div class="dialog-host-list">${hostRows || '<p class="pair-help">Chưa có host đã ghép.</p>'}</div>`;
+        document.querySelectorAll('[data-connect]').forEach((button) => button.onclick = () => {
+          const name = button.dataset.connect;
+          if (demoHosts.get(name)) {
+            demoHosts.set(name, false);
+            renderHostDialog();
+            if (activeHost === name) syncHostPresentation(name);
+            document.querySelector(`[data-connect="${CSS.escape(name)}"]`)?.focus();
+            showToast(`Đã ngắt ${name} · demo`);
+            return;
+          }
+          demoConnecting.add(name);
+          renderHostDialog();
+          if (activeHost === name) syncHostPresentation(name);
+          showToast(`Đang kết nối ${name} · demo`);
+          setTimeout(() => {
+            if (!demoHosts.has(name)) return;
+            demoConnecting.delete(name);
+            demoHosts.set(name, true);
+            renderHostDialog();
+            if (activeHost === name) syncHostPresentation(name);
+          }, 800);
+        });
+        document.querySelectorAll('[data-forget]').forEach((button) => button.onclick = () => { forgetHost = button.dataset.forget; renderHostDialog(); document.getElementById('forgetConfirm').focus(); });
+      } else {
+        const permissionDenied = pairStatus.startsWith('Chrome đang chặn');
+        const pairIsError = permissionDenied || pairStatus.startsWith('Pair link không đọc được');
+        const pairRole = pairIsError ? 'alert' : 'status';
+        const permissionRetry = permissionDenied ? '<button type="button" class="pair-retry" id="permissionRetry">Thử lại sau khi cấp quyền</button>' : '';
+        dialogBody.innerHTML = `<form class="pair-form" id="pairForm"><p class="pair-help">Mở Remote / Pair trong LiX desktop, rồi quét QR hoặc dán pair link.</p><div class="pair-link-field"><input id="pairInput" autocomplete="off" spellcheck="false" placeholder="Dán pair link demo…" aria-label="Pair link demo" value="${escapeHtml(pairInputValue)}"></div><div class="pair-actions"><button type="button" id="scanDemo">Mô phỏng quét QR</button><button type="submit" class="pair-primary" id="pairSubmit" disabled>Ghép nối</button></div><p class="pair-status" id="pairStatus" role="${pairRole}" aria-live="${pairIsError ? 'assertive' : 'polite'}">${escapeHtml(pairStatus)}</p>${permissionRetry}</form>`;
+        const pairInput = document.getElementById('pairInput');
+        const pairSubmit = document.getElementById('pairSubmit');
+        pairInput.addEventListener('input', () => { pairInputValue = pairInput.value; pairSubmit.disabled = !pairInput.value.trim(); });
+        document.getElementById('permissionRetry')?.addEventListener('click', () => { pairStatus = ''; renderHostDialog(); document.getElementById('pairInput')?.focus(); showToast('Preview: mô phỏng quay lại sau khi cấp quyền'); });
+        document.getElementById('scanDemo').onclick = () => {
+          pairStatus = 'Đang mô phỏng quét…'; renderHostDialog();
+          setTimeout(() => { pairStatus = 'Đã nhận mã demo · chưa kết nối host'; renderHostDialog(); }, 450);
+        };
+        document.getElementById('pairForm').onsubmit = (event) => {
+          event.preventDefault();
+          const demoValue = pairInput.value.trim().toLowerCase();
+          const invalid = demoValue.startsWith('invalid') || demoValue.startsWith('bad');
+          pairStatus = invalid
+            ? 'Pair link không đọc được. Quét QR lại hoặc dán link khác.'
+            : 'Đã ghép nối thành công · demo, không có request';
+          if (!invalid) pairInputValue = '';
+          renderHostDialog();
+        };
+        pairInput.focus();
+      }
+    }
+    hostDialog.addEventListener('close', () => {
+      pairInputValue = '';
+      (dialogReturnFocus instanceof HTMLElement ? dialogReturnFocus : document.getElementById('hostTrigger')).focus();
+    });
+    document.getElementById('dialogClose').addEventListener('click', () => hostDialog.close());
+    document.querySelectorAll('.dialog-tabs [role="tab"]').forEach((button) => button.addEventListener('click', () => { dialogTab = button.dataset.dialogTab; forgetHost = ''; renderHostDialog(); if (dialogTab === 'pair') document.getElementById('pairInput')?.focus(); else button.focus(); }));
+    document.querySelector('.dialog-tabs').addEventListener('keydown', (event) => {
+      const tabs = [...document.querySelectorAll('.dialog-tabs [role="tab"]')];
+      const current = tabs.indexOf(event.target.closest('[role="tab"]'));
+      if (!['ArrowRight','ArrowLeft','Home','End'].includes(event.key)) return;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      event.preventDefault(); tabs[next].focus(); tabs[next].click();
+    });
+    document.getElementById('newSession').addEventListener('click', () => showToast('Tạo phiên mới · demo'));
+    document.getElementById('emptyAddHost')?.addEventListener('click', (event) => openHostDialog('hosts', event.currentTarget));
+
+    const modelData = [
+      {provider:'OpenAI Codex', group:'Reasoning', name:'GPT-6 Luna', id:'openai-codex/gpt-6-luna'},
+      {provider:'OpenAI Codex', group:'Reasoning', name:'GPT-6.1 Terra', id:'openai-codex/gpt-6.1-terra'},
+      {provider:'Z.ai', group:'Fast', name:'GLM-5.3 Flash', id:'zai/glm-5.3-flash'},
+      {provider:'Antigravity', group:'Fast', name:'Gemini 3.8 Flash', id:'antigravity/gemini-3.8-flash'},
+      {provider:'Antigravity', group:'Reasoning', name:'Claude Sonnet 4.6', id:'antigravity/claude-sonnet-4-6'},
+      {provider:'DeepSeek', group:'Fast', name:'DeepSeek Flash', id:'deepseek/deepseek-flash'}
+    ];
+    function renderModels(query = '') {
+      searchQuery = query;
+      const normalized = query.trim().toLowerCase();
+      const matches = modelData.filter((model) => `${model.provider} ${model.group} ${model.name} ${model.id}`.toLowerCase().includes(normalized));
+      if (!matches.length) {
+        document.getElementById('modelList').innerHTML = `<div class="no-models" role="status" aria-live="polite">Không tìm thấy model khả dụng.</div><button type="button" class="clear-search" id="clearModelSearch">Xoá nội dung tìm</button>`;
+        document.getElementById('clearModelSearch').onclick = () => { modelSearch.value = ''; renderModels(''); modelSearch.focus(); };
+        return;
+      }
+      const groups = [...new Set(matches.map((model) => model.provider))];
+      document.getElementById('modelList').innerHTML = groups.map((provider) => `<h3>${escapeHtml(provider)}</h3>${matches.filter((model) => model.provider === provider).map((model) => `<button type="button" class="model-option" role="option" aria-selected="${model.name === activeModel}" data-model="${escapeHtml(model.name)}"><span>${escapeHtml(model.name)}</span><small>${escapeHtml(model.group)}</small></button>`).join('')}`).join('');
+      document.querySelectorAll('.model-option').forEach((button) => button.onclick = () => {
+        activeModel = button.dataset.model;
+        const trigger = document.getElementById('modelTrigger');
+        trigger.innerHTML = `${escapeHtml(activeModel)} <span class="icon" aria-hidden="true">${inlineIcon('chevron')}</span>`;
+        trigger.setAttribute('aria-label', `Model: ${activeModel}`);
+        closeModelPicker(true);
+        showToast(`Đã chọn ${activeModel} · demo`);
+      });
+    }
+    function openModelPicker() { modelPopover.hidden = false; document.getElementById('modelTrigger').setAttribute('aria-expanded','true'); modelSearch.value = ''; renderModels(''); modelSearch.focus(); }
+    function closeModelPicker(returnFocus) { if (!modelPopover.hidden) { modelPopover.hidden = true; document.getElementById('modelTrigger').setAttribute('aria-expanded','false'); if (returnFocus) document.getElementById('modelTrigger').focus(); } }
+    document.getElementById('modelTrigger').addEventListener('click', () => modelPopover.hidden ? openModelPicker() : closeModelPicker(true));
+    modelSearch.addEventListener('input', () => renderModels(modelSearch.value));
+    modelSearch.addEventListener('keydown', (event) => {
+      const options = [...document.querySelectorAll('.model-option')];
+      if (event.key === 'ArrowDown' && options.length) {
+        event.preventDefault(); event.stopPropagation();
+        (options.find((option) => option.getAttribute('aria-selected') === 'true') ?? options[0]).focus();
+      }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeModelPicker(true); }
+    });
+    modelPopover.addEventListener('keydown', (event) => {
+      const options = [...document.querySelectorAll('.model-option')];
+      const index = options.indexOf(document.activeElement);
+      if (event.key === 'Escape') { event.preventDefault(); closeModelPicker(true); }
+      else if (event.key === 'ArrowDown' && index >= 0) { event.preventDefault(); options[Math.min(index + 1, options.length - 1)]?.focus(); }
+      else if (event.key === 'ArrowUp') { event.preventDefault(); if (index <= 0) modelSearch.focus(); else options[index - 1]?.focus(); }
+      else if (event.key === 'Home' && options.length) { event.preventDefault(); options[0].focus(); }
+      else if (event.key === 'End' && options.length) { event.preventDefault(); options.at(-1).focus(); }
+    });
+
+    document.getElementById('thinkingTrigger').addEventListener('click', (event) => {
+      const menu = document.getElementById('thinkingMenu'); menu.hidden = !menu.hidden; event.currentTarget.setAttribute('aria-expanded', String(!menu.hidden));
+      if (!menu.hidden) menu.querySelector(`[data-thinking="${thinking}"]`)?.focus();
+    });
+    document.querySelectorAll('[data-thinking]').forEach((button) => button.addEventListener('click', () => {
+      thinking = button.dataset.thinking;
+      document.querySelectorAll('[data-thinking]').forEach((item) => item.setAttribute('aria-checked', String(item === button)));
+      document.getElementById('thinkingTrigger').innerHTML = `Thinking · ${thinking} <span class="icon" aria-hidden="true">${inlineIcon('chevron')}</span>`;
+      document.getElementById('thinkingMenu').hidden = true;
+      document.getElementById('thinkingTrigger').setAttribute('aria-expanded','false');
+    }));
+    document.getElementById('modeTrigger').addEventListener('click', (event) => {
+      const menu = document.getElementById('modeMenu'); menu.hidden = !menu.hidden; event.currentTarget.setAttribute('aria-expanded', String(!menu.hidden));
+    });
+    document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
+      document.getElementById('modeTrigger').innerHTML = `${button.dataset.mode} <span class="icon" aria-hidden="true">${inlineIcon('chevron')}</span>`;
+      document.getElementById('modeMenu').hidden = true;
+      document.getElementById('modeTrigger').setAttribute('aria-expanded','false');
+    }));
+    document.getElementById('exportTrigger').addEventListener('click', (event) => {
+      const menu = document.getElementById('exportMenu'); menu.hidden = !menu.hidden; event.currentTarget.setAttribute('aria-expanded', String(!menu.hidden));
+    });
+    document.querySelectorAll('#exportMenu button').forEach((button) => button.addEventListener('click', () => { document.getElementById('exportMenu').hidden = true; showToast(`${button.textContent} · demo`); }));
+    document.getElementById('attachButton').addEventListener('click', () => showToast('Đính kèm chỉ mô phỏng trong preview'));
+    const promptInput = document.getElementById('promptInput');
+    const sendButton = document.getElementById('sendButton');
+    promptInput.addEventListener('input', () => { sendButton.disabled = !promptInput.value.trim(); promptInput.style.height = 'auto'; promptInput.style.height = `${Math.min(promptInput.scrollHeight,144)}px`; });
+    document.getElementById('composerForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const text = promptInput.value.trim(); if (!text) return;
+      timelineInner.insertAdjacentHTML('beforeend', renderTurn({id:`demo-${Date.now()}`,user:text,answer:'Preview only: prompt này chưa được gửi tới host. Trong sản phẩm, Li Web sẽ gửi qua host đang chọn.'}));
+      bindToolRows(); promptInput.value = ''; promptInput.style.height = 'auto'; sendButton.disabled = true;
+      timeline.scrollTo({top:timeline.scrollHeight,behavior:'smooth'}); showToast('Chỉ mô phỏng · chưa gửi host');
+    });
+
+    const sessionList = document.getElementById('sessionList');
+    const sessionSearch = document.getElementById('sessionSearch');
+    let sessions = [
+      { id: 's1', title: 'Đồng bộ cập nhật chậm', snippet: 'Rà lại flow giữ vị trí đọc…', time: 'vừa xong', live: true },
+      { id: 's2', title: 'Model picker', snippet: 'Provider grouping và search', time: 'hôm nay' },
+      { id: 's3', title: 'Pair host ProDesk', snippet: 'Kiểm tra trạng thái ghép nối', time: 'hôm qua' },
+      { id: 's4', title: 'Review responsive shell', snippet: '320–1440px', time: 'hôm qua' },
+      { id: 's5', title: 'Thiết kế Files inspector', snippet: 'Action menu theo hàng', time: 'Th 6' },
+      { id: 's6', title: 'Terminal theme', snippet: 'Light và dark palette', time: 'Th 5' },
+      { id: 's7', title: 'Khoảng trắng composer', snippet: 'Prompt field và send', time: 'Th 4' },
+      { id: 's8', title: 'Đọc lịch sử dài', snippet: 'Anchor và follow-live', time: 'Th 3' }
+    ];
+    let currentSessionId = 's1';
+    let editingSessionId = null;
+    let sessionMenu = null;
+    function sessionRowHtml(session, query) {
+      if (session.id === editingSessionId) {
+        return `<li class="session-item"><div class="session-edit"><input id="sessionRenameInput" value="${escapeHtml(session.title)}" aria-label="Tên phiên"></div><button type="button" id="sessionRenameSave">Lưu</button><button type="button" id="sessionRenameCancel">Huỷ</button></li>`;
+      }
+      const matches = !query || `${session.title} ${session.snippet}`.toLowerCase().includes(query);
+      const current = session.id === currentSessionId ? ' aria-current="page"' : '';
+      const live = session.live ? '<span class="live-dot" role="img" aria-label="Đang chạy"></span>' : '';
+      return `<li class="session-item"${matches ? '' : ' hidden'}><button type="button" class="session-row"${current} data-session-id="${session.id}"><strong>${escapeHtml(session.title)}</strong><small>${escapeHtml(session.snippet)}</small><span class="session-meta"><small>${escapeHtml(session.time)}</small>${live}</span></button><button type="button" class="session-menu-trigger" data-session-id="${session.id}" aria-label="Tuỳ chọn phiên: ${escapeHtml(session.title)}" aria-haspopup="menu" aria-expanded="false"><span class="icon">${inlineIcon('dots')}</span></button></li>`;
+    }
+    function renderSessions(focusRename = false) {
+      const query = sessionSearch.value.trim().toLowerCase();
+      sessionList.innerHTML = sessions.length ? sessions.map((session) => sessionRowHtml(session, query)).join('') : '<li class="session-list-empty">Chưa có phiên nào</li>';
+      const input = document.getElementById('sessionRenameInput');
+      if (input) {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { event.preventDefault(); commitRename(true); }
+          else if (event.key === 'Escape') { event.preventDefault(); commitRename(false); }
+        });
+        document.getElementById('sessionRenameSave')?.addEventListener('click', () => commitRename(true));
+        document.getElementById('sessionRenameCancel')?.addEventListener('click', () => commitRename(false));
+        if (focusRename) { input.focus(); input.select(); }
+      }
+    }
+    function commitRename(save) {
+      const session = sessions.find((item) => item.id === editingSessionId);
+      const input = document.getElementById('sessionRenameInput');
+      editingSessionId = null;
+      if (session && save && input && input.value.trim()) {
+        const value = input.value.trim();
+        if (value !== session.title) { session.title = value; showToast('Đã đổi tên phiên · demo'); }
+      }
+      renderSessions();
+      if (session) sessionList.querySelector(`.session-row[data-session-id="${session.id}"]`)?.focus();
+    }
+    function closeSessionMenus(refocus = false) {
+      if (!sessionMenu) return;
+      const id = sessionMenu.dataset.sessionId;
+      sessionMenu.remove();
+      sessionMenu = null;
+      const trigger = id ? sessionList.querySelector(`.session-menu-trigger[data-session-id="${CSS.escape(id)}"]`) : null;
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      if (refocus && trigger) trigger.focus();
+    }
+    function selectSession(id) {
+      if (editingSessionId) commitRename(false);
+      currentSessionId = id;
+      sessionList.querySelectorAll('.session-row').forEach((row) => {
+        if (row.dataset.sessionId === id) row.setAttribute('aria-current', 'page');
+        else row.removeAttribute('aria-current');
+      });
+      renderTimeline(false);
+      if (innerWidth <= 768) toggleMobileDrawer(false);
+    }
+    function renderDeleteConfirm(menu, session) {
+      menu.removeAttribute('role');
+      menu.removeAttribute('aria-label');
+      menu.innerHTML = '<div class="menu-confirm" role="alertdialog" aria-label="Xác nhận xoá phiên"><strong>Xoá phiên này?</strong><p>Chỉ xoá trong preview · không ảnh hưởng dữ liệu thật.</p><div class="menu-confirm-actions"><button type="button" data-confirm-delete class="menu-danger">Xoá phiên</button><button type="button" data-cancel-delete>Huỷ</button></div></div>';
+      menu.querySelector('[data-confirm-delete]').focus();
+    }
+    function openSessionMenu(session, trigger) {
+      closeSessionMenus();
+      const menu = document.createElement('div');
+      menu.className = 'small-menu session-action-menu';
+      menu.setAttribute('role', 'menu');
+      menu.setAttribute('aria-label', `Tuỳ chọn phiên ${session.title}`);
+      menu.dataset.sessionId = session.id;
+      menu.innerHTML = '<button type="button" role="menuitem" data-action="rename">Đổi tên</button><button type="button" role="menuitem" data-action="duplicate">Nhân bản</button><button type="button" role="menuitem" data-action="delete" class="menu-danger">Xoá</button>';
+      const rect = trigger.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.top = `${Math.min(rect.bottom + 4, Math.max(8, innerHeight - 180))}px`;
+      menu.style.right = `${Math.max(8, innerWidth - rect.right)}px`;
+      menu.style.bottom = 'auto';
+      menu.addEventListener('click', (event) => {
+        if (event.target.closest('[data-confirm-delete]')) {
+          const wasCurrent = session.id === currentSessionId;
+          sessions = sessions.filter((item) => item.id !== session.id);
+          closeSessionMenus();
+          renderSessions();
+          showToast('Đã xoá phiên · demo');
+          if (wasCurrent) {
+            currentSessionId = sessions[0]?.id ?? null;
+            const nextRow = currentSessionId ? sessionList.querySelector(`.session-row[data-session-id="${currentSessionId}"]`) : null;
+            if (nextRow) nextRow.setAttribute('aria-current', 'page');
+            renderTimeline(false);
+            nextRow?.focus();
+          }
+          return;
+        }
+        if (event.target.closest('[data-cancel-delete]')) { closeSessionMenus(true); return; }
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (!action) return;
+        if (action === 'rename') {
+          editingSessionId = session.id;
+          closeSessionMenus();
+          renderSessions(true);
+        } else if (action === 'duplicate') {
+          const index = sessions.findIndex((item) => item.id === session.id);
+          sessions.splice(index + 1, 0, { id: `s-${Date.now()}`, title: `${session.title} · bản sao`, snippet: session.snippet, time: 'vừa xong' });
+          closeSessionMenus();
+          renderSessions();
+          showToast('Đã nhân bản phiên · demo');
+        } else if (action === 'delete') {
+          renderDeleteConfirm(menu, session);
+        }
+      });
+      menu.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSessionMenus(true); }
+      });
+      document.body.append(menu);
+      sessionMenu = menu;
+      trigger.setAttribute('aria-expanded', 'true');
+      menu.querySelector('[role="menuitem"]')?.focus();
+    }
+    sessionSearch.addEventListener('input', () => { if (!editingSessionId) renderSessions(); });
+    sessionList.addEventListener('click', (event) => {
+      const trigger = event.target.closest('.session-menu-trigger');
+      if (trigger) {
+        const session = sessions.find((item) => item.id === trigger.dataset.sessionId);
+        if (session && sessionMenu?.dataset.sessionId === session.id) { closeSessionMenus(true); return; }
+        if (session) openSessionMenu(session, trigger);
+        return;
+      }
+      const row = event.target.closest('.session-row');
+      if (row) selectSession(row.dataset.sessionId);
+    });
+    renderSessions();
+
+    function setScene(scene, trigger = document.activeElement) {
+      currentScene = scene;
+      document.querySelectorAll('[data-scene]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.scene === scene)));
+      hostMenu.hidden = true; closeModelPicker(false); closeFileMenus();
+      app.dataset.empty = 'false';
+      document.getElementById('emptyState').hidden = true;
+      document.getElementById('sessionRail').hidden = false;
+      document.querySelector('.timeline-wrap').hidden = false;
+      document.querySelector('.composer').hidden = false;
+      document.querySelector('.host-picker').hidden = false;
+      document.getElementById('railToggle').hidden = false;
+      document.getElementById('inspectorToggle').hidden = false;
+      if (scene === 'workbench') { 
+        setInspector(false); renderTimeline(false);
+      } else if (scene === 'pairing') openHostDialog('pair', trigger);
+      else if (scene === 'pairPermission') openHostDialog('pair', trigger, 'Chrome đang chặn quyền mạng cục bộ cho li.quoc.app. Cho phép quyền này trong cài đặt của trang, rồi thử lại.');
+      else if (scene === 'history') { setInspector(false); renderTimeline(true); }
+      else if (scene === 'historyError') { setInspector(false); renderTimeline(true, true); }
+      else if (scene === 'model') { setInspector(false); renderTimeline(false); openModelPicker(); }
+      else if (scene === 'files') { renderTimeline(false); setInspector(true); setInspectorTab('files'); }
+      else if (scene === 'terminal') { renderTimeline(false); setInspector(true); setInspectorTab('terminal'); }
+      else if (scene === 'empty') {
+        setInspector(false); renderTimeline(false); app.dataset.empty = 'true';
+        document.getElementById('emptyState').hidden = false;
+        document.getElementById('sessionRail').hidden = true;
+        document.querySelector('.timeline-wrap').hidden = true;
+        document.querySelector('.composer').hidden = true;
+        document.querySelector('.host-picker').hidden = true;
+        document.getElementById('railToggle').hidden = true;
+        document.getElementById('inspectorToggle').hidden = true;
+        if (trigger instanceof HTMLElement) trigger.focus();
+      }
+    }
+    document.querySelectorAll('[data-scene]').forEach((button) => button.addEventListener('click', (event) => setScene(button.dataset.scene, event.currentTarget)));
+    document.querySelectorAll('[data-theme-choice]').forEach((button) => button.addEventListener('click', () => {
+      document.documentElement.dataset.theme = button.dataset.themeChoice;
+      document.querySelectorAll('[data-theme-choice]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+    }));
+    app.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        if (!modelPopover.hidden) closeModelPicker(true);
+        if (!hostMenu.hidden) { hostMenu.hidden = true; hostTrigger.setAttribute('aria-expanded','false'); hostTrigger.focus(); }
+        if (app.dataset.mobileDrawer === 'true') { toggleMobileDrawer(false); document.getElementById('mobileSessions').focus(); }
+        if (app.dataset.inspectorOpen === 'true' && innerWidth <= 1024) setInspector(false);
+      }
+    });
+    renderTimeline(false);
+  </script>
+</body>
+</html>

@@ -5,12 +5,14 @@ import type { WebUiRequest } from '../transport/web-ui-request'
 export type SessionTimeline = {
   turns: Turn[]
   seq: number
+  /** Client-local epoch invalidating history pages across timeline.reset/open snapshots. */
+  timelineGeneration?: number
   state: SessionState
   pendingUi: WebUiRequest[]
   hasOlder: boolean
 }
 
-export const emptyTimeline = (): SessionTimeline => ({ turns: [], seq: 0, state: { running: false }, pendingUi: [], hasOlder: false })
+export const emptyTimeline = (): SessionTimeline => ({ turns: [], seq: 0, timelineGeneration: 0, state: { running: false }, pendingUi: [], hasOlder: false })
 
 export type ApplyResult =
   | { ok: true; timeline: SessionTimeline }
@@ -19,6 +21,40 @@ export type ApplyResult =
 export function prependOlder(t: SessionTimeline, older: Turn[], hasOlder: boolean): SessionTimeline {
   const known = new Set(t.turns.map((turn) => turn.anchor))
   return { ...t, turns: [...older.filter((turn) => !known.has(turn.anchor)), ...t.turns], hasOlder }
+}
+
+/**
+ * Spec T3: a `turn.page` response that arrives after `timeline.reset`, a session reopen or a
+ * host switch must be discarded — its anchor can no longer be found at the top of the live
+ * timeline, so prepending it would inject stale history into a fresh session.
+ */
+export type OlderPageExpectation = { hostId: string; sessionKey: string; firstAnchor: string; generation: number; timelineGeneration: number }
+export type OlderPageActual = { activeHostId: string | null; selectedSessionKey: string | null; firstAnchor: string | null; generation: number; timelineGeneration: number }
+
+export function olderPageIsStale(expected: OlderPageExpectation, actual: OlderPageActual): boolean {
+  if (actual.activeHostId !== expected.hostId) return true
+  if (actual.selectedSessionKey !== expected.sessionKey) return true
+  if (actual.generation !== expected.generation) return true
+  if (actual.timelineGeneration !== expected.timelineGeneration) return true
+  return actual.firstAnchor !== expected.firstAnchor
+}
+
+/** Await an older page and commit it only if host/session/head/generation still match. */
+export async function fetchOlderPageIfCurrent<T>(
+  fetchPage: () => Promise<T>,
+  expected: OlderPageExpectation,
+  getActual: () => OlderPageActual,
+  commit: (page: T) => void,
+): Promise<boolean> {
+  const page = await fetchPage()
+  if (olderPageIsStale(expected, getActual())) return false
+  commit(page)
+  return true
+}
+
+/** Scroll-anchor correction after a prepend: delta the viewport must shift to keep content still. */
+export function anchorAdjustment(prevHeight: number, newHeight: number): number {
+  return newHeight - prevHeight
 }
 
 export function applyAll(start: SessionTimeline, patches: TurnPatch[]): ApplyResult {
@@ -97,7 +133,7 @@ export function apply(timeline: SessionTimeline, patch: TurnPatch): SessionTimel
     case 'session.state':
       return { ...timeline, state: patch.state }
     case 'timeline.reset':
-      return { ...emptyTimeline(), hasOlder: timeline.hasOlder }
+      return { ...emptyTimeline(), timelineGeneration: (timeline.timelineGeneration ?? 0) + 1, hasOlder: timeline.hasOlder }
     default:
       return timeline
   }

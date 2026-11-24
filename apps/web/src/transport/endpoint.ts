@@ -25,6 +25,21 @@ export function pagePolicy(loc: Pick<Location, 'protocol'> = location): Endpoint
   return { secure: loc.protocol === 'https:' }
 }
 
+export type LocalNetworkPermission = PermissionState | 'unsupported'
+
+/** Read Chrome's local-network-access permission without prompting or changing permission state. */
+export async function queryLocalNetworkAccessPermission(api?: Pick<Permissions, 'query'>): Promise<LocalNetworkPermission> {
+  const permissions = api ?? (typeof navigator === 'undefined' ? undefined : navigator.permissions)
+  if (!permissions?.query) return 'unsupported'
+  try {
+    const status = await permissions.query({ name: 'local-network-access' } as unknown as PermissionDescriptor)
+    return status.state
+  } catch {
+    // Browsers that do not implement this permission name reject the query; keep generic recovery.
+    return 'unsupported'
+  }
+}
+
 /** Rank endpoints: wss first (Serve TLS), then ws (explicit port). */
 function rank(a: string, b: string): number {
   const aw = a.startsWith('wss:') ? 0 : 1

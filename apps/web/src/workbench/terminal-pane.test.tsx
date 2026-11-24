@@ -9,6 +9,7 @@ const terminalState = vi.hoisted(() => ({
   onData: null as null | ((data: string) => void),
   onResize: null as null | ((size: { cols: number; rows: number }) => void),
   disposed: false,
+  lastOptions: null as Record<string, unknown> | null,
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -17,6 +18,7 @@ vi.mock('@xterm/xterm', () => ({
     rows = 24
     loadAddon() {}
     open() {}
+    constructor(options?: Record<string, unknown>) { terminalState.lastOptions = options ?? null }
     write(text: string) { terminalState.writes.push(text) }
     onData(callback: (data: string) => void) { terminalState.onData = callback; return { dispose() {} } }
     onResize(callback: (size: { cols: number; rows: number }) => void) { terminalState.onResize = callback; return { dispose() {} } }
@@ -31,6 +33,8 @@ afterEach(() => {
   terminalState.onData = null
   terminalState.onResize = null
   terminalState.disposed = false
+  terminalState.lastOptions = null
+  document.documentElement.classList.remove('dark')
 })
 
 describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
@@ -55,6 +59,9 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
     const view = render(<TerminalPane sessionKey="proj/s.jsonl" conn={conn} />)
     await waitFor(() => expect(requests.some((request) => request.method === 'terminal.open')).toBe(true))
 
+    // Spec T4: terminal palette follows the app theme — light app gets a white surface.
+    document.documentElement.classList.remove('dark')
+
     bus.listener?.('terminal.data', { terminalId: 'terminal-1', data: '\x1b]52;c;c2VjcmV0\x07VISIBLE\r\n' })
     expect(terminalState.writes.join('')).toBe('VISIBLE\r\n')
 
@@ -69,5 +76,21 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
     await waitFor(() => expect(requests.some((request) => request.method === 'terminal.close')).toBe(true))
     expect(unsubscribed).toBe(true)
     expect(terminalState.disposed).toBe(true)
+  })
+
+  it('terminal theme follows the app theme: white/black in light, dark surface in dark', async () => {
+    const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't', profile: 'bash' })), subscribeEvents: () => () => {} } as unknown as HostConnection
+
+    document.documentElement.classList.remove('dark')
+    const light = render(<TerminalPane sessionKey="s" conn={conn} />)
+    await waitFor(() => expect(terminalState.lastOptions).not.toBeNull())
+    expect((terminalState.lastOptions?.theme as { background: string }).background).toBe('#ffffff')
+    expect((terminalState.lastOptions?.theme as { foreground: string }).foreground).toBe('#111111')
+    light.unmount()
+
+    document.documentElement.classList.add('dark')
+    const dark = render(<TerminalPane sessionKey="s" conn={conn} />)
+    await waitFor(() => expect((terminalState.lastOptions?.theme as { background: string }).background).toBe('#1f1f1f'))
+    dark.unmount()
   })
 })

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { chooseEndpoint, pagePolicy } from './endpoint'
+import { describe, expect, it, vi } from 'vitest'
+import { chooseEndpoint, pagePolicy, queryLocalNetworkAccessPermission } from './endpoint'
 
 describe('endpoint policy (spec T3)', () => {
   const WSS_SERVE = 'wss://pc.tail1234.ts.net/ws'
@@ -45,6 +45,14 @@ describe('endpoint policy (spec T3)', () => {
   it('public endpoints are always rejected by the shared private-host guard', () => {
     expect(chooseEndpoint([WS_PUBLIC], { secure: false })).toEqual({ ok: false, reason: 'no_valid_endpoint' })
     expect(chooseEndpoint([WSS_PUBLIC], { secure: true })).toEqual({ ok: false, reason: 'mixed_content' })
+  })
+
+  it('reads local-network access permission when supported and falls back safely', async () => {
+    const deniedApi = { query: vi.fn().mockResolvedValue({ state: 'denied' }) }
+    await expect(queryLocalNetworkAccessPermission(deniedApi as unknown as Permissions)).resolves.toBe('denied')
+
+    const unsupportedApi = { query: vi.fn().mockRejectedValue(new Error('unsupported permission name')) }
+    await expect(queryLocalNetworkAccessPermission(unsupportedApi as unknown as Permissions)).resolves.toBe('unsupported')
   })
 
   it('pagePolicy follows the page protocol', () => {

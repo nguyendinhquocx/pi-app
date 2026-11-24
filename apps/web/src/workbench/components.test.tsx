@@ -90,7 +90,7 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     expect((screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement).value).toBe('restored prompt')
   })
 
-  it('context metrics render tokens + cost (row 17/26)', () => {
+  it('context cost/token metrics moved out of the composer; only a ≥80% window cue stays', () => {
     render(
       <Composer
         sessionKey={sessionKey}
@@ -108,8 +108,52 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
         actions={baseActions}
       />,
     )
-    expect(screen.getByText(/342 tok \(0%\)/)).toBeTruthy()
-    expect(screen.getByText(/\$0\.0123/)).toBeTruthy()
+    // Spec T4: no token/cost repetition in the composer footer (Inspector → Context shows them).
+    expect(screen.queryByText(/342 tok/)).toBeNull()
+    expect(screen.queryByText(/\$0\.0123/)).toBeNull()
+  })
+
+  it('context cue appears once usage reaches ≥80% of the window', () => {
+    render(
+      <Composer
+        sessionKey={sessionKey}
+        running={false}
+        queue={{ steering: [], followUp: [] }}
+        commands={[]}
+        context={{ tokens: 180000, window: 200000, messages: 2, breakdown: [] }}
+        usage={null}
+        model={null}
+        thinking={null}
+        thinkingLevels={[]}
+        models={[]}
+        onSetModel={vi.fn()}
+        onSetThinking={vi.fn()}
+        actions={baseActions}
+      />,
+    )
+    expect(screen.getByRole('status').textContent).toContain('90%')
+  })
+
+  it('thinking picker uses host levels and reports update failures', async () => {
+    const onSetThinking = vi.fn(async () => { throw new Error('thinking denied') })
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={[]} context={null} usage={null} model={null} thinking="low" thinkingLevels={['low', 'high']} models={[]} onSetModel={vi.fn()} onSetThinking={onSetThinking} actions={baseActions} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking: low' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'high' }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('thinking denied'))
+    expect(onSetThinking).toHaveBeenCalledWith('high')
+  })
+
+  it('mode menu supports Escape and returns focus to its trigger', () => {
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={[]} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
+    const trigger = screen.getByRole('button', { name: /Chế độ gửi: Gửi/ })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const currentMode = screen.getByRole('menuitemradio', { name: /Gửi/ })
+    expect(document.activeElement).toBe(currentMode)
+
+    fireEvent.keyDown(currentMode, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: 'Chế độ gửi' })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
   })
 })
 
@@ -200,6 +244,35 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     await_a_tick(() => expect(onLoadDiff).toHaveBeenCalledWith('turn', 'a.ts'))
   })
 
+  it('Inspector tabs are arrow-key navigable and export menu returns focus', () => {
+    const onTab = vi.fn()
+    const onExport = vi.fn()
+    const { container } = render(
+      <Inspector
+        sessionKey={sessionKey} tab="terminal" onTab={onTab} reviewDiff={null} onLoadDiff={vi.fn()}
+        files={[]} onListFiles={vi.fn(async () => undefined)} onReadFile={vi.fn()}
+        onCreateFile={vi.fn(async () => undefined)} onRenameFile={vi.fn(async () => undefined)}
+        stats={null} branches={[]} onSwitchBranch={vi.fn()}
+        onAgentSteer={vi.fn(async () => undefined)} onAgentAbort={vi.fn(async () => undefined)} onAgentResume={vi.fn(async () => undefined)}
+        conn={null} onExport={onExport} timelineTurns={turns} sessionTitle="S1"
+      />,
+    )
+    const terminal = screen.getByRole('tab', { name: 'Terminal' })
+    terminal.focus()
+    fireEvent.keyDown(terminal, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Context' }))
+    expect(onTab).toHaveBeenCalledWith('context')
+
+    const exportTrigger = screen.getByRole('button', { name: 'Xuất phiên' })
+    fireEvent.click(exportTrigger)
+    const markdownAction = screen.getByRole('menuitem', { name: 'Xuất Markdown' })
+    expect(document.activeElement).toBe(markdownAction)
+    fireEvent.click(markdownAction)
+    expect(onExport).toHaveBeenCalledWith('markdown')
+    expect(document.activeElement).toBe(exportTrigger)
+    expect(container.querySelector('[role="menu"]')).toBeNull()
+  })
+
   it('tree tab lists branches with switch action (row 8)', () => {
     const onSwitch = vi.fn(async () => undefined)
     render(
@@ -265,22 +338,94 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
         sessionTitle="S1"
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: /📁 src/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'src' }))
     await_a_tick(() => expect(onListFiles).toHaveBeenCalledWith('src'))
-    fireEvent.click(screen.getByRole('button', { name: /📄 src\/a.ts/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }))
     await_a_tick(() => expect(onReadFile).toHaveBeenCalledWith('src/a.ts'))
     await waitFor(() => expect(screen.getByText('file body')).toBeTruthy())
     fireEvent.change(screen.getByLabelText('Tên file hoặc thư mục mới'), { target: { value: 'new.ts' } })
     fireEvent.click(screen.getByRole('button', { name: 'Tạo' }))
     await_a_tick(() => expect(onCreateFile).toHaveBeenCalledWith('src/new.ts', false))
-    fireEvent.click(screen.getByRole('button', { name: /📄 src\/a.ts/ }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Đổi tên' })[1])
+    fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tuỳ chọn src/a.ts' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Đổi tên' }))
     fireEvent.change(screen.getByLabelText('Tên mới cho src/a.ts'), { target: { value: 'b.ts' } })
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     await_a_tick(() => expect(onRenameFile).toHaveBeenCalledWith('src/a.ts', 'b.ts'))
   })
 
-  it('timeline hover actions are real rewind/fork controls and scrubber loads older pages', async () => {
+  it('file preview can be closed (spec T4)', async () => {
+    const onReadFile = vi.fn(async () => 'file body')
+    render(
+      <Inspector
+        sessionKey={sessionKey}
+        tab="files"
+        onTab={vi.fn()}
+        reviewDiff={null}
+        onLoadDiff={vi.fn()}
+        files={[{ path: 'src/a.ts', kind: 'file' }]}
+        onListFiles={vi.fn(async () => undefined)}
+        onReadFile={onReadFile}
+        onCreateFile={vi.fn(async () => undefined)}
+        onRenameFile={vi.fn(async () => undefined)}
+        stats={null}
+        branches={[]}
+        onSwitchBranch={vi.fn()}
+        onAgentSteer={vi.fn(async () => undefined)}
+        onAgentAbort={vi.fn(async () => undefined)}
+        onAgentResume={vi.fn(async () => undefined)}
+        conn={connStub}
+        onExport={vi.fn()}
+        timelineTurns={turns}
+        sessionTitle="S1"
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }))
+    await waitFor(() => expect(screen.getByText('file body')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng xem trước' }))
+    expect(screen.queryByText('file body')).toBeNull()
+  })
+
+  it('file action menu supports Escape focus return and puts focus in the rename editor', () => {
+    render(
+      <Inspector
+        sessionKey={sessionKey}
+        tab="files"
+        onTab={vi.fn()}
+        reviewDiff={null}
+        onLoadDiff={vi.fn()}
+        files={[{ path: 'src/a.ts', kind: 'file' }]}
+        onListFiles={vi.fn(async () => undefined)}
+        onReadFile={vi.fn(async () => '')}
+        onCreateFile={vi.fn(async () => undefined)}
+        onRenameFile={vi.fn(async () => undefined)}
+        stats={null}
+        branches={[]}
+        onSwitchBranch={vi.fn()}
+        onAgentSteer={vi.fn(async () => undefined)}
+        onAgentAbort={vi.fn(async () => undefined)}
+        onAgentResume={vi.fn(async () => undefined)}
+        conn={connStub}
+        onExport={vi.fn()}
+        timelineTurns={turns}
+        sessionTitle="S1"
+      />,
+    )
+    const trigger = screen.getByRole('button', { name: 'Tuỳ chọn src/a.ts' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const renameAction = screen.getByRole('menuitem', { name: 'Đổi tên' })
+    expect(document.activeElement).toBe(renameAction)
+    fireEvent.keyDown(renameAction, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Đổi tên' }))
+    expect(document.activeElement).toBe(screen.getByLabelText('Tên mới cho src/a.ts'))
+  })
+
+  it('timeline hover actions are real rewind/fork controls; scroll-near-top pages older history', async () => {
     const actions = { onRewind: vi.fn(async () => undefined), onFork: vi.fn(async () => undefined), onToolDetail: vi.fn(async () => 'tool output') }
     const onLoadOlder = vi.fn(async () => undefined)
     const timelineTurn: Turn = {
@@ -289,8 +434,12 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     }
     const timeline = { ...emptyTimeline(), turns: [timelineTurn], hasOlder: true }
     render(<Timeline timeline={timeline} sessionKey={sessionKey} actions={actions} onLoadOlder={onLoadOlder} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Xem các lượt cũ hơn' }))
-    await_a_tick(() => expect(onLoadOlder).toHaveBeenCalledWith(sessionKey, 'a1'))
+    // Spec T3: success tools render no raw `ok` label.
+    expect(document.body.textContent).not.toMatch(/\bok\b/)
+    // Spec T3: auto-load replaces the old button — scrolling near the top triggers the page load.
+    const log = document.querySelector('.timeline') as HTMLElement
+    fireEvent.scroll(log)
+    await waitFor(() => expect(onLoadOlder).toHaveBeenCalledWith(sessionKey, 'a1'))
     fireEvent.click(screen.getByRole('button', { name: 'Quay lại đây (rewind)' }))
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
     await_a_tick(() => expect(actions.onRewind).toHaveBeenCalledWith(sessionKey, 'a1'))

@@ -164,9 +164,11 @@ describe('timeline store — Android TurnStore semantics (spec T4 live timeline)
   it('timeline.reset drops turns but keeps hasOlder', () => {
     let t = apply(emptyTimeline(), turnPatch(makeTurn()))
     t = { ...t, hasOlder: true }
+    const oldGeneration = t.timelineGeneration ?? 0
     t = apply(t, { op: 'timeline.reset', seq: nextSeq() })
     expect(t.turns).toHaveLength(0)
     expect(t.hasOlder).toBe(true)
+    expect(t.timelineGeneration).toBe(oldGeneration + 1)
   })
 
   it('prependOlder dedupes by anchor and keeps order', () => {

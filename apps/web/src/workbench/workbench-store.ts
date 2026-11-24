@@ -221,6 +221,7 @@ function applyOpenResult(current: SessionTimeline | undefined, result: OpenResul
     return {
       turns: result.turns ?? [],
       seq: result.seq,
+      timelineGeneration: (current?.timelineGeneration ?? 0) + 1,
       state: result.state,
       pendingUi: result.pendingUi,
       hasOlder: result.hasOlder ?? false,
@@ -232,6 +233,7 @@ function applyOpenResult(current: SessionTimeline | undefined, result: OpenResul
   return {
     ...replay.timeline,
     seq: result.seq,
+    timelineGeneration: replay.timeline.timelineGeneration,
     state: result.state,
     pendingUi: result.pendingUi,
     hasOlder: result.hasOlder ?? replay.timeline.hasOlder,

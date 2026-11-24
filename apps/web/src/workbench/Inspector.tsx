@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Download, Ellipsis, File, Folder, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 import type { ContextStats, SessionUsage, BranchInfo, Turn, DiffLine } from '@shared/remote'
 import type { HostConnection } from '../transport/host-connection'
@@ -15,6 +16,24 @@ import { agentRunsFromTurns } from './agent-runs'
  */
 
 export type InspectorTab = 'review' | 'files' | 'context' | 'tree' | 'agents' | 'terminal'
+
+/** Terminal palette follows the app theme (spec T4): light = white/black, dark = dark surface. */
+export const TERMINAL_THEMES = {
+  light: {
+    background: '#ffffff', foreground: '#111111', cursor: '#111111', cursorAccent: '#ffffff', selectionBackground: '#d9dce3',
+    black: '#111111', red: '#d1242f', green: '#1a7f37', yellow: '#9a6700', blue: '#0550ae', magenta: '#8250df', cyan: '#1b7c83', white: '#57606a',
+    brightBlack: '#57606a', brightRed: '#cf222e', brightGreen: '#116329', brightYellow: '#4d2d00', brightBlue: '#0550ae', brightMagenta: '#6639ba', brightCyan: '#1b7c83', brightWhite: '#24292f',
+  },
+  dark: {
+    background: '#1f1f1f', foreground: '#cccccc', cursor: '#cccccc', cursorAccent: '#1f1f1f', selectionBackground: '#313338',
+    black: '#3a3a3d', red: '#f85149', green: '#3fb950', yellow: '#d29922', blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#d4d4d4',
+    brightBlack: '#6e7681', brightRed: '#f85149', brightGreen: '#3fb950', brightYellow: '#d29922', brightBlue: '#58a6ff', brightMagenta: '#bc8cff', brightCyan: '#39c5cf', brightWhite: '#e6e6e6',
+  },
+} as const
+
+function appThemeIsDark(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+}
 
 export type InspectorProps = {
   sessionKey: string
@@ -37,6 +56,7 @@ export type InspectorProps = {
   onExport(format: 'markdown' | 'html'): void
   timelineTurns: Turn[]
   sessionTitle: string
+  modal?: boolean
 }
 
 /** Terminal view: opens a PTY, pipes output through the OSC 52 filter, input goes to the host. */
@@ -57,7 +77,7 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
       try {
         setStatus('opening')
         const [{ Terminal }, { FitAddon }] = await Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')])
-        const term = new Terminal({ convertEol: true, cursorBlink: false, allowProposedApi: false })
+        const term = new Terminal({ convertEol: true, cursorBlink: false, allowProposedApi: false, theme: appThemeIsDark() ? TERMINAL_THEMES.dark : TERMINAL_THEMES.light })
         const fit = new FitAddon()
         term.loadAddon(fit)
         if (disposed || !hostRef.current) return
@@ -128,7 +148,14 @@ export function Inspector(props: InspectorProps) {
   const [newIsDirectory, setNewIsDirectory] = useState(false)
   const [renamePath, setRenamePath] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const tabs: InspectorTab[] = ['review', 'files', 'context', 'tree', 'agents', 'terminal']
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const fileMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const fileActionMenuRef = useRef<HTMLDivElement | null>(null)
+  const renameInputRef = useRef<HTMLInputElement | null>(null)
+  const exportTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const exportMenuRef = useRef<HTMLDivElement | null>(null)
+  const tabs: InspectorTab[] = ['terminal', 'context', 'review', 'files', 'tree', 'agents']
 
   useEffect(() => {
     setCurrentDirectory('.')
@@ -137,18 +164,89 @@ export function Inspector(props: InspectorProps) {
     setNewPath('')
   }, [sessionKey])
 
+  useEffect(() => {
+    if (!menuFor) return
+    const close = () => setMenuFor(null)
+    window.addEventListener('click', close)
+    fileActionMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    return () => window.removeEventListener('click', close)
+  }, [menuFor])
+
+  useEffect(() => {
+    if (renamePath) renameInputRef.current?.focus()
+  }, [renamePath])
+
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !exportMenuRef.current?.contains(event.target) && !exportTriggerRef.current?.contains(event.target)) setExportMenuOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setExportMenuOpen(false)
+      exportTriggerRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    exportMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [exportMenuOpen])
+
   return (
-    <aside className="inspector" aria-label="Inspector">
-      <div className="inspector-tabs" role="tablist">
+    <aside id="workbench-inspector" className="inspector" role={props.modal ? 'dialog' : undefined} aria-modal={props.modal || undefined} aria-labelledby="inspector-title" tabIndex={props.modal ? -1 : undefined}>
+      <header className="inspector-head">
+        <h2 id="inspector-title">Inspector</h2>
+        <div className="export-wrap">
+          <button ref={exportTriggerRef} className="export-trigger" aria-label="Xuất phiên" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((open) => !open)}>
+            <Ellipsis size={18} aria-hidden="true" />
+          </button>
+          {exportMenuOpen && (
+            <div ref={exportMenuRef} className="small-menu export-menu" role="menu" aria-label="Xuất phiên">
+              <button type="button" role="menuitem" onClick={() => { onExport('markdown'); setExportMenuOpen(false); exportTriggerRef.current?.focus() }}>
+                <Download size={15} aria-hidden="true" /> Xuất Markdown
+              </button>
+              <button type="button" role="menuitem" onClick={() => { onExport('html'); setExportMenuOpen(false); exportTriggerRef.current?.focus() }}>
+                <Download size={15} aria-hidden="true" /> Xuất HTML
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+      <div
+        className="inspector-tabs"
+        role="tablist"
+        aria-label="Nội dung Inspector"
+        onKeyDown={(event) => {
+          const tabButtons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+          const current = tabButtons.indexOf(event.target as HTMLButtonElement)
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+          event.preventDefault()
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+          tabButtons[next].focus()
+          onTab(tabs[next])
+        }}
+      >
         {tabs.map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => onTab(t)}>
+          <button
+            key={t}
+            id={`inspector-tab-${t}`}
+            type="button"
+            role="tab"
+            aria-controls="inspector-panel"
+            aria-selected={tab === t}
+            tabIndex={tab === t ? 0 : -1}
+            onClick={() => onTab(t)}
+          >
             {t === 'review' ? 'Review' : t === 'files' ? 'Files' : t === 'context' ? 'Context' : t === 'tree' ? 'Tree' : t === 'agents' ? 'Agents' : 'Terminal'}
           </button>
         ))}
-        <button className="export-btn" aria-label="Export phiên (Markdown)" onClick={() => onExport('markdown')}>MD↓</button>
-        <button className="export-btn" aria-label="Export phiên (HTML)" onClick={() => onExport('html')}>HTML↓</button>
       </div>
-      <div className="inspector-body">
+      <div id="inspector-panel" className="inspector-body" role="tabpanel" tabIndex={0} aria-labelledby={`inspector-tab-${tab}`}>
         {tab === 'review' && (
           <div className="review-panel">
             <div className="review-scope">
@@ -192,7 +290,7 @@ export function Inspector(props: InspectorProps) {
             <ul>
               {files.map((f) => (
                 <li key={f.path} className="file-row">
-                  <button onClick={() => {
+                  <button className="file-open" onClick={() => {
                     if (f.kind === 'dir') {
                       setCurrentDirectory(f.path)
                       setFilePreview(null)
@@ -201,12 +299,34 @@ export function Inspector(props: InspectorProps) {
                       void onReadFile(f.path).then((content) => setFilePreview({ path: f.path, content })).catch(() => setFilePreview({ path: f.path, content: '(không đọc được)' }))
                     }
                   }}>
-                    {f.kind === 'dir' ? '📁' : '📄'} {f.path}
+                    {f.kind === 'dir' ? <Folder size={15} aria-hidden="true" /> : <File size={15} aria-hidden="true" />}
+                    <span>{f.path}</span>
                   </button>
-                  <button onClick={() => { setRenamePath(f.path); setRenameValue(f.path.split(/[\\/]/).pop() ?? f.path) }}>Đổi tên</button>
+                  <button className="file-menu-trigger" aria-label={`Tuỳ chọn ${f.path}`} aria-haspopup="menu" aria-expanded={menuFor === f.path} onClick={(event) => { event.stopPropagation(); fileMenuTriggerRef.current = event.currentTarget; setMenuFor(menuFor === f.path ? null : f.path) }}><Ellipsis size={17} aria-hidden="true" /></button>
+                  {menuFor === f.path && (
+                    <div
+                      ref={fileActionMenuRef}
+                      className="context-menu file-action-menu"
+                      role="menu"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setMenuFor(null)
+                          fileMenuTriggerRef.current?.focus()
+                        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+                          event.preventDefault()
+                          fileActionMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+                        }
+                      }}
+                    >
+                      <button role="menuitem" onClick={() => { setRenamePath(f.path); setRenameValue(f.path.split(/[\\/]/).pop() ?? f.path); setMenuFor(null) }}>Đổi tên</button>
+                    </div>
+                  )}
                   {renamePath === f.path && (
                     <form onSubmit={(event) => { event.preventDefault(); if (renameValue.trim()) void onRenameFile(f.path, renameValue.trim()).then(() => setRenamePath(null)) }}>
-                      <input aria-label={`Tên mới cho ${f.path}`} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
+                      <input ref={renameInputRef} aria-label={`Tên mới cho ${f.path}`} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
                       <button className="primary" disabled={!renameValue.trim()}>Lưu</button>
                       <button type="button" onClick={() => setRenamePath(null)}>Huỷ</button>
                     </form>
@@ -216,9 +336,15 @@ export function Inspector(props: InspectorProps) {
               {files.length === 0 && <li className="empty">Trống.</li>}
             </ul>
             {filePreview && (
-              <pre className="file-preview">
-                {filePreview.content.length > 20000 ? filePreview.content.slice(0, 20000) + '\n… (truncated)' : filePreview.content}
-              </pre>
+              <div className="file-preview-wrap">
+                <div className="file-preview-head">
+                  <span className="file-preview-path">{filePreview.path}</span>
+                  <button aria-label="Đóng xem trước" onClick={() => setFilePreview(null)}><X size={15} aria-hidden="true" /></button>
+                </div>
+                <pre className="file-preview">
+                  {filePreview.content.length > 20000 ? filePreview.content.slice(0, 20000) + '\n… (truncated)' : filePreview.content}
+                </pre>
+              </div>
             )}
           </div>
         )}

@@ -1,110 +1,67 @@
-# Li Web — Design Tokens (T3)
+# Li Web — Design System
 
-> **Trạng thái:** VERIFIED hai nguồn (spec T3: "token values từ LiX source + đối chiếu runtime
-> screenshot").
->
-> - **Source of truth (mã nguồn):** `src/renderer/src/styles/globals.css` (block `:root` light —
->   dòng 1-180; block `.dark` — dòng 182-260) + `tailwind.config.ts` (fontSize 2xs→2xl,
->   surface tiers, motion durations).
-> - **Runtime evidence:** `.agent-workbench/lix-web/lix-runtime-capture.png` — LiX v0.7.13
->   (electron-vite dev) chạy thật trên Windows, light theme, chụp 2026-11-17 22:31. Ảnh README
->   (`doc/assets/readme/en/overview.png`, `phone.png`) chỉ là historical marketing (v0.6.0
->   "pi Desktop"), KHÔNG dùng làm evidence token.
->
-> **Nguyên tắc:** Preserve the incumbent — Li Web kế thừa visual language của LiX, không tạo
-> visual world mới. Mọi giá trị dưới đây copy nguyên văn, không "cải tiến".
+> **Phạm vi:** workbench React thật trong `apps/web/src`; token kế thừa LiX, flow và bố cục theo demo đã duyệt.
+> **Source of truth:** CSS variables trong `apps/web/src/styles.css`; không thêm Tailwind hay styling framework thứ hai.
+> **Visual evidence:** `apps/web/dev/captures-workbench-demo-integration/`, sinh bằng `node apps/web/scripts/capture-responsive.mjs`. Tất cả fixture/screenshot là dữ liệu tổng hợp local, không phải live-host UAT.
+> **Nguồn token:** `src/renderer/src/styles/globals.css` và `tailwind.config.ts`; LiX runtime capture lịch sử: `.agent-workbench/lix-web/lix-runtime-capture.png`.
 
-## 1. Surfaces & backgrounds
-
-| Token | Light | Dark (VS Code Dark Modern) | Ghi chú |
-| --- | --- | --- | --- |
-| `--bg-base` | `#ffffff` | `#1f1f1f` | editor.background |
-| `--bg-1` | `#f9fafb` | `#252526` | list / cards |
-| `--bg-2` | `#f2f3f5` | `#2b2b2b` | textCodeBlock |
-| `--bg-3` | `#e5e6eb` | `#313131` | input.background |
-| `--bg-hover` | `#e8eaed` | `#313338` | list hover |
-| `--bg-active` | `#e3e4e8` | `#3a3a3d` | |
-| `--message-user-bg` | `#F6F6F7` | `#2b2b2b` | |
-
-Runtime check (capture): sidebar nền trắng thuần `--bg-base`, hàng session hover lift nhẹ —
-khớp bảng trên. Dark mode của Web chưa bật trong T3 (chỉ light-first theo capture); cả hai bộ
-giá trị đã chốt sẵn cho T4.
-
-## 2. Text
-
-| Token | Light | Dark | Ghi chú |
-| --- | --- | --- | --- |
-| `--text-primary` | `#12141a` | `#cccccc` | tránh pure black |
-| `--text-secondary` | `#454d5f` | `#9d9d9d` | descriptionForeground |
-| `--text-disabled` | `#c9cdd4` | `#6e7681` | editorLineNumber |
-
-Runtime check: tiêu đề session `#12141a` đậm vừa, meta "22:31 17 thg 11" secondary xám nhẹ — khớp.
-
-## 3. Brand (AOU Purple) + semantic
+## 1. Màu và bề mặt
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--brand` | `#7583b2` | `#8b93b0` |
+| `--bg-base` | `#ffffff` | `#1f1f1f` |
+| `--bg-1` | `#f9fafb` | `#252526` |
+| `--bg-2` | `#f2f3f5` | `#2b2b2b` |
+| `--bg-hover` | `#f0f0f0` | `#313338` |
+| `--bg-active` | `#eff0f6` | `#303137` |
+| `--message-user-bg` | `#F6F6F7` | `#2b2b2b` |
+| `--text-primary` | `#12141a` | `#e4e4e4` |
+| `--text-secondary` | `#454d5f` | `#b6bac4` |
+| `--text-disabled` | `#6b7280` | `#9297a3` |
+| `--border-base` | `#dfe0e6` | `#3b3b3d` |
+| `--border-light` | `#f2f3f5` | `#303032` |
+| `--brand` | `#7583b2` | `#a0a8c4` |
 | `--brand-light` | `#eff0f6` | `#2b2b2b` |
-| `--brand-hover` | `#b5bcd6` | `#a0a8c4` |
-| `--aou-1 … --aou-10` | `#eff0f6 → #0d101c` | `#252528 → #f2f2f2` |
-| `--primary-semantic` | `#165dff` | `#4daafc` |
-| `--success-semantic` | `#00b42a` | `#3fb950` |
-| `--warning-semantic` | `#ff7d00` | `#d29922` |
-| `--danger-semantic` | `#f53f3f` | `#f85149` |
-| `--status-live / warn / error / idle` | `#00b42a / #ff7d00 / #f53f3f / #454d5f` | `#3fb950 / #d29922 / #f85149 / #9d9d9d` |
-| `--diff-added / --diff-removed` | `#059669 / #e11d48` | `#34d399 / #fb7185` |
+| `--brand-hover` | `#b5bcd6` | `#bac1d7` |
+| `--status-live / warn / error / idle` | `#16823c / #a55b00 / #a12b2b / #454d5f` | `#66bd7a / #d7a34d / #dc7777 / #b6bac4` |
+| `--focus-border` | `#e1e0ff` | `#a0a8c4` |
+| `--diff-added / --diff-removed` | status live / status error | status live / status error |
 
-Runtime check: spinner "đang chạy" trên session `li.quoc.app` trong capture dùng đúng cam
-`--warning-semantic #ff7d00` — accent ≤10% mặt hình, brand purple chỉ ở selected row tint.
-Li Web status dot (online/connecting/error) map thẳng vào `--status-*`.
+Nền trắng là mặt chính; fill nhạt chỉ dùng cho user bubble, hover và grouping. Status text dùng màu đạt tương phản trên surface; dot dùng token tương ứng làm tín hiệu phi văn bản.
 
-## 4. Border, focus, elevation
+## 2. Kiểu chữ, focus và elevation
 
-| Token | Light | Dark |
+- `--font-sans`: system stack; `--font-mono`: ui-monospace fallback. Base UI 13px, transcript 14px, meta 10–12px.
+- Nút và control có vùng chạm tối thiểu 44px. `:focus-visible` dùng outline 2px theo `--brand`; `prefers-reduced-motion` tắt transition/animation.
+- Elevation chỉ cho popover, dialog, composer shell và nút “Về cuối”; không dựng card chrome quanh mọi dòng.
+- `--composer-shell-shadow`: bóng nhẹ trên surface sáng, bóng sâu hơn ở dark theme.
+
+## 3. Bản đồ workbench
+
+| Bề mặt | Hành vi đã tích hợp | Điểm triển khai |
 | --- | --- | --- |
-| `--border-base` | `#dfe0e6` | `#2b2b2b` |
-| `--border-light` | `#f2f3f5` | `#252526` |
-| `--focus-border` | `#e1e0ff` | `#3794ff` |
-| `--focus-shadow` | `0 2px 20px rgba(225,224,255,.6)` | `0 0 0 1px #3794ff55, 0 2px 12px rgba(0,0,0,.35)` |
-| `--composer-shell-radius` | `14px` | (giữ nguyên) |
-| `--main-chat-surface-radius` | `16px` | (giữ nguyên) |
+| Top bar | Toggle Sessions và Inspector ở hai đầu; không đặt host chips ở đây. | `.workbench-topbar`, `Workbench.tsx` |
+| Host picker | Nằm ở footer SessionRail; menu liệt kê cả host offline/endpoint-error. Rail thu gọn thì mở lại trong một thao tác. | `HostManager.tsx`, `.rail-footer`, `.host-menu` |
+| Host dialog | Hai tab “Đã ghép nối”/“Ghép nối mới”; phân biệt chưa ghép host với đã ghép nhưng mất kết nối. Forget có xác nhận; token pair chỉ giữ trong memory. | `HostManager.tsx`, `.host-dialog` |
+| SessionRail | Desktop collapse/resize; ≤768px thành drawer + scrim, Escape/scrim đóng và focus quay về toggle. | `SessionRail.tsx`, `.session-rail` |
+| Timeline | User bubble lệch phải, assistant/tool output lệch trái; giữ `turn.page`, anchor ≤8px, follow-live và nút “Về cuối”. | `Timeline.tsx`, `.timeline` |
+| Composer | Shell gọn; model searchable theo id/name/provider, thinking và Gửi/Steer/Follow-up dùng menu; attach vẫn prompt-only ≤10 MiB. Context chỉ báo từ 80%. | `Composer.tsx`, `.composer-shell` |
+| Inspector | Mặc định đóng, Terminal đầu tiên; tabs Terminal/Context/Review/Files/Tree/Agents; export ở menu tiêu đề, không chiếm footer. | `Inspector.tsx`, `.inspector` |
+| Files/Terminal | File/folder dùng icon; giữ preview/create/rename. Terminal tiếp tục dùng PTY thật và lọc OSC 52 clipboard write. | `Inspector.tsx`, `features/terminal.ts` |
+| Layout prefs | `localStorage['li-web-layout']`: trạng thái rail/Inspector và width thiết bị-local; không gửi lên host. | `Workbench.tsx`, `loadLayout()` |
 
-Runtime check: search box "Tìm phiên hoặc tin nhắn đầu tiên" bo ~7-8px hairline
-`--border-base`, không drop-shadow — elevation tối giản. Host card của Li Web dùng cùng kiểu
-(10px radius, 1px border, nền `--bg-1`).
+## 4. Responsive và focus contract
 
-## 5. Typography & motion
+- ≤768px: một cột; SessionRail là drawer, Inspector là bottom sheet; không ép center tối thiểu 360px.
+- 769–999px: rail + center; Inspector phủ center và có scrim khi rail mở. Nếu rail đóng, Inspector dock bên phải.
+- 1000–1024px: ba track rail/center/Inspector; center tối thiểu 360px.
+- ≥1025px: ba pane có separator kéo được; center vẫn ≥360px. Width solver shrink Inspector trước, rồi rail.
+- Drawer/Inspector modal trap Tab, Escape đóng, focus trở lại toggle. Inspector docked không mang `aria-modal`.
+- Captures không overflow ngang tại 320/375/414/768/769/999/1000/1024/1025/1280/1440; 1024px chụp đủ 4 tổ hợp rail/Inspector. Có drawer, host picker, Inspector, model/thinking menus và host/pair dialogs.
 
-- `--font-sans`: system stack (`system-ui, -apple-system, …` — LiX từ chối Inter vì thin-text).
-- `--font-mono`: `'Geist Mono', ui-monospace, …` — Web dùng fallback ui-monospace (không bundle
-  Geist Mono ở T3; T4 cân nhắc copy nếu cần).
-- Type scale: `2xs 10px · xs 11px · sm 12px · base 13px (UI chính) · lg 14px · xl 16px ·
-  2xl 20px` — **cấm `text-[Npx]` tự do** (rule tailwind.config.ts).
-- Motion: `--motion-fast 150ms · --motion-normal 200ms · --motion-slow 240ms ·
-  --motion-ease cubic-bezier(0.22, 1, 0.36, 1)` — phản hồi desktop-độ-tốc, không animation dài.
+## 5. Theme và giới hạn sản phẩm
 
-## 6. Li Web surface map (T3 shell)
-
-| Bề mặt | Token dùng |
-| --- | --- |
-| Nền app | `--bg-base` |
-| Host/pair card | `--bg-1` + border `--border-base`, radius 10px |
-| Host row | `--bg-base`, hover `--bg-hover` |
-| Status dot | `--status-live / --status-warn / --status-error / --status-idle` |
-| Nút chính | `--brand-light` nền, border `--brand`, hover `--brand-hover` |
-| Nút "Quên" (danger-outline) | chữ `--status-error`, border `--status-error` |
-| Pair textarea | mono 12px, border `--border-base`, focus `--brand` |
-| Notice lỗi / thành công | `--status-error / --status-live` |
-
-## 7. Dark mode & theme bootstrap
-
-Web copy pattern anti-FOUC của LiX (`index.html` inline script, key `lix-web-ui` trong
-localStorage; class `dark` trên `<html>`; follow `prefers-color-scheme` khi chưa chọn). Bộ
-giá trị dark đã chốt ở bảng trên — T4 mới xây UI switch, T3 chỉ bootstrap class.
-
-## 8. Điều đã chủ đích KHÔNG mang sang (T3)
-
-- Tailwind pipeline: shell T3 dùng CSS variables thuần (subset trên) thay vì kéo tailwind +
-  shadcn — T4 workbench sẽ quyết định setup đầy đủ khi có composer/timeline.
-- Shiki themes, scrollbar overlay, composer shadows chi tiết — ngoài scope T3.
+- Theme bootstrap hiện có và terminal palette được giữ; không mang toggle Sáng/Tối của demo vào UI.
+- Demo HTML, wrapper, caption/banner, scene buttons và fake data chỉ là tài liệu/fixture QA; không nhúng vào production Workbench.
+- Không đổi RPC, protocol, gateway, pairing authorization, model availability, file authorization hay terminal safety. Screenshot chỉ lưu local; không upload.
+- Vite fixtures ở `src/dev` dùng host/session/model giả lập, không kết nối host thật và không chứng minh live UAT.

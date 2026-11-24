@@ -1,6 +1,6 @@
 {
-  "name": "Li Web",
-  "short_name": "Li Web",
+  "name": "Li",
+  "short_name": "Li",
   "description": "LiX workbench qua tailnet — một writer mỗi phiên, handoff TUI ↔ Web.",
   "start_url": "/",
   "display": "standalone",

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { CommandInfo, BranchInfo, ContextStats, SessionUsage, MethodResult } from '@shared/remote'
 import { useWorkbench, activeSlice, activeTimeline, connectStore } from './workbench-store'
 import { openSessionInStore } from './workbench-store'
+import { fetchOlderPageIfCurrent } from './timeline-store'
 import type { HostConnection } from '../transport/host-connection'
 import { rpc } from './workbench-store'
 import { SessionRail, type SessionRailActions } from './SessionRail'
@@ -11,6 +12,7 @@ import { Inspector, downloadExport, type InspectorTab } from './Inspector'
 import { ExtensionDialogs } from './ExtensionDialogs'
 import { SettingsPanel, loadSettings, type SettingsData } from './SettingsPanel'
 import type { PreparedAttachment } from '../features/upload'
+import { Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 /**
  * Workbench shell (spec T4 UX contract): host rail → session rail → timeline/composer →
@@ -20,7 +22,29 @@ import type { PreparedAttachment } from '../features/upload'
 
 export type WorkbenchConnection = { hostId: string; conn: HostConnection }
 
-export function Workbench({ connections, onCloseHost }: { connections: WorkbenchConnection[]; onCloseHost?(hostId: string): void }) {
+const FOCUSABLE_SELECTOR = 'a[href],button:not([disabled]):not([tabindex="-1"]),input:not([disabled]):not([tabindex="-1"]),select:not([disabled]):not([tabindex="-1"]),textarea:not([disabled]):not([tabindex="-1"]),[tabindex]:not([tabindex="-1"])'
+
+function trapTabKey(event: KeyboardEvent, container: HTMLElement | null): void {
+  if (event.key !== 'Tab' || !container) return
+  const focusable = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+  if (focusable.length === 0) {
+    event.preventDefault()
+    return
+  }
+  const activeIndex = focusable.indexOf(document.activeElement as HTMLElement)
+  if (activeIndex === -1) {
+    event.preventDefault()
+    ;(event.shiftKey ? focusable[focusable.length - 1] : focusable[0])?.focus()
+  } else if (event.shiftKey && activeIndex === 0) {
+    event.preventDefault()
+    focusable[focusable.length - 1].focus()
+  } else if (!event.shiftKey && activeIndex === focusable.length - 1) {
+    event.preventDefault()
+    focusable[0].focus()
+  }
+}
+
+export function Workbench({ connections, hostPicker }: { connections: WorkbenchConnection[]; hostPicker?: ReactNode }) {
   const slices = useWorkbench((s) => s.slices)
   const activeHostId = useWorkbench((s) => s.activeHostId)
   const setActiveHost = useWorkbench((s) => s.setActiveHost)
@@ -29,14 +53,21 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
 
   const [settings, setSettings] = useState<Record<string, SettingsData>>({})
   const [hostStatuses, setHostStatuses] = useState<Record<string, { appVersion: string; sdkVersion: string }>>({})
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('context')
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('terminal')
   const [reviewDiff, setReviewDiff] = useState<MethodResult<'review.diff'> | null>(null)
   const [branches, setBranches] = useState<BranchInfo[]>([])
   const [files, setFiles] = useState<{ path: string; kind: string }[]>([])
   const [commands, setCommands] = useState<CommandInfo[]>([])
-  const [models, setModels] = useState<{ id: string; name: string }[]>([])
+  const [models, setModels] = useState<{ id: string; name: string; provider?: string; group?: string }[]>([])
   const [sessionMeta, setSessionMeta] = useState<{ model: string | null; thinking: string | null; thinkingLevels: string[]; context: ContextStats | null; usage: SessionUsage | null }>({ model: null, thinking: null, thinkingLevels: [], context: null, usage: null })
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false)
+  const [layout, setLayout] = useState<WorkbenchLayout>(loadLayout)
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1280 : window.innerWidth)
+  const layoutWidths = useMemo(() => resolveWorkbenchWidths(layout, viewportWidth), [layout, viewportWidth])
+  const inspectorIsModal = viewportWidth <= MOBILE_BREAKPOINT || (viewportWidth < TABLET_WIDE_BREAKPOINT && layout.railOpen)
+  const mobileToggleRef = useRef<HTMLButtonElement | null>(null)
+  const inspectorToggleRef = useRef<HTMLButtonElement | null>(null)
+  const historyGeneration = useRef(0)
   const wiredHosts = useRef(new Set<string>())
   const hostStatusLoading = useRef(new Set<string>())
 
@@ -58,6 +89,65 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
     setModels([])
     setReviewDiff(null)
   }, [activeHostId, sessionKey])
+
+  // Layout preference is device-local only (spec T2): widths/collapse never reach the host.
+  useEffect(() => {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)) } catch { /* private mode */ }
+  }, [layout])
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', updateViewportWidth)
+    return () => window.removeEventListener('resize', updateViewportWidth)
+  }, [])
+
+  // Host switch invalidates all outstanding history page requests, even if the user switches
+  // away and back to the same session before the old RPC response arrives.
+  useEffect(() => { historyGeneration.current += 1 }, [activeHostId])
+
+  useEffect(() => {
+    if (viewportWidth > MOBILE_BREAKPOINT) setMobileSessionListOpen(false)
+  }, [viewportWidth])
+
+  // Mobile session drawer: trap focus while modal; Escape, scrim and focus return all work.
+  useEffect(() => {
+    if (!mobileSessionListOpen || viewportWidth > MOBILE_BREAKPOINT) return
+    const rail = document.getElementById('session-rail')
+    rail?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMobileSessionListOpen(false)
+      } else {
+        trapTabKey(event, rail)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      if (window.innerWidth <= MOBILE_BREAKPOINT) mobileToggleRef.current?.focus()
+    }
+  }, [mobileSessionListOpen, viewportWidth])
+
+  // Inspector becomes a modal sheet/overlay only where the CSS overlays the center pane.
+  useEffect(() => {
+    if (!layout.inspectorOpen) return
+    const panel = document.getElementById('workbench-inspector')
+    if (inspectorIsModal) panel?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setLayout((current) => ({ ...current, inspectorOpen: false }))
+      } else if (inspectorIsModal) {
+        trapTabKey(event, panel)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      inspectorToggleRef.current?.focus()
+    }
+  }, [layout.inspectorOpen, inspectorIsModal])
 
   // Wire each live host once; listeners stay host-scoped so session paths never merge.
   useEffect(() => {
@@ -96,7 +186,7 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
           thinkingLevels: modelsResult.availableThinking,
         }))
         setCommands(cmds.commands)
-        setModels(modelsResult.models.map((m) => ({ id: m.id, name: m.name ?? m.id })))
+        setModels(modelsResult.models.map((m) => ({ id: m.id, name: m.name ?? m.id, provider: m.provider, group: m.group })))
         const branchesResult = await rpc(conn, 'session.branches', { sessionKey: sk })
         setBranches(branchesResult.branches)
       } catch {
@@ -108,6 +198,9 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
 
   const openSession = useCallback(
     async (conn: HostConnection, hostId: string, sk: string) => {
+      // Reopening the same session can restore the same first anchor; use a generation token so
+      // page responses from the previous open still cannot append after that reopen.
+      historyGeneration.current += 1
       const previous = useWorkbench.getState().slices[hostId]?.selectedSessionKey
       if (previous && previous !== sk) void conn.closeSession(previous).catch(() => undefined)
       useWorkbench.getState().selectSession(hostId, sk)
@@ -325,43 +418,83 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
 
   return (
     <div className="workbench">
-      <nav className="host-rail" aria-label="Hosts">
-        <button className="mobile-session-toggle" onClick={() => setMobileSessionListOpen((open) => !open)} aria-expanded={mobileSessionListOpen}>
-          Sessions{selectedSummary?.title ? ` · ${selectedSummary.title}` : ''}
+      <div className="workbench-topbar">
+        <button
+          ref={mobileToggleRef}
+          className="mobile-session-toggle"
+          aria-label={mobileSessionListOpen ? 'Đóng danh sách phiên' : 'Mở danh sách phiên'}
+          aria-controls="session-rail"
+          aria-expanded={mobileSessionListOpen}
+          title={mobileSessionListOpen ? 'Đóng danh sách phiên' : 'Mở danh sách phiên'}
+          onClick={() => {
+            setLayout((l) => ({ ...l, inspectorOpen: false }))
+            setMobileSessionListOpen((open) => !open)
+          }}
+        >
+          <Menu size={18} aria-hidden="true" />
         </button>
-        {connections.map((c) => {
-          const s = slices[c.hostId]
-          const dot = s?.state === 'online' ? 'online' : s?.state === 'error' ? 'error' : 'connecting'
-          return (
-            <div key={c.hostId} className={`host-chip ${c.hostId === activeHostId ? 'active' : ''}`}>
-              <button onClick={() => setActiveHost(c.hostId)}>
-                <span className={`host-dot ${dot}`} aria-hidden="true" />
-                <span title={c.hostId}>{c.conn.hello?.hostName ?? c.hostId}</span>
-              </button>
-              {onCloseHost && (
-                <button className="host-close" aria-label={`Ngắt ${c.hostId}`} onClick={() => onCloseHost(c.hostId)}>×</button>
-              )}
-            </div>
-          )
-        })}
-      </nav>
+        <button
+          className="rail-toggle"
+          aria-label={layout.railOpen ? 'Thu gọn danh sách phiên' : 'Mở danh sách phiên'}
+          aria-controls="session-rail"
+          aria-expanded={layout.railOpen}
+          title={layout.railOpen ? 'Thu gọn danh sách phiên' : 'Mở danh sách phiên'}
+          onClick={() => setLayout((l) => ({ ...l, railOpen: !l.railOpen }))}
+        >
+          {layout.railOpen ? <PanelLeftClose size={18} aria-hidden="true" /> : <PanelLeftOpen size={18} aria-hidden="true" />}
+        </button>
+        <div className="topbar-spacer" />
+        {sessionKey && (
+          <button
+            ref={inspectorToggleRef}
+            className="inspector-toggle"
+            aria-label={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
+            aria-controls="workbench-inspector"
+            aria-expanded={layout.inspectorOpen}
+            title={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
+            onClick={() => {
+              setMobileSessionListOpen(false)
+              setLayout((l) => ({ ...l, inspectorOpen: !l.inspectorOpen }))
+            }}
+          >
+            {layout.inspectorOpen ? <PanelRightClose size={18} aria-hidden="true" /> : <PanelRightOpen size={18} aria-hidden="true" />}
+          </button>
+        )}
+      </div>
       {notice && <div className={`banner ${notice.level}`} role="status">{notice.text}</div>}
       {slice?.state === 'connecting' || slice?.state === 'handshaking' ? <div className="banner" role="status">Đang kết nối tới host…</div> : null}
       {slice?.state === 'reconnecting' && <div className="banner warning" role="status">Mất kết nối — đang thử lại…</div>}
       {slice?.state === 'error' && <div className="banner error" role="alert">{slice.detail ?? 'Không kết nối được tới host.'}</div>}
       {slice?.state === 'closed' && <div className="banner warning" role="status">Kết nối host đã đóng.</div>}
       {slice?.detail?.includes('writer_conflict') && <div className="banner warning">Phiên đang có writer khác — chỉ xem cho tới khi handoff.</div>}
-      <div className="workbench-main">
+      <div
+        className={`workbench-main ${layout.railOpen ? 'rail-open' : 'rail-closed'} ${layout.inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${mobileSessionListOpen ? 'session-drawer-open' : ''}`.trim()}
+        style={{ '--rail-w': `${layoutWidths.railWidth}px`, '--inspector-w': `${layoutWidths.inspectorWidth}px` } as CSSProperties}
+      >
+        {mobileSessionListOpen && <div className="scrim session-scrim" aria-hidden="true" onClick={() => setMobileSessionListOpen(false)} />}
+        {layout.inspectorOpen && <div className="scrim inspector-scrim" aria-hidden="true" onClick={() => setLayout((l) => ({ ...l, inspectorOpen: false }))} />}
         <SessionRail
+          footer={hostPicker}
+          mobileOpen={mobileSessionListOpen && viewportWidth <= MOBILE_BREAKPOINT}
           hostId={activeHostId ?? ''}
           sessions={slice?.sessions ?? []}
           projects={slice?.projects ?? []}
           selectedProjectId={slice?.selectedProjectId ?? null}
           onSelectProject={(projectId) => activeHostId && useWorkbench.getState().selectProject(activeHostId, projectId)}
           selectedSessionKey={sessionKey}
-          className={mobileSessionListOpen ? 'mobile-visible' : ''}
+          className={`${layout.railOpen ? '' : 'rail-collapsed'} ${mobileSessionListOpen ? 'mobile-visible' : ''}`.trim()}
           actions={{ ...railActions, onOpen: (key) => { railActions.onOpen(key); setMobileSessionListOpen(false) } }}
         />
+        {layout.railOpen && (
+          <ResizeSeparator
+            className="rail-sep"
+            label="Độ rộng panel phiên"
+            min={RAIL_MIN}
+            max={layoutWidths.railMax}
+            value={layoutWidths.railWidth}
+            onChange={(w) => setLayout((l) => ({ ...l, railWidth: clampWidth(w, RAIL_MIN, layoutWidths.railMax) }))}
+          />
+        )}
         <div className="workbench-center">
           {!sessionKey && <div className="empty big">Chọn một phiên để mở workbench.</div>}
           {sessionKey && timeline && (
@@ -382,12 +515,30 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
                   },
                 }}
               />
-              <Timeline timeline={timeline} sessionKey={sessionKey} actions={timelineActions} onLoadOlder={async (sk) => {
+              <Timeline key={`${activeHostId}:${sessionKey}`} timeline={timeline} sessionKey={sessionKey} actions={timelineActions} onLoadOlder={async (sk, before) => {
                 if (!active) return
-                const first = useWorkbench.getState().slices[active.hostId]?.timelines[sk]?.turns[0]?.anchor
-                if (!first) return
-                const page = await rpc(active.conn, 'turn.page', { sessionKey: sk, before: first, limit: 20 })
-                useWorkbench.getState().prependOlderTurns(active.hostId, sk, page.turns, page.hasOlder)
+                const initialTimeline = useWorkbench.getState().slices[active.hostId]?.timelines[sk]
+                const first = initialTimeline?.turns[0]?.anchor
+                if (!first || first !== before) return
+                const requestGeneration = historyGeneration.current
+                const timelineGeneration = initialTimeline?.timelineGeneration ?? 0
+                // Discard a response raced by reset/reopen/host switch/anchor change (spec T3).
+                await fetchOlderPageIfCurrent(
+                  () => rpc(active.conn, 'turn.page', { sessionKey: sk, before, limit: 20 }),
+                  { hostId: active.hostId, sessionKey: sk, firstAnchor: first, generation: requestGeneration, timelineGeneration },
+                  () => {
+                    const now = useWorkbench.getState()
+                    const sliceNow = now.slices[active.hostId]
+                    return {
+                      activeHostId: now.activeHostId,
+                      selectedSessionKey: sliceNow?.selectedSessionKey ?? null,
+                      firstAnchor: sliceNow?.timelines[sk]?.turns[0]?.anchor ?? null,
+                      generation: historyGeneration.current,
+                      timelineGeneration: sliceNow?.timelines[sk]?.timelineGeneration ?? 0,
+                    }
+                  },
+                  (page) => useWorkbench.getState().prependOlderTurns(active.hostId, sk, page.turns, page.hasOlder),
+                )
               }} />
               <Composer
                 sessionKey={sessionKey}
@@ -415,7 +566,20 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
             </>
           )}
         </div>
-        {sessionKey && <Inspector {...inspectorProps} />}
+        {sessionKey && layout.inspectorOpen && (
+          <>
+            <ResizeSeparator
+              className="inspector-sep"
+              label="Độ rộng Inspector"
+              min={INSPECTOR_MIN}
+              max={layoutWidths.inspectorMax}
+              value={layoutWidths.inspectorWidth}
+              invert
+              onChange={(w) => setLayout((l) => ({ ...l, inspectorWidth: clampWidth(w, INSPECTOR_MIN, layoutWidths.inspectorMax) }))}
+            />
+            <Inspector {...inspectorProps} modal={inspectorIsModal} />
+          </>
+        )}
       </div>
       {active && sessionKey && (
         <details className="workbench-settings">
@@ -453,6 +617,142 @@ export function Workbench({ connections, onCloseHost }: { connections: Workbench
 
 function webMessageId(): string {
   return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/* ── Layout: collapsible/resizable rails (spec T2) ─────────────────────── */
+
+export type WorkbenchLayout = { railOpen: boolean; railWidth: number; inspectorOpen: boolean; inspectorWidth: number }
+
+export const LAYOUT_KEY = 'li-web-layout'
+export const RAIL_MIN = 240
+export const RAIL_MAX = 720
+export const INSPECTOR_MIN = 280
+export const INSPECTOR_MAX = 380
+export const MIN_CENTER_WIDTH = 360
+export const RESIZE_GUTTER = 8
+export const MOBILE_BREAKPOINT = 768
+export const TABLET_WIDE_BREAKPOINT = 1000
+export const DESKTOP_RESIZE_BREAKPOINT = 1025
+
+const DEFAULT_LAYOUT: WorkbenchLayout = { railOpen: true, railWidth: 280, inspectorOpen: false, inspectorWidth: 310 }
+
+const clampWidth = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(v)))
+
+export type ResolvedWorkbenchWidths = { railWidth: number; railMax: number; inspectorWidth: number; inspectorMax: number }
+
+/** Fit remembered panel widths to the viewport without shrinking the reading pane below its desktop floor. */
+export function resolveWorkbenchWidths(layout: WorkbenchLayout, viewportWidth: number): ResolvedWorkbenchWidths {
+  const width = Math.max(320, Math.floor(viewportWidth))
+  let railWidth = clampWidth(layout.railWidth, RAIL_MIN, RAIL_MAX)
+  let inspectorWidth = clampWidth(layout.inspectorWidth, INSPECTOR_MIN, INSPECTOR_MAX)
+
+  // At 769–999px Inspector overlays the main pane when the rail is open; it only reserves
+  // a grid column in the right-only layout. At 1000px it can become the third track.
+  const inspectorDocked = layout.inspectorOpen && (width >= TABLET_WIDE_BREAKPOINT || (width > MOBILE_BREAKPOINT && !layout.railOpen))
+  if (width > MOBILE_BREAKPOINT && width < TABLET_WIDE_BREAKPOINT && layout.inspectorOpen) {
+    inspectorWidth = Math.min(inspectorWidth, Math.floor(width * 0.44))
+  }
+
+  const gutterWidth = width >= DESKTOP_RESIZE_BREAKPOINT
+    ? (layout.railOpen ? RESIZE_GUTTER : 0) + (layout.inspectorOpen ? RESIZE_GUTTER : 0)
+    : 0
+  if (width >= TABLET_WIDE_BREAKPOINT) {
+    const railTrack = layout.railOpen ? railWidth : 0
+    const inspectorTrack = inspectorDocked ? inspectorWidth : 0
+    let deficit = railTrack + inspectorTrack + gutterWidth + MIN_CENTER_WIDTH - width
+    if (deficit > 0 && inspectorDocked && inspectorWidth > INSPECTOR_MIN) {
+      const shrink = Math.min(deficit, inspectorWidth - INSPECTOR_MIN)
+      inspectorWidth -= shrink
+      deficit -= shrink
+    }
+    if (deficit > 0 && layout.railOpen && railWidth > RAIL_MIN) {
+      const shrink = Math.min(deficit, railWidth - RAIL_MIN)
+      railWidth -= shrink
+    }
+  }
+
+  const inspectorReservation = layout.inspectorOpen && width >= TABLET_WIDE_BREAKPOINT ? inspectorWidth : 0
+  const railGutter = width >= DESKTOP_RESIZE_BREAKPOINT && layout.railOpen ? RESIZE_GUTTER : 0
+  const inspectorGutter = width >= DESKTOP_RESIZE_BREAKPOINT && layout.inspectorOpen ? RESIZE_GUTTER : 0
+  const railMax = Math.max(RAIL_MIN, Math.min(
+    RAIL_MAX,
+    Math.floor(width / 2),
+    width - MIN_CENTER_WIDTH - inspectorReservation - railGutter - inspectorGutter,
+  ))
+  railWidth = clampWidth(railWidth, RAIL_MIN, railMax)
+
+  const inspectorMax = width >= TABLET_WIDE_BREAKPOINT && layout.inspectorOpen
+    ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, width - MIN_CENTER_WIDTH - (layout.railOpen ? railWidth : 0) - railGutter - inspectorGutter))
+    : width > MOBILE_BREAKPOINT
+      ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, Math.floor(width * 0.44)))
+      : INSPECTOR_MAX
+  inspectorWidth = clampWidth(inspectorWidth, INSPECTOR_MIN, inspectorMax)
+
+  return { railWidth, railMax, inspectorWidth, inspectorMax }
+}
+
+/** Device-local layout preference; corrupt/unset values fall back to the defaults. */
+export function loadLayout(): WorkbenchLayout {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (!raw) return DEFAULT_LAYOUT
+    const parsed = JSON.parse(raw) as Partial<WorkbenchLayout>
+    return {
+      railOpen: parsed.railOpen ?? DEFAULT_LAYOUT.railOpen,
+      railWidth: clampWidth(parsed.railWidth ?? DEFAULT_LAYOUT.railWidth, RAIL_MIN, RAIL_MAX),
+      inspectorOpen: parsed.inspectorOpen ?? DEFAULT_LAYOUT.inspectorOpen,
+      inspectorWidth: clampWidth(parsed.inspectorWidth ?? DEFAULT_LAYOUT.inspectorWidth, INSPECTOR_MIN, INSPECTOR_MAX),
+    }
+  } catch {
+    return DEFAULT_LAYOUT
+  }
+}
+
+/** Grid separator: pointer drag + Arrow/Home/End keyboard resize (spec T2 UX contract). */
+export function ResizeSeparator({ className, label, min, max, value, onChange, invert = false }: {
+  className: string
+  label: string
+  min: number
+  max: number
+  value: number
+  invert?: boolean
+  onChange(width: number): void
+}) {
+  const drag = useRef<{ start: number; base: number } | null>(null)
+  const toWidth = (delta: number): number => value + (invert ? -delta : delta)
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      tabIndex={0}
+      className={`resize-sep ${className}`}
+      onPointerDown={(e) => {
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* jsdom/no pointer capture */ }
+        drag.current = { start: e.clientX, base: value }
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return
+        onChange(drag.current.base + (invert ? drag.current.start - e.clientX : e.clientX - drag.current.start))
+      }}
+      onPointerUp={(e) => {
+        drag.current = null
+        try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+      }}
+      onPointerCancel={() => { drag.current = null }}
+      onLostPointerCapture={() => { drag.current = null }}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 48 : 24
+        if (e.key === 'ArrowLeft') { e.preventDefault(); onChange(clampWidth(toWidth(-step), min, max)) }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); onChange(clampWidth(toWidth(step), min, max)) }
+        else if (e.key === 'Home') { e.preventDefault(); onChange(min) }
+        else if (e.key === 'End') { e.preventDefault(); onChange(max) }
+      }}
+    />
+  )
 }
 
 // SessionSummary type re-declared locally to avoid widening the import surface in this shell.
