@@ -77,7 +77,7 @@ export type InspectorProps = {
 }
 
 /** Terminal view: opens a PTY, pipes output through the OSC 52 filter, input goes to the host. */
-export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: InspectorProps['conn'] }) {
+export function TerminalPane({ sessionKey, conn, visible = true }: { sessionKey: string; conn: InspectorProps['conn']; visible?: boolean }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [status, setStatus] = useState<'closed' | 'opening' | 'open' | 'exited'>('closed')
   // The remote lane must wait for the connection to come online: opening a PTY while the
@@ -111,6 +111,7 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
     const earlyOutput = new Map<string, string[]>()
     let eventCleanup = () => {}
     let resizeSubscription: { dispose(): void } | null = null
+    let resizeObserver: ResizeObserver | null = null
     let themeObserver: MutationObserver | null = null
 
     void (async () => {
@@ -129,6 +130,16 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
         term.open(hostRef.current)
         fit.fit()
         termHandle = term
+        // Keep the live PTY/xterm mounted while the Inspector is hidden. Refit on reveal or
+        // drag-resize so the terminal's columns/rows match its current visible bounds.
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver((entries) => {
+            const rect = entries[0]?.contentRect
+            if (disposed || !rect || rect.width <= 0 || rect.height <= 0) return
+            fit.fit()
+          })
+          resizeObserver.observe(hostRef.current)
+        }
         // OSC 52 (clipboard write) never reaches xterm — spec T4 acceptance.
         const write = createTerminalWriter((s) => term.write(s))
         eventCleanup = conn.subscribeEvents((event, payload) => {
@@ -175,6 +186,7 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
     return () => {
       disposed = true
       themeObserver?.disconnect()
+      resizeObserver?.disconnect()
       eventCleanup()
       resizeSubscription?.dispose()
       if (terminalId && conn.online) void conn.request('terminal.close', { terminalId }).catch(() => undefined)
@@ -183,7 +195,7 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
   }, [conn, online, sessionKey])
 
   return (
-    <div className="terminal-pane">
+    <div className="terminal-pane" hidden={!visible} aria-hidden={!visible || undefined}>
       <div ref={hostRef} className="terminal-host" data-status={online ? status : 'waiting'} />
       {!online && <p className="notice">Đang chờ kết nối host…</p>}
       {online && !sessionKey && <p className="notice">Cần một phiên đã có để mở terminal.</p>}
@@ -203,6 +215,9 @@ export function Inspector(props: InspectorProps) {
   const [renameValue, setRenameValue] = useState('')
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  // A tab switch hides the terminal instead of unmounting its xterm/PTY; once opened, preserve
+  // scrollback and foreground programs until the owning host/session changes or the app closes.
+  const [terminalMounted, setTerminalMounted] = useState(tab === 'terminal')
   const fileMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const fileActionMenuRef = useRef<HTMLDivElement | null>(null)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
@@ -214,6 +229,10 @@ export function Inspector(props: InspectorProps) {
     setRenamePath(null)
     setNewPath('')
   }, [sessionKey])
+
+  useEffect(() => {
+    if (tab === 'terminal') setTerminalMounted(true)
+  }, [tab])
 
   useEffect(() => {
     if (!menuFor) return
@@ -434,7 +453,7 @@ export function Inspector(props: InspectorProps) {
             onResume={onAgentResume}
           />
         )}
-        {tab === 'terminal' && <TerminalPane sessionKey={sessionKey} conn={conn} />}
+        {terminalMounted && <TerminalPane sessionKey={sessionKey} conn={conn} visible={tab === 'terminal'} />}
         {tab === 'settings' && props.settingsPanel}
       </div>
     </aside>

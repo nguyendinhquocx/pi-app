@@ -87,6 +87,39 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
     expect(terminalState.disposed).toBe(true)
   })
 
+  it('preserves the same PTY while the terminal panel is hidden and shown', async () => {
+    const methods: string[] = []
+    const conn = {
+      online: true,
+      request: vi.fn(async (method: string) => {
+        methods.push(method)
+        return method === 'terminal.open' ? { terminalId: 'terminal-kept', profile: 'powershell' } : {}
+      }),
+      subscribeEvents: () => () => {},
+      subscribeState: () => () => {},
+    } as unknown as HostConnection
+
+    const view = render(<TerminalPane sessionKey="proj/s.jsonl" conn={conn} />)
+    await waitFor(() => expect(methods).toContain('terminal.open'))
+    const pane = view.container.querySelector('.terminal-pane')
+    expect(pane).toBeTruthy()
+
+    view.rerender(<TerminalPane sessionKey="proj/s.jsonl" conn={conn} visible={false} />)
+    expect(view.container.querySelector('.terminal-pane')).toBe(pane)
+    expect((pane as HTMLElement).hidden).toBe(true)
+    expect(methods).not.toContain('terminal.close')
+    expect(terminalState.disposed).toBe(false)
+
+    view.rerender(<TerminalPane sessionKey="proj/s.jsonl" conn={conn} visible />)
+    expect(view.container.querySelector('.terminal-pane')).toBe(pane)
+    expect((pane as HTMLElement).hidden).toBe(false)
+    expect(methods.filter((method) => method === 'terminal.open')).toHaveLength(1)
+    expect(methods).not.toContain('terminal.close')
+
+    view.unmount()
+    await waitFor(() => expect(methods).toContain('terminal.close'))
+  })
+
   it('terminal theme follows the app theme: white/black in light, dark surface in dark', async () => {
     const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't', profile: 'bash' })), subscribeEvents: () => () => {}, subscribeState: () => () => {} } as unknown as HostConnection
 

@@ -314,6 +314,41 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     expect(container.querySelector('[role="menu"]')).toBeNull()
   })
 
+  it('keeps the terminal pane mounted when another Inspector tab is selected', async () => {
+    const common = {
+      sessionKey,
+      onTab: vi.fn(),
+      reviewDiff: null,
+      onLoadDiff: vi.fn(async () => undefined),
+      files: [],
+      onListFiles: vi.fn(async () => undefined),
+      onReadFile: vi.fn(async () => ''),
+      onCreateFile: vi.fn(async () => undefined),
+      onRenameFile: vi.fn(async () => undefined),
+      stats: null,
+      branches: [],
+      onSwitchBranch: vi.fn(async () => undefined),
+      onAgentSteer: vi.fn(async () => undefined),
+      onAgentAbort: vi.fn(async () => undefined),
+      onAgentResume: vi.fn(async () => undefined),
+      conn: null,
+      onExport: vi.fn(),
+      timelineTurns: turns,
+      sessionTitle: 'S1',
+    }
+    const view = render(<Inspector {...common} tab="terminal" />)
+    const pane = view.container.querySelector('.terminal-pane') as HTMLElement
+    expect(pane).toBeTruthy()
+
+    view.rerender(<Inspector {...common} tab="review" />)
+    await waitFor(() => expect(view.container.querySelector('.terminal-pane')).toBe(pane))
+    expect(pane.hidden).toBe(true)
+
+    view.rerender(<Inspector {...common} tab="terminal" />)
+    expect(view.container.querySelector('.terminal-pane')).toBe(pane)
+    expect(pane.hidden).toBe(false)
+  })
+
   it('tree tab lists branches with switch action (row 8)', () => {
     const onSwitch = vi.fn(async () => undefined)
     render(

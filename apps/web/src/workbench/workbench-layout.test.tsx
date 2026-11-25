@@ -409,6 +409,37 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
     expect(mobileRail?.contains(picker)).toBe(true)
   })
 
+  it('keeps the remote terminal and its PTY alive while the Inspector is collapsed and reopened', async () => {
+    seedStore('proj/s1.jsonl')
+    const methods: string[] = []
+    const request = fakeConn.request as unknown as (method: string, params?: unknown) => Promise<unknown>
+    const conn = {
+      ...fakeConn,
+      request: async (method: string, params?: unknown) => {
+        methods.push(method)
+        return request(method, params)
+      },
+    } as unknown as HostConnection
+    const view = render(<Workbench connections={[{ hostId: 'h1', conn }]} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mở Inspector' }))
+    await waitFor(() => expect(methods.filter((method) => method === 'terminal.open')).toHaveLength(1))
+    const originalPane = document.querySelector('.terminal-pane')
+    expect(originalPane).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng Inspector' }))
+    expect(document.querySelector('.terminal-pane')).toBe(originalPane)
+    expect(methods).not.toContain('terminal.close')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mở Inspector' }))
+    expect(document.querySelector('.terminal-pane')).toBe(originalPane)
+    expect(methods.filter((method) => method === 'terminal.open')).toHaveLength(1)
+    expect(methods).not.toContain('terminal.close')
+
+    view.unmount()
+    await waitFor(() => expect(methods).toContain('terminal.close'))
+  })
+
   it('inspector toggle appears with a session and collapses independently of the rail', async () => {
     seedStore('proj/s1.jsonl')
     render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }]} />)

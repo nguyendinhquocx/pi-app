@@ -535,6 +535,7 @@ button.tool-head:hover { background: transparent; }
 .file-action-menu { right: 4px; top: 100%; }
 .tree-panel .current { font-weight: 600; }
 .terminal-pane { display: flex; flex-direction: column; height: 100%; }
+.terminal-pane[hidden] { display: none; }
 .terminal-host { flex: 1; min-height: 260px; background: var(--bg-base); border: 0; border-radius: 0; padding: 4px; }
 
 .extension-dialogs { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 0; max-width: 900px; margin: 0 auto; width: 100%; }

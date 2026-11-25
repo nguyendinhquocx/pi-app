@@ -65,6 +65,9 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   const [newSessionModel, setNewSessionModel] = useState<string | null>(null)
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false)
   const [layout, setLayout] = useState<WorkbenchLayout>(loadLayout)
+  // Mount the Inspector lazily the first time it is opened, then keep it in the tree while
+  // collapsed. CSS hides the closed panel; preserving the component preserves its remote PTY.
+  const [inspectorMounted, setInspectorMounted] = useState(layout.inspectorOpen)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1280 : window.innerWidth)
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme)
 
@@ -578,6 +581,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           title={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
           onClick={() => {
             setMobileSessionListOpen(false)
+            setInspectorMounted(true)
             setLayout((l) => ({ ...l, inspectorOpen: !l.inspectorOpen }))
           }}
         >
@@ -708,19 +712,17 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           )}
         </div>
         {layout.inspectorOpen && (
-          <>
-            <ResizeSeparator
-              className="inspector-sep"
-              label="Độ rộng Inspector"
-              min={INSPECTOR_MIN}
-              max={layoutWidths.inspectorMax}
-              value={layoutWidths.inspectorWidth}
-              invert
-              onChange={(w) => setLayout((l) => ({ ...l, inspectorWidth: clampWidth(w, INSPECTOR_MIN, layoutWidths.inspectorMax) }))}
-            />
-            <Inspector {...inspectorProps} modal={inspectorIsModal} />
-          </>
+          <ResizeSeparator
+            className="inspector-sep"
+            label="Độ rộng Inspector"
+            min={INSPECTOR_MIN}
+            max={layoutWidths.inspectorMax}
+            value={layoutWidths.inspectorWidth}
+            invert
+            onChange={(w) => setLayout((l) => ({ ...l, inspectorWidth: clampWidth(w, INSPECTOR_MIN, layoutWidths.inspectorMax) }))}
+          />
         )}
+        {inspectorMounted && <Inspector {...inspectorProps} modal={layout.inspectorOpen && inspectorIsModal} />}
       </div>
     </div>
   )
