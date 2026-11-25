@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AdapterCatalog } from '../extension-compat/adapter-schema'
 import { installAdapterCatalog, invalidateAdapterCatalog } from '../extension-compat/adapter-loader'
 import type { EventBus, Extension, LoadExtensionsResult, RegisteredTool } from '@earendil-works/pi-coding-agent'
-import { createDesktopUIBridge, type ExtensionUIRequest } from './desktop-ui-bridge'
+import { createDesktopUIBridge, getDesktopUIBridge, type ExtensionUIRequest } from './desktop-ui-bridge'
 import { decorateQuestionnaireTools } from './questionnaire-tool-decorator'
 
 const projectDir = 'C:/test/pi-ask'
@@ -134,6 +134,46 @@ describe('pi-ask remote questionnaire adapter', () => {
     await expect(pending).resolves.toMatchObject({
       details: { questions, answers: {}, notes: {}, cancelled: true },
     })
+    bridge.dispose()
+  })
+
+  it('still routes custom() through the questionnaire when the SDK clone wraps the ui context', async () => {
+    // Reproduces the live R6 SDK behavior: setUIContext -> wrapUIPromptContext spreads the
+    // bound uiContext into a new object, so context.ui at tool-execute time is a CLONE whose
+    // identity misses the bridge WeakMap. The marker symbol must survive the clone.
+    const requests: ExtensionUIRequest[] = []
+    const bridge = createBridge(requests)
+    const tuiCustom = vi.fn(async () => {
+      throw new Error('UNSUPPORTED_DESKTOP_UI: custom TUI requires an adapter interaction protocol')
+    })
+    const sdkClone = { ...bridge.uiContext, select: () => {}, confirm: () => {}, input: () => {}, custom: tuiCustom }
+    expect(getDesktopUIBridge(sdkClone)).toBe(bridge)
+
+    const execute = vi.fn(async (...args: unknown[]) => {
+      const context = args[4] as { ui: { custom: (factory: unknown) => Promise<unknown> } }
+      return { content: [], details: await context.ui.custom(() => ({})) }
+    })
+    const tool = createDecoratedTool(execute as RegisteredTool['definition']['execute'])
+
+    const pending = tool.definition.execute(
+      'tool-call-clone',
+      { questions },
+      new AbortController().signal,
+      undefined,
+      { ui: sdkClone } as never,
+    )
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ method: 'custom', kind: 'ask_user_question', toolCallId: 'tool-call-clone' })
+    bridge.handleExtensionUIResponse({
+      id: requests[0]!.id,
+      result: { cancelled: false, answers: [{ questionIndex: 0, question: 'Database?', kind: 'option', answer: 'SQLite' }] },
+    })
+
+    await expect(pending).resolves.toMatchObject({
+      details: { answers: { 'Database?': 'SQLite' }, cancelled: false },
+    })
+    expect(tuiCustom).not.toHaveBeenCalled()
     bridge.dispose()
   })
 

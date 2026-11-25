@@ -53,8 +53,21 @@ export type DesktopUIBridge = {
 
 const bridgesByContext = new WeakMap<object, DesktopUIBridge>()
 
+/**
+ * Identity fallback for SDK-cloned UI contexts. The SDK's setUIContext() runs the bound
+ * uiContext through wrapUIPromptContext(), which spreads it into a NEW object
+ * (`{...ui, select, confirm, input}`), so a WeakMap identity lookup on `context.ui` misses
+ * at tool-execute time. Object spread copies own enumerable symbol properties, so a marker
+ * symbol attached to the uiContext survives the clone and keeps the bridge reachable.
+ */
+export const DESKTOP_UI_BRIDGE_MARKER: unique symbol = Symbol('lixDesktopUIBridge')
+
 export function getDesktopUIBridge(uiContext: unknown): DesktopUIBridge | null {
   if (!uiContext || typeof uiContext !== 'object') return null
+  const marker = (uiContext as Record<symbol, unknown>)[DESKTOP_UI_BRIDGE_MARKER]
+  if (marker && typeof marker === 'object' && typeof (marker as DesktopUIBridge).requestQuestionnaire === 'function') {
+    return marker as DesktopUIBridge
+  }
   return bridgesByContext.get(uiContext as object) ?? null
 }
 
@@ -330,8 +343,10 @@ export function createDesktopUIBridge(
       }
       pending.clear()
       bridgesByContext.delete(uiContext)
+      delete (uiContext as Record<symbol, unknown>)[DESKTOP_UI_BRIDGE_MARKER]
     },
   }
   bridgesByContext.set(uiContext, bridge)
+  ;(uiContext as Record<symbol, unknown>)[DESKTOP_UI_BRIDGE_MARKER] = bridge
   return bridge
 }
