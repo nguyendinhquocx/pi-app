@@ -82,6 +82,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   const mobileToggleRef = useRef<HTMLButtonElement | null>(null)
   const inspectorToggleRef = useRef<HTMLButtonElement | null>(null)
   const historyGeneration = useRef(0)
+  const sessionContextGeneration = useRef(0)
   const wiredHosts = useRef(new Set<string>())
   const hostStatusLoading = useRef(new Set<string>())
 
@@ -147,7 +148,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   useEffect(() => {
     if (!layout.inspectorOpen) return
     const panel = document.getElementById('workbench-inspector')
-    if (inspectorIsModal) panel?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
+    if (inspectorIsModal) panel?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -186,11 +187,20 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   }, [activeHostId, connections, setActiveHost])
 
   const refreshSessionContext = useCallback(
-    async (conn: HostConnection, sk: string) => {
+    async (conn: HostConnection, hostId: string, sk: string, generation: number) => {
+      const stillSelected = (): boolean => {
+        const current = useWorkbench.getState()
+        return generation === sessionContextGeneration.current && current.activeHostId === hostId && current.slices[hostId]?.selectedSessionKey === sk
+      }
       try {
         const stats = await rpc(conn, 'session.stats', { sessionKey: sk })
+        if (!stillSelected()) return
         const cmds = await rpc(conn, 'command.list', { sessionKey: sk })
+        if (!stillSelected()) return
         const modelsResult = await rpc(conn, 'model.list', { sessionKey: sk })
+        if (!stillSelected()) return
+        const branchesResult = await rpc(conn, 'session.branches', { sessionKey: sk })
+        if (!stillSelected()) return
         setSessionMeta((m) => ({
           ...m,
           context: stats.context,
@@ -201,7 +211,6 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
         }))
         setCommands(cmds.commands)
         setModels(modelsResult.models.map((m) => ({ id: m.id, name: m.name ?? m.id, provider: m.provider, group: m.group })))
-        const branchesResult = await rpc(conn, 'session.branches', { sessionKey: sk })
         setBranches(branchesResult.branches)
       } catch {
         /* per-section failures stay empty — the rail shows the error banner */
@@ -212,6 +221,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
 
   const openSession = useCallback(
     async (conn: HostConnection, hostId: string, sk: string) => {
+      const contextGeneration = ++sessionContextGeneration.current
       // Reopening the same session can restore the same first anchor; use a generation token so
       // page responses from the previous open still cannot append after that reopen.
       historyGeneration.current += 1
@@ -221,8 +231,10 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
       try {
         const session = useWorkbench.getState().slices[hostId]?.sessions.find((item) => item.sessionKey === sk)
         if (session) useWorkbench.getState().selectProject(hostId, session.projectId)
-        await openSessionInStore(conn, hostId, sk)
-        await refreshSessionContext(conn, sk)
+        const opened = await openSessionInStore(conn, hostId, sk)
+        const current = useWorkbench.getState()
+        if (!opened.current || current.activeHostId !== hostId || current.slices[hostId]?.selectedSessionKey !== sk) return
+        await refreshSessionContext(conn, hostId, sk, contextGeneration)
       } catch (e) {
         useWorkbench.getState().setNotice('error', e instanceof Error ? e.message : String(e))
       }

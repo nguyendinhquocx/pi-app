@@ -3,7 +3,7 @@ import type { SessionSummary, ProjectInfo } from '@shared/remote'
 import { REMOTE_METHODS, type RemoteMethod, type MethodParams, type MethodResult, type EventPayload } from '@shared/remote'
 import type { HostConnection, ConnState } from '../transport/host-connection'
 import { DisconnectedError, RpcRejectedError } from '../transport/host-connection'
-import { emptyTimeline, addUi, removeUi, prependOlder, applyAll, type SessionTimeline } from './timeline-store'
+import { addUi, removeUi, prependOlder, applyAll, type SessionTimeline } from './timeline-store'
 import type { OpenResult } from '@shared/remote'
 import type { BackoffOptions } from '../transport/reconnect'
 import type { DeviceKeyRecord } from '../transport/device-keys'
@@ -154,6 +154,9 @@ export const useWorkbench = create<WorkbenchStore>((set, get) => ({
     const slice = get().slices[hostId]
     const t = slice?.timelines[sessionKey]
     if (!t) return false
+    // A reset invalidates the local branch snapshot. Let connectStore fetch a replacement;
+    // never publish emptyTimeline here, because a delayed/failed snapshot would blank the chat.
+    if (patches.some((patch) => patch.op === 'timeline.reset')) return false
     const result = applyAll(t, patches)
     if (!result.ok) return false
     get().setTimeline(hostId, sessionKey, result.timeline)
@@ -206,14 +209,17 @@ export async function openSessionInStore(
   hostId: string,
   sessionKey: string,
   cursor?: { epoch: string; seq: number },
-): Promise<Awaited<ReturnType<HostConnection['openSession']>>> {
-  const result = await conn.openSession(sessionKey, cursor)
-  // The onSessionOpen listener applies the RPC response synchronously when this connection is
-  // wired to the store. Keep a direct fallback for tests/standalone callers without the listener.
-  const current = useWorkbench.getState().slices[hostId]?.timelines[sessionKey]
-  const next = applyOpenResult(current, result)
-  if (next) useWorkbench.getState().setTimeline(hostId, sessionKey, next)
-  return result
+): Promise<{ result: MethodResult<'session.open'>; current: boolean }> {
+  const opened = await conn.openSessionTracked(sessionKey, cursor)
+  if (!opened.current) return opened
+  // The onSessionOpen listener applies the RPC response synchronously when wired to the store.
+  // Standalone callers have no listener, so retain a direct fallback for them only.
+  if (!conn.hasSessionOpenListener()) {
+    const current = useWorkbench.getState().slices[hostId]?.timelines[sessionKey]
+    const next = applyOpenResult(current, opened.result)
+    if (next) useWorkbench.getState().setTimeline(hostId, sessionKey, next)
+  }
+  return opened
 }
 
 function applyOpenResult(current: SessionTimeline | undefined, result: OpenResult): SessionTimeline | null {
@@ -228,6 +234,8 @@ function applyOpenResult(current: SessionTimeline | undefined, result: OpenResul
     }
   }
   if (!current) return null
+  // A reset cannot be replayed as an empty timeline during reconnect; it requires a fresh snapshot.
+  if (result.patches?.some((patch) => patch.op === 'timeline.reset')) return null
   const replay = applyAll(current, result.patches ?? [])
   if (!replay.ok) return null
   return {
@@ -248,6 +256,50 @@ export function connectStore(conn: HostConnection, hostId: string, store: { getS
   store.getState().ensureSlice(hostId)
   const H = conn.hostId
   void hostId
+  type ResyncState = { inFlight: boolean; attempts: number; buffered: EventPayload<'turn.patch'>['patches'] }
+  const resyncing = new Map<string, ResyncState>()
+  const patchEnd = (patch: EventPayload<'turn.patch'>['patches'][number]): number =>
+    patch.op === 'text.append' && patch.seqTo !== undefined ? patch.seqTo : patch.seq
+  const finishResync = (sessionKey: string, result: MethodResult<'session.open'>): void => {
+    const state = resyncing.get(sessionKey)
+    if (!state) return
+    state.inFlight = false
+    // Snapshot seq is authoritative; only replay events newer than that head.
+    const buffered = state.buffered.splice(0).filter((patch) => patchEnd(patch) > result.seq)
+    if (!buffered.length || store.getState().applyPatch(H, sessionKey, buffered)) {
+      resyncing.delete(sessionKey)
+      return
+    }
+    // Keep the un-applied tail. A reset/gap racing the snapshot gets one immediate follow-up;
+    // if it still fails, a later event retries without dropping the already visible timeline.
+    state.buffered.unshift(...buffered)
+    if (state.attempts < 2) requestSnapshot(sessionKey)
+    else state.attempts = 0
+  }
+  const requestSnapshot = (sessionKey: string): void => {
+    let state = resyncing.get(sessionKey)
+    if (!state) {
+      state = { inFlight: false, attempts: 0, buffered: [] }
+      resyncing.set(sessionKey, state)
+    }
+    if (state.inFlight) return
+    if (state.attempts >= 2) state.attempts = 0
+    state.inFlight = true
+    state.attempts += 1
+    const requestAttempt = state.attempts
+    void openSessionInStore(conn, H, sessionKey).then(({ current }) => {
+      if (resyncing.get(sessionKey) !== state || state.attempts !== requestAttempt) return
+      if (!current) {
+        // A newer explicit open owns the view; keep buffering until its callback applies a snapshot.
+        state.inFlight = false
+        return
+      }
+      // The onSessionOpen callback applied the snapshot and drained buffered patches.
+      state.inFlight = false
+    }).catch(() => {
+      if (resyncing.get(sessionKey) === state && state.attempts === requestAttempt) state.inFlight = false
+    })
+  }
   conn.bindEvents({
     onState: (state, detail) => store.getState().setConnState(H, state, detail ?? null),
     onHello: (hello) => {
@@ -257,13 +309,18 @@ export function connectStore(conn: HostConnection, hostId: string, store: { getS
       // The session.open response already contains the forced snapshot/replay result; the
       // onSessionOpen handler below applies it. Do not issue a duplicate open here.
     },
+    onSessionClosed: (sessionKey) => {
+      resyncing.delete(sessionKey)
+    },
     onSessionOpen: (sessionKey, result) => {
       const current = store.getState().slices[H]?.timelines[sessionKey]
       const next = applyOpenResult(current, result)
-      if (next) store.getState().setTimeline(H, sessionKey, next)
-      else {
+      if (next) {
+        store.getState().setTimeline(H, sessionKey, next)
+        finishResync(sessionKey, result)
+      } else {
         // Replay without a local baseline or with a sequence gap: request an un-cursored snapshot.
-        void openSessionInStore(conn, H, sessionKey).catch(() => undefined)
+        requestSnapshot(sessionKey)
       }
     },
     onEvent: (event, payload) => {
@@ -293,11 +350,26 @@ export function connectStore(conn: HostConnection, hostId: string, store: { getS
       }
       if (event === 'turn.patch') {
         const p = payload as EventPayload<'turn.patch'>
+        // Ignore a late in-flight event after close/unwatch; it must not resurrect a session.
+        if (!conn.watchList().includes(p.sessionKey)) return
+        const pending = resyncing.get(p.sessionKey)
+        if (pending) {
+          // HostConnection advances its reconnect cursor as events arrive. Buffer the same events
+          // so a delayed snapshot cannot commit at seq N and silently skip N+1..M in the UI.
+          pending.buffered.push(...p.patches)
+          if (!pending.inFlight && !conn.hasPendingOpen(p.sessionKey)) requestSnapshot(p.sessionKey)
+          return
+        }
+        if (conn.hasPendingOpen(p.sessionKey)) {
+          // Explicit reopen is also a snapshot boundary; buffer deltas until its response commits.
+          resyncing.set(p.sessionKey, { inFlight: false, attempts: 0, buffered: [...p.patches] })
+          return
+        }
         const ok = store.getState().applyPatch(H, p.sessionKey, p.patches)
         if (!ok) {
-          // Gap -> forced re-open (snapshot path), matches the connection's resync contract.
-          store.getState().setTimeline(H, p.sessionKey, emptyTimeline())
-          void openSessionInStore(conn, H, p.sessionKey).catch(() => undefined)
+          // Reset/gap -> one un-cursored snapshot. Keep the old timeline visible until it lands;
+          // if it fails, a later patch can retry without blanking what the user was reading.
+          requestSnapshot(p.sessionKey)
         }
       }
     },

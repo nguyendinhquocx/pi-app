@@ -33,7 +33,7 @@ async function openWorkbenchSession(page, width) {
   await selectedSession.waitFor({ state: 'visible' })
   await selectedSession.click()
   await page.locator('.model-trigger').waitFor({ state: 'visible' })
-  await page.waitForFunction(() => document.querySelector('.model-trigger')?.textContent?.includes('GLM 5.3 Flash'))
+  await page.waitForFunction(() => document.querySelector('.model-trigger')?.textContent?.includes('GLM 5.3 Flash'), undefined, { timeout: 10_000 })
 }
 
 async function openInspector(page) {
@@ -72,7 +72,7 @@ try {
   const overflows = []
 
   for (const width of WIDTHS) {
-    const page = await browser.newPage({ viewport: { width, height: 800 } })
+    const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: width <= 768, isMobile: width <= 768 })
     await openWorkbenchSession(page, width)
     await capture(page, `workbench-${width}`, overflows)
 
@@ -105,8 +105,30 @@ try {
       await openInspector(page)
       await capture(page, `inspector-${width}`, overflows)
       if (width === 1280) {
-        await page.getByRole('tab', { name: 'Context' }).click()
-        await capture(page, 'inspector-context-1280', overflows)
+        await page.getByRole('button', { name: 'Xuất phiên' }).click()
+        await page.getByRole('menu', { name: 'Xuất phiên' }).waitFor({ state: 'visible' })
+        await capture(page, 'inspector-export-menu-1280', overflows)
+        await page.keyboard.press('Escape')
+        const userMessage = page.locator('.turn-user').last()
+        await userMessage.hover()
+        await page.waitForTimeout(200)
+        const userCopyState = await page.locator('.turn-user-actions').last().evaluate((el) => getComputedStyle(el).opacity)
+        if (userCopyState !== '1') throw new Error('user copy action did not reveal on hover')
+        await capture(page, 'copy-user-hover-1280', overflows)
+        const assistantAnswer = page.locator('.turn-answer').last()
+        await assistantAnswer.hover()
+        await page.waitForTimeout(200)
+        const answerCopyState = await assistantAnswer.locator('.turn-answer-actions').evaluate((el) => getComputedStyle(el).opacity)
+        if (answerCopyState !== '1') throw new Error('assistant copy action did not reveal on hover')
+        await capture(page, 'copy-answer-hover-1280', overflows)
+        const toolRow = page.locator('.tool-head').last()
+        await toolRow.hover()
+        const toolBackground = await toolRow.evaluate((el) => getComputedStyle(el).backgroundColor)
+        if (toolBackground !== 'rgba(0, 0, 0, 0)') throw new Error(`tool row hover surface was not suppressed: ${toolBackground}`)
+        await capture(page, 'tool-row-hover-1280', overflows)
+        const failedToolRow = page.locator('.tool-head').filter({ hasText: 'run fixture-check-93' }).first()
+        await failedToolRow.scrollIntoViewIfNeeded()
+        await capture(page, 'tool-failure-collapsed-1280', overflows)
       }
     }
     await page.close()
@@ -115,7 +137,10 @@ try {
   const pickerPage = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await openWorkbenchSession(pickerPage, 1280)
   await pickerPage.locator('.model-trigger').click()
-  await pickerPage.getByLabel('Tìm model').press('ArrowDown')
+  const modelSearch = pickerPage.getByLabel('Tìm model')
+  await modelSearch.press('ArrowDown')
+  const modelSearchBorder = await modelSearch.evaluate((el) => getComputedStyle(el).borderTopWidth)
+  if (modelSearchBorder !== '0px') throw new Error(`model search still has a border: ${modelSearchBorder}`)
   await pickerPage.getByRole('listbox', { name: 'Models' }).waitFor({ state: 'visible' })
   await capture(pickerPage, 'model-picker-keyboard', overflows)
   await pickerPage.keyboard.press('Escape')
@@ -125,7 +150,7 @@ try {
   await pickerPage.close()
 
   for (const width of [1280, 375]) {
-    const page = await browser.newPage({ viewport: { width, height: 800 } })
+    const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: width === 375, isMobile: width === 375 })
     await page.goto(`http://127.0.0.1:${PORT}/dev/host-manager-preview.html`, { waitUntil: 'networkidle' })
     await page.getByRole('tab', { name: 'Đã ghép nối' }).waitFor({ state: 'visible' })
     await capture(page, `host-dialog-${width}`, overflows)

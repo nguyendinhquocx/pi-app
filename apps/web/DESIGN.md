@@ -32,7 +32,7 @@ Nền trắng là mặt chính; fill nhạt chỉ dùng cho user bubble, hover v
 ## 2. Kiểu chữ, focus và elevation
 
 - `--font-sans`: system stack; `--font-mono`: ui-monospace fallback. Base UI 13px, transcript 14px, meta 10–12px.
-- Nút và control có vùng chạm tối thiểu 44px. `:focus-visible` dùng outline 2px theo `--brand`; `prefers-reduced-motion` tắt transition/animation.
+- Nút và control có vùng chạm tối thiểu 44px. Keyboard focus dùng cue rõ; search fields không có outline box, chuyển sang soft surface + weight. `prefers-reduced-motion` tắt transition/animation.
 - Elevation chỉ cho popover, dialog, composer shell và nút “Về cuối”; không dựng card chrome quanh mọi dòng.
 - `--composer-shell-shadow`: bóng nhẹ trên surface sáng, bóng sâu hơn ở dark theme.
 
@@ -40,14 +40,14 @@ Nền trắng là mặt chính; fill nhạt chỉ dùng cho user bubble, hover v
 
 | Bề mặt | Hành vi đã tích hợp | Điểm triển khai |
 | --- | --- | --- |
-| Top bar | Toggle Sessions và Inspector ở hai đầu; không đặt host chips ở đây. | `.workbench-topbar`, `Workbench.tsx` |
+| Top bar | Toggle Sessions trái; theme toggle và Inspector bên phải; không đặt host chips ở đây. | `.workbench-topbar`, `Workbench.tsx` |
 | Host picker | Nằm ở footer SessionRail; menu liệt kê cả host offline/endpoint-error. Rail thu gọn thì mở lại trong một thao tác. | `HostManager.tsx`, `.rail-footer`, `.host-menu` |
 | Host dialog | Hai tab “Đã ghép nối”/“Ghép nối mới”; phân biệt chưa ghép host với đã ghép nhưng mất kết nối. Forget có xác nhận; token pair chỉ giữ trong memory. | `HostManager.tsx`, `.host-dialog` |
-| SessionRail | Desktop collapse/resize; ≤768px thành drawer + scrim, Escape/scrim đóng và focus quay về toggle. | `SessionRail.tsx`, `.session-rail` |
-| Timeline | User bubble lệch phải, assistant/tool output lệch trái; giữ `turn.page`, anchor ≤8px, follow-live và nút “Về cuối”. | `Timeline.tsx`, `.timeline` |
+| SessionRail | Desktop collapse/resize; ≤768px thành drawer + scrim, Escape/scrim đóng và focus quay về toggle. Running session có chấm xanh; ô search không có icon trang trí. | `SessionRail.tsx`, `.session-rail`, `.live-dot` |
+| Timeline | Prompt bubble lệch phải, assistant/tool output trái; giữ `turn.page`, anchor ≤8px, follow-live và “Về cuối”. Trong lượt chạy chỉ lộ tool rows thật + một activity cue; settled mới hiện transcript đầy đủ. Copy prompt/answer nằm ngoài bubble/dưới answer tương ứng; tool failure chỉ có dot nhỏ, chi tiết mở chủ động. Reset/gap resync giữ nội dung hiện tại, buffer patch mới và thay snapshot không làm trắng màn. | `Timeline.tsx`, `.timeline` |
 | Composer | Shell gọn; model searchable theo id/name/provider, thinking và Gửi/Steer/Follow-up dùng menu; attach vẫn prompt-only ≤10 MiB. Context chỉ báo từ 80%. | `Composer.tsx`, `.composer-shell` |
-| Inspector | Mặc định đóng, Terminal đầu tiên; tabs Terminal/Context/Review/Files/Tree/Agents; export ở menu tiêu đề, không chiếm footer. | `Inspector.tsx`, `.inspector` |
-| Files/Terminal | File/folder dùng icon; giữ preview/create/rename. Terminal tiếp tục dùng PTY thật và lọc OSC 52 clipboard write. | `Inspector.tsx`, `features/terminal.ts` |
+| Inspector | Mặc định đóng; UAT round 2 chỉ hiện Terminal + menu export gọn. Không có tab strip/divider/khung PTY thừa; các panel khác vẫn có code nhưng UI hiện không expose. | `Inspector.tsx`, `.inspector` |
+| Terminal | Chỉ Terminal lộ trong Inspector theo owner UAT; PTY thật, giữ input/resize/close và lọc OSC 52. Các panel Files/Review/Context/Tree/Agents/Settings còn code nhưng hiện ẩn, không có tab navigation. | `Inspector.tsx`, `features/terminal.ts` |
 | Layout prefs | `localStorage['li-web-layout']`: trạng thái rail/Inspector và width thiết bị-local; không gửi lên host. | `Workbench.tsx`, `loadLayout()` |
 
 ## 4. Responsive và focus contract
@@ -56,12 +56,13 @@ Nền trắng là mặt chính; fill nhạt chỉ dùng cho user bubble, hover v
 - 769–999px: rail + center; Inspector phủ center và có scrim khi rail mở. Nếu rail đóng, Inspector dock bên phải.
 - 1000–1024px: ba track rail/center/Inspector; center tối thiểu 360px.
 - ≥1025px: ba pane có separator kéo được; center vẫn ≥360px. Width solver shrink Inspector trước, rồi rail.
-- Drawer/Inspector modal trap Tab, Escape đóng, focus trở lại toggle. Inspector docked không mang `aria-modal`.
-- Captures không overflow ngang tại 320/375/414/768/769/999/1000/1024/1025/1280/1440; 1024px chụp đủ 4 tổ hợp rail/Inspector. Có drawer, host picker, Inspector, model/thinking menus và host/pair dialogs.
+- Drawer/Inspector modal trap Tab, Escape đóng, focus trở lại toggle. Inspector docked không mang `aria-modal`; menu export hỗ trợ Arrow/Home/End/Escape.
+- Scrollbar chrome ẩn ở page và nested panes nhưng `overflow` vẫn cuộn. Copy actions chỉ lộ khi đúng message hover/focus (touch giữ action khả dụng, đặt ngoài bubble để không kéo chiều cao tin nhắn).
+- Captures synthetic không overflow ngang tại 320/375/414/768/769/999/1000/1024/1025/1280/1440; 1024px chụp đủ 4 tổ hợp rail/Inspector. Có drawer, host picker, Terminal/export menu, message copy hover, model/thinking menus và host/pair dialogs.
 
 ## 5. Theme và giới hạn sản phẩm
 
-- Theme bootstrap hiện có và terminal palette được giữ; không mang toggle Sáng/Tối của demo vào UI.
+- Theme bootstrap light/dark hiện có và terminal palette được giữ; nút đổi sáng/tối nằm ở topbar, lưu device-local vào `lix-web-ui`. Toggle của preview harness không được port nguyên trạng.
 - Demo HTML, wrapper, caption/banner, scene buttons và fake data chỉ là tài liệu/fixture QA; không nhúng vào production Workbench.
 - Không đổi RPC, protocol, gateway, pairing authorization, model availability, file authorization hay terminal safety. Screenshot chỉ lưu local; không upload.
 - Vite fixtures ở `src/dev` dùng host/session/model giả lập, không kết nối host thật và không chứng minh live UAT.

@@ -101,6 +101,7 @@ const fakeConnection = {
   errorDetail: null,
   hello: { hostId, hostName: 'Laptop (demo)', role: 'operator', ownerProtocol: 1 },
   bindEvents() {},
+  hasSessionOpenListener: () => false,
   subscribeEvents(listener: (event: string, payload: unknown) => void) {
     terminalListeners.add(listener)
     return () => { terminalListeners.delete(listener) }
@@ -109,6 +110,14 @@ const fakeConnection = {
     kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
     state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
     pendingUi: [], hasOlder: true,
+  }),
+  openSessionTracked: async () => ({
+    current: true,
+    result: {
+      kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
+      state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
+      pendingUi: [], hasOlder: true,
+    },
   }),
   start() {},
   stop() {},

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ProjectInfo, SessionSummary } from '@shared/remote'
-import { Ellipsis, Plus, Search } from 'lucide-react'
+import { Ellipsis, Plus } from 'lucide-react'
 import { useWorkbench } from './workbench-store'
 
 /**
@@ -78,7 +78,6 @@ export function SessionRail({
   return (
     <nav id="session-rail" className={`session-rail ${className}`.trim()} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen || undefined} aria-label={`Sessions on ${hostId}`} tabIndex={mobileOpen ? -1 : undefined}>
       <div className="rail-search">
-        <Search className="rail-search-icon" size={17} aria-hidden="true" />
         {projects.length > 1 && (
           <select aria-label="Project" value={selectedProjectId ?? 'all'} onChange={(event) => onSelectProject(event.target.value === 'all' ? null : event.target.value)}>
             <option value="all">Tất cả project</option>

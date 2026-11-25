@@ -70,7 +70,7 @@ const ToolCard = memo(function ToolCard({ step, sessionKey, onDetail }: { step: 
         if (!open && node.detail && detail === null) {
           void onDetail(sessionKey, step.toolCallId).then((d) => setDetail(d)).catch(() => setDetail(''))
         }
-      }} aria-expanded={open}>
+      }} aria-expanded={open} aria-label={failed ? `${node.title || step.toolName}; lệnh thất bại, mở để xem chi tiết` : undefined}>
         <span className="tool-name">{node.title || step.toolName}</span>
         {running && (
           <span className="tool-status live">
@@ -79,12 +79,8 @@ const ToolCard = memo(function ToolCard({ step, sessionKey, onDetail }: { step: 
           </span>
         )}
         {!running && !failed && duration && <span className="tool-duration">{duration}</span>}
-        {failed && (
-          <span className="tool-status error">
-            Thất bại
-            {step.node.fallbackText && step.node.fallbackText !== node.title ? ` — ${step.node.fallbackText}` : ''}
-          </span>
-        )}
+        {failed && <span className="tool-failure-dot" aria-hidden="true" title="Lệnh thất bại; mở để xem chi tiết" />}
+        {/* Failure stays accessible on the trigger and in the expanded detail; don't splash raw errors into the transcript. */}
       </button>
       {open && (
         <div className="tool-body">
@@ -98,19 +94,22 @@ const ToolCard = memo(function ToolCard({ step, sessionKey, onDetail }: { step: 
 })
 
 function TurnView({ turn, sessionKey, actions }: { turn: Turn; sessionKey: string; actions: TimelineActions }) {
+  const streaming = turn.status === 'running'
   return (
     <article className={`turn ${turn.status}`} data-turn-id={turn.id}>
       <div className="turn-user">
-        <span className="turn-sender">Bạn</span>
         <p>{turn.user.text}</p>
-        <div className="turn-actions-row turn-user-actions">
-          <CopyButton getText={() => turn.user.text} label="Sao chép tin nhắn" />
-        </div>
+      </div>
+      <div className="turn-actions-row turn-user-actions">
+        <CopyButton getText={() => turn.user.text} label="Sao chép tin nhắn" />
       </div>
       <div className="turn-assistant">
         <div className="assistant-avatar" aria-hidden="true"><Bot size={17} /></div>
         <div className="assistant-content">
           {turn.steps.map((step) => {
+            // Provider text/thinking deltas may interleave at token granularity while the turn
+            // is live. Keep only real tools visible; settle reveals the authoritative transcript.
+            if (streaming && step.kind !== 'tool') return null
             if (step.kind === 'thinking') {
               return (
                 <details key={step.id} className="thinking-block">
@@ -124,9 +123,12 @@ function TurnView({ turn, sessionKey, actions }: { turn: Turn; sessionKey: strin
             }
             return <div key={step.id} className="markdown prose-step">{step.text}</div>
           })}
-          {turn.answer && (
+          {!streaming && turn.answer && (
             <div className="markdown turn-answer">
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{turn.answer}</ReactMarkdown>
+              <div className="turn-actions-row turn-answer-actions">
+                <CopyButton getText={() => turn.answer} label="Sao chép câu trả lời" />
+              </div>
             </div>
           )}
           {turn.files.length > 0 && (
@@ -138,14 +140,9 @@ function TurnView({ turn, sessionKey, actions }: { turn: Turn; sessionKey: strin
               ))}
             </p>
           )}
-          {turn.error && <p className={`turn-error ${turn.error.kind}`}>{turn.error.kind}: {turn.error.text}</p>}
+          {turn.error && !streaming && <p className={`turn-error ${turn.error.kind}`}>{turn.error.kind}: {turn.error.text}</p>}
         </div>
       </div>
-      {turn.answer && (
-        <div className="turn-actions-row">
-          <CopyButton getText={() => turn.answer ?? ''} label="Sao chép câu trả lời" />
-        </div>
-      )}
     </article>
   )
 }
@@ -240,6 +237,7 @@ export function Timeline({ timeline, sessionKey, actions, onLoadOlder }: {
 
   const hasOlder = timeline.hasOlder
   const endOfHistory = !hasOlder && olderStatus === 'idle' && timeline.turns.length > 0
+  const isRunning = timeline.state.running || timeline.turns.some((turn) => turn.status === 'running')
 
   return (
     <div className="timeline-wrap">
@@ -276,7 +274,7 @@ export function Timeline({ timeline, sessionKey, actions, onLoadOlder }: {
         {timeline.turns.map((turn: Turn) => (
           <TurnView key={turn.id} turn={turn} sessionKey={sessionKey} actions={actions} />
         ))}
-        {timeline.state.running && (
+        {isRunning && (
           <div className="stream-indicator" role="status">Đang chạy…</div>
         )}
       </div>

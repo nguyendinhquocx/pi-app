@@ -142,7 +142,7 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
 }
 
 export function Inspector(props: InspectorProps) {
-  const { sessionKey, tab, onTab, reviewDiff, onLoadDiff, files, onListFiles, onReadFile, onCreateFile, onRenameFile, stats, branches, onSwitchBranch, onAgentSteer, onAgentAbort, onAgentResume, conn, onExport, timelineTurns, sessionTitle } = props
+  const { sessionKey, tab, reviewDiff, onLoadDiff, files, onListFiles, onReadFile, onCreateFile, onRenameFile, stats, branches, onSwitchBranch, onAgentSteer, onAgentAbort, onAgentResume, conn, onExport, timelineTurns, sessionTitle } = props
   const [filePreview, setFilePreview] = useState<{ path: string; content: string } | null>(null)
   const [reviewScope, setReviewScope] = useState<'git' | 'turn'>('turn')
   const [currentDirectory, setCurrentDirectory] = useState('.')
@@ -157,8 +157,6 @@ export function Inspector(props: InspectorProps) {
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const exportTriggerRef = useRef<HTMLButtonElement | null>(null)
   const exportMenuRef = useRef<HTMLDivElement | null>(null)
-  const tabs: InspectorTab[] = ['terminal', 'context', 'review', 'files', 'tree', 'agents', 'settings']
-
   useEffect(() => {
     setCurrentDirectory('.')
     setFilePreview(null)
@@ -202,13 +200,28 @@ export function Inspector(props: InspectorProps) {
   return (
     <aside id="workbench-inspector" className="inspector" role={props.modal ? 'dialog' : undefined} aria-modal={props.modal || undefined} aria-labelledby="inspector-title" tabIndex={props.modal ? -1 : undefined}>
       <header className="inspector-head">
-        <h2 id="inspector-title">Inspector</h2>
+        <h2 id="inspector-title">Terminal</h2>
         <div className="export-wrap">
           <button ref={exportTriggerRef} className="export-trigger" aria-label="Xuất phiên" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((open) => !open)}>
             <Ellipsis size={18} aria-hidden="true" />
           </button>
           {exportMenuOpen && (
-            <div ref={exportMenuRef} className="small-menu export-menu" role="menu" aria-label="Xuất phiên">
+            <div
+              ref={exportMenuRef}
+              className="small-menu export-menu"
+              role="menu"
+              aria-label="Xuất phiên"
+              onKeyDown={(event) => {
+                const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+                if (!items.length) return
+                const current = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement))
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+                  event.preventDefault()
+                  const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+                  items[next].focus()
+                }
+              }}
+            >
               <button type="button" role="menuitem" onClick={() => { onExport('markdown'); setExportMenuOpen(false); exportTriggerRef.current?.focus() }}>
                 <Download size={15} aria-hidden="true" /> Xuất Markdown
               </button>
@@ -219,36 +232,7 @@ export function Inspector(props: InspectorProps) {
           )}
         </div>
       </header>
-      <div
-        className="inspector-tabs"
-        role="tablist"
-        aria-label="Nội dung Inspector"
-        onKeyDown={(event) => {
-          const tabButtons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
-          const current = tabButtons.indexOf(event.target as HTMLButtonElement)
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-          event.preventDefault()
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
-          tabButtons[next].focus()
-          onTab(tabs[next])
-        }}
-      >
-        {tabs.map((t) => (
-          <button
-            key={t}
-            id={`inspector-tab-${t}`}
-            type="button"
-            role="tab"
-            aria-controls="inspector-panel"
-            aria-selected={tab === t}
-            tabIndex={tab === t ? 0 : -1}
-            onClick={() => onTab(t)}
-          >
-            {t === 'review' ? 'Review' : t === 'files' ? 'Files' : t === 'context' ? 'Context' : t === 'tree' ? 'Tree' : t === 'agents' ? 'Agents' : t === 'settings' ? 'Settings' : 'Terminal'}
-          </button>
-        ))}
-      </div>
-      <div id="inspector-panel" className="inspector-body" role="tabpanel" tabIndex={0} aria-labelledby={`inspector-tab-${tab}`}>
+      <div id="inspector-panel" className="inspector-body" aria-label={tab === 'terminal' ? 'Terminal' : undefined}>
         {tab === 'review' && (
           <div className="review-panel">
             <div className="review-scope">

@@ -48,6 +48,8 @@ export type HostConnectionEvents = {
   onHello?: (hello: MethodResult<'host.hello'>) => void
   /** RPC snapshot/replay result: needed because session.open is a response, not an event. */
   onSessionOpen?: (sessionKey: string, result: MethodResult<'session.open'>) => void
+  /** Session is no longer watched; cancel any client-side resync state for it. */
+  onSessionClosed?: (sessionKey: string) => void
 }
 
 export type SocketLike = {
@@ -106,6 +108,8 @@ export class HostConnection {
   private reqId = 0
   private pending = new Map<string, { resolve: (f: Frame) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout>; method: string }>()
   private watched = new Map<string, WatchedSession>()
+  private openRequestSequence = 0
+  private readonly openRequests = new Map<string, number>()
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private handshakeTimeout: ReturnType<typeof setTimeout> | null = null
@@ -175,6 +179,7 @@ export class HostConnection {
   dispose(): void {
     this.stop()
     this.watched.clear()
+    this.openRequests.clear()
     this.eventSubscribers.clear()
   }
 
@@ -209,24 +214,59 @@ export class HostConnection {
    * `resync: epoch_changed` (or gap/evicted) triggers onResync so the UI reloads the snapshot.
    */
   async openSession(sessionKey: string, cursor?: { epoch: string; seq: number }): Promise<MethodResult<'session.open'>> {
-    const result = await this.request('session.open', { sessionKey, ...(cursor ? { cursor } : {}) })
-    const effectiveCursor = cursor && result.kind === 'replay' && !result.resync ? cursor : undefined
-    const current: WatchedSession = { sessionKey, ...(effectiveCursor ?? { epoch: result.epoch, seq: result.seq }) }
-    this.watched.set(sessionKey, current)
-    this.events.onSessionOpen?.(sessionKey, result)
-    if (result.resync) this.events.onResync?.(sessionKey, result.resync)
-    return result
+    return (await this.openSessionTracked(sessionKey, cursor)).result
   }
 
-  /** Stop watching a session (also stops auto re-open on reconnect). */
+  /** The UI uses the freshness bit to avoid applying a late snapshot after a newer open. */
+  async openSessionTracked(sessionKey: string, cursor?: { epoch: string; seq: number }): Promise<{ result: MethodResult<'session.open'>; current: boolean }> {
+    const requestId = ++this.openRequestSequence
+    this.openRequests.set(sessionKey, requestId)
+    try {
+      const result = await this.request('session.open', { sessionKey, ...(cursor ? { cursor } : {}) })
+      if (this.openRequests.get(sessionKey) !== requestId) return { result, current: false }
+      // The open response's seq is the replay/snapshot head. Preserve a newer live-event cursor
+      // that arrived during the request, but never roll back to the cursor used to request replay.
+      const snapshotCursor = { epoch: result.epoch, seq: result.seq }
+      const eventCursor = this.watched.get(sessionKey)?.cursor
+      const current: WatchedSession = {
+        sessionKey,
+        cursor: eventCursor?.epoch === result.epoch && eventCursor.seq > snapshotCursor.seq ? eventCursor : snapshotCursor,
+      }
+      this.watched.set(sessionKey, current)
+      this.events.onSessionOpen?.(sessionKey, result)
+      if (result.resync) this.events.onResync?.(sessionKey, result.resync)
+      const stillCurrent = this.openRequests.get(sessionKey) === requestId
+      if (stillCurrent) this.openRequests.delete(sessionKey)
+      return { result, current: stillCurrent }
+    } catch (error) {
+      if (this.openRequests.get(sessionKey) === requestId) this.openRequests.delete(sessionKey)
+      throw error
+    }
+  }
+
+  /** Stop watching a session (also invalidates a late open response). */
   closeSession(sessionKey: string): Promise<MethodResult<'session.close'>> {
     this.watched.delete(sessionKey)
+    this.openRequests.delete(sessionKey)
+    this.events.onSessionClosed?.(sessionKey)
     return this.request('session.close', { sessionKey })
   }
 
   /** Forget a watched session without an RPC (local state only). */
   unwatch(sessionKey: string): void {
     this.watched.delete(sessionKey)
+    this.openRequests.delete(sessionKey)
+    this.events.onSessionClosed?.(sessionKey)
+  }
+
+  /** Whether any non-stale session.open request is still awaiting a result. */
+  hasPendingOpen(sessionKey: string): boolean {
+    return this.openRequests.has(sessionKey)
+  }
+
+  /** A store listener handles snapshots synchronously; standalone callers use the fallback. */
+  hasSessionOpenListener(): boolean {
+    return typeof this.events.onSessionOpen === 'function'
   }
 
   watchList(): string[] {
@@ -258,6 +298,10 @@ export class HostConnection {
       onSessionOpen: (k, r) => {
         prev.onSessionOpen?.(k, r)
         events.onSessionOpen?.(k, r)
+      },
+      onSessionClosed: (k) => {
+        prev.onSessionClosed?.(k)
+        events.onSessionClosed?.(k)
       },
     }
   }

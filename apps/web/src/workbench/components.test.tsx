@@ -179,6 +179,12 @@ describe('SessionRail (spec T4: search, context menu rename/delete/clone, agents
     expect(screen.queryByText('Beta')).toBeNull()
   })
 
+  it('shows a green dot for a running session and removes the decorative search icon', () => {
+    const { container } = render(<SessionRail hostId="h1" sessions={sessions} selectedSessionKey={null} actions={actions} />)
+    expect(screen.getByRole('img', { name: 'Đang chạy' }).className).toContain('live-dot')
+    expect(container.querySelector('.rail-search-icon')).toBeNull()
+  })
+
   it('context menu triggers typed rename RPC through an inline editor', async () => {
     render(<SessionRail hostId="h1" sessions={[summary({ sessionKey: 'proj/a.jsonl', title: 'Alpha' })]} selectedSessionKey={null} actions={actions} />)
     fireEvent.click(screen.getByLabelText('Tuỳ chọn phiên Alpha'))
@@ -244,7 +250,7 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     await_a_tick(() => expect(onLoadDiff).toHaveBeenCalledWith('turn', 'a.ts'))
   })
 
-  it('Inspector tabs are arrow-key navigable and export menu returns focus', () => {
+  it('Inspector exposes only Terminal and the compact export menu returns focus', () => {
     const onTab = vi.fn()
     const onExport = vi.fn()
     const { container } = render(
@@ -257,15 +263,19 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
         conn={null} onExport={onExport} timelineTurns={turns} sessionTitle="S1"
       />,
     )
-    const terminal = screen.getByRole('tab', { name: 'Terminal' })
-    terminal.focus()
-    fireEvent.keyDown(terminal, { key: 'ArrowRight' })
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Context' }))
-    expect(onTab).toHaveBeenCalledWith('context')
+    expect(screen.getByRole('heading', { name: 'Terminal' })).toBeTruthy()
+    expect(container.querySelector('[role="tablist"]')).toBeNull()
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(container.querySelector('.terminal-pane')).toBeTruthy()
 
     const exportTrigger = screen.getByRole('button', { name: 'Xuất phiên' })
     fireEvent.click(exportTrigger)
     const markdownAction = screen.getByRole('menuitem', { name: 'Xuất Markdown' })
+    const htmlAction = screen.getByRole('menuitem', { name: 'Xuất HTML' })
+    expect(document.activeElement).toBe(markdownAction)
+    fireEvent.keyDown(markdownAction, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(htmlAction)
+    fireEvent.keyDown(htmlAction, { key: 'Home' })
     expect(document.activeElement).toBe(markdownAction)
     fireEvent.click(markdownAction)
     expect(onExport).toHaveBeenCalledWith('markdown')
@@ -425,6 +435,33 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     expect(document.activeElement).toBe(screen.getByLabelText('Tên mới cho src/a.ts'))
   })
 
+  it('running turns suppress transient prose/thinking deltas, then reveal the settled transcript', () => {
+    const actions = { onToolDetail: vi.fn(async () => 'tool output') }
+    const liveTurn: Turn = {
+      ...turns[0],
+      status: 'running',
+      answer: 'partial answer bytes',
+      steps: [
+        { id: 'think-1', kind: 'thinking', text: 'private thought chunk' },
+        { id: 'prose-1', kind: 'prose', text: '/' },
+        { id: 'tool-1', kind: 'tool', toolCallId: 'c1', toolName: 'bash', category: 'run', status: 'running', node: { template: 'bash', title: 'bash command', fields: {}, status: 'running', fallbackText: 'bash' } },
+      ],
+    }
+    const timeline = { ...emptyTimeline(), turns: [liveTurn], state: { running: true } }
+    const onLoadOlder = vi.fn(async () => undefined)
+    const { rerender } = render(<Timeline timeline={timeline} sessionKey={sessionKey} actions={actions} onLoadOlder={onLoadOlder} />)
+    expect(screen.queryByText('private thought chunk')).toBeNull()
+    expect(screen.queryByText('/')).toBeNull()
+    expect(screen.queryByText('partial answer bytes')).toBeNull()
+    expect(screen.getByRole('button', { name: /bash command/ })).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toContain('Đang chạy')
+
+    rerender(<Timeline timeline={{ ...timeline, turns: [{ ...liveTurn, status: 'done' }], state: { running: false } }} sessionKey={sessionKey} actions={actions} onLoadOlder={onLoadOlder} />)
+    expect(screen.getByText('private thought chunk')).toBeTruthy()
+    expect(screen.getByText('/')).toBeTruthy()
+    expect(screen.getByText('partial answer bytes')).toBeTruthy()
+  })
+
   it('timeline has no rewind/fork chrome; tool detail still works; scroll-near-top pages older history', async () => {
     const actions = { onToolDetail: vi.fn(async () => 'tool output') }
     const onLoadOlder = vi.fn(async () => undefined)
@@ -453,12 +490,28 @@ describe('Inspector (spec T4: review diff, files, context, tree, export)', () =>
     Object.assign(navigator, { clipboard: { writeText } })
     const actions = { onToolDetail: vi.fn(async () => '') }
     const turnWithAnswer: Turn = { ...turns[0], answer: 'Answer body' }
-    render(<Timeline timeline={{ ...emptyTimeline(), turns: [turnWithAnswer] }} sessionKey={sessionKey} actions={actions} onLoadOlder={vi.fn(async () => undefined)} />)
+    const { container } = render(<Timeline timeline={{ ...emptyTimeline(), turns: [turnWithAnswer] }} sessionKey={sessionKey} actions={actions} onLoadOlder={vi.fn(async () => undefined)} />)
+    expect(screen.queryByText('Bạn')).toBeNull()
+    expect(container.querySelector('.turn-user-actions')?.previousElementSibling?.classList.contains('turn-user')).toBe(true)
+    expect(container.querySelector('.turn-answer-actions')?.parentElement?.classList.contains('turn-answer')).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Sao chép tin nhắn' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(turnWithAnswer.user.text))
     expect(screen.getByRole('button', { name: 'Đã sao chép' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Sao chép câu trả lời' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Answer body'))
+  })
+
+  it('failed tool rows hide verbose error text until the user opens the detail', async () => {
+    const failedTurn: Turn = {
+      ...turns[0],
+      steps: [{ id: 'tool-fail', kind: 'tool', toolCallId: 'call-fail', toolName: 'bash', category: 'run', status: 'error', node: { template: 'bash', title: 'python3 worker.py', fields: {}, status: 'error', detail: true, fallbackText: 'permission denied at /private/path' } }],
+    }
+    const actions = { onToolDetail: vi.fn(async () => 'permission denied at /private/path') }
+    render(<Timeline timeline={{ ...emptyTimeline(), turns: [failedTurn] }} sessionKey={sessionKey} actions={actions} onLoadOlder={vi.fn(async () => undefined)} />)
+    expect(screen.queryByText(/Thất bại/)).toBeNull()
+    expect(screen.queryByText(/permission denied at/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /python3 worker.py.*thất bại/i }))
+    await waitFor(() => expect(screen.getByText('permission denied at /private/path')).toBeTruthy())
   })
 
   it('export produces markdown + sanitized html (rows NEW/JSON-excluded)', () => {

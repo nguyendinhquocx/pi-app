@@ -223,6 +223,43 @@ describe('HostConnection (spec T3)', () => {
     expect(opens).toEqual([{ sessionKey: 'proj/s1.jsonl', cursor: { epoch: 'e_1', seq: 8 } }])
   })
 
+  it('late session.open cannot overwrite a newer snapshot or roll back the reconnect cursor', async () => {
+    let resolveOld: (value: Record<string, unknown>) => void = () => {}
+    const paramsSeen: unknown[] = []
+    const applied: number[] = []
+    const { conn, sim } = await onlineConn(
+      {
+        'session.open': (params) => {
+          paramsSeen.push(params)
+          if (paramsSeen.length === 1) return new Promise<Record<string, unknown>>((resolve) => { resolveOld = resolve })
+          if (paramsSeen.length === 2) return sessionOpenResult({ seq: 9 })
+          return sessionOpenResult({ kind: 'replay', seq: 10, patches: [] })
+        },
+      },
+      { onSessionOpen: (_key, result) => applied.push(result.seq) },
+    )
+
+    const staleOpen = conn.openSession('proj/s1.jsonl')
+    await vi.advanceTimersByTimeAsync(0)
+    const latestOpen = await conn.openSession('proj/s1.jsonl')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(latestOpen.seq).toBe(9)
+
+    sim.push('turn.patch', { sessionKey: 'proj/s1.jsonl', patches: [{ op: 'session.state', seq: 10, state: { running: true } }] })
+    await vi.advanceTimersByTimeAsync(0)
+    resolveOld(sessionOpenResult({ seq: 8 }))
+    await staleOpen
+    expect(applied).toEqual([9])
+
+    sim.close(1006)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(500)
+    sim.socket.open()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(paramsSeen[2]).toEqual({ sessionKey: 'proj/s1.jsonl', cursor: { epoch: 'e_1', seq: 10 } })
+    expect(applied).toEqual([9, 10])
+  })
+
   it('epoch_changed forces the snapshot resync path (cursor/epoch contract)', async () => {
     const resyncs: { sessionKey: string; reason: string }[] = []
     const { conn } = await onlineConn(

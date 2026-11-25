@@ -153,7 +153,7 @@ describe('Timeline auto-page + states (spec T3 UX contract)', () => {
     expect(screen.queryByRole('button', { name: 'Về cuối' })).toBeNull()
   })
 
-  it('tool failure keeps a readable state without the raw "error" label', async () => {
+  it('tool failure stays accessible but verbose error text appears only on deliberate expansion', async () => {
     const failed: SessionTimeline = {
       ...base,
       hasOlder: false,
@@ -163,12 +163,14 @@ describe('Timeline auto-page + states (spec T3 UX contract)', () => {
         steps: [{ id: 's1', kind: 'tool', toolCallId: 'c9', toolName: 'bash', category: 'run', status: 'error', node: { template: 'bash', title: 'bash', fields: {}, status: 'error', fallbackText: 'exit code 1' } }],
       })],
     }
-    render(<Timeline timeline={failed} sessionKey="s1" actions={actions} onLoadOlder={vi.fn(async () => undefined)} />)
-    expect(document.body.textContent).toContain('Thất bại')
-    // The failure message/recovery stays directly visible (spec T3).
+    const { container } = render(<Timeline timeline={failed} sessionKey="s1" actions={actions} onLoadOlder={vi.fn(async () => undefined)} />)
+    expect(container.querySelector('.tool-failure-dot')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('Thất bại')
+    expect(document.body.textContent).not.toContain('exit code 1')
+    const failedTool = screen.getByRole('button', { name: /bash.*thất bại/i })
+    expect(failedTool.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(failedTool)
+    expect(failedTool.getAttribute('aria-expanded')).toBe('true')
     expect(document.body.textContent).toContain('exit code 1')
-    expect(screen.getByRole('button', { name: /bash/ }).getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: /bash/ }))
-    expect(screen.getByRole('button', { name: /bash/ }).getAttribute('aria-expanded')).toBe('true')
   })
 })

@@ -32,6 +32,9 @@ const fakeConn = {
   errorDetail: null,
   hello: { hostId: 'h1', hostName: 'Laptop', role: 'operator', ownerProtocol: 1 },
   bindEvents() {},
+  hasSessionOpenListener: () => false,
+  openSessionTracked: async (sessionKey: string) => ({ current: true, result: { sessionKey, title: sessionKey, epoch: 'e_1', seq: 0, kind: 'snapshot', turns: [], state: { running: false }, pendingUi: [] } }),
+  closeSession: async () => ({}),
   start() {},
   stop() {},
   dispose() {},
@@ -188,11 +191,10 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
     fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(document.querySelector('.inspector-scrim')).toBeTruthy()
-    const dialog = screen.getByRole('dialog', { name: 'Inspector' })
+    const dialog = screen.getByRole('dialog', { name: 'Terminal' })
     expect(dialog.getAttribute('aria-modal')).toBe('true')
-    const terminalTab = screen.getByRole('tab', { name: 'Terminal' })
-    expect(terminalTab.getAttribute('aria-selected')).toBe('true')
-    expect(document.activeElement).toBe(terminalTab)
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(document.activeElement).toBe(dialog)
     const focusable = dialog.querySelectorAll<HTMLElement>('button:not([disabled])')
     focusable[focusable.length - 1].focus()
     fireEvent.keyDown(focusable[focusable.length - 1], { key: 'Tab' })
@@ -200,6 +202,52 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(toggle)
+  })
+
+  it('a late open for a previous session cannot overwrite the selected session model/context', async () => {
+    setViewport(1280)
+    seedStore(null)
+    const sessionA = 'proj/a.jsonl'
+    const sessionB = 'proj/b.jsonl'
+    const sessions = [
+      { sessionKey: sessionA, projectId: 'p1', title: 'Session A', status: 'idle' as const, updatedAt: 2 },
+      { sessionKey: sessionB, projectId: 'p1', title: 'Session B', status: 'idle' as const, updatedAt: 1 },
+    ]
+    let resolveOpenA: (value: { result: Record<string, unknown>; current: boolean }) => void = () => {}
+    const openAStarted = vi.fn()
+    const snapshot = (key: string) => ({ result: { sessionKey: key, title: key, epoch: 'e1', seq: 1, kind: 'snapshot', turns: [], state: { running: false }, pendingUi: [] }, current: true })
+    const raceConn = {
+      ...fakeConn,
+      closeSession: vi.fn(async () => ({})),
+      openSessionTracked: vi.fn((key: string) => key === sessionA
+        ? new Promise<{ result: Record<string, unknown>; current: boolean }>((resolve) => { openAStarted(); resolveOpenA = resolve })
+        : Promise.resolve(snapshot(key))),
+      request: async (method: string, params: Record<string, unknown> = {}) => {
+        if (method === 'project.list') return { projects: [{ id: 'p1', name: 'Project' }] }
+        if (method === 'session.watchList') return { sessions }
+        if (method === 'session.stats') return { context: { tokens: 1, window: 100, messages: 1, breakdown: [] }, usage: null }
+        if (method === 'command.list') return { commands: [] }
+        if (method === 'model.list') {
+          const key = String(params.sessionKey)
+          const id = key === sessionA ? 'model-a' : 'model-b'
+          return { models: [{ id, name: id === 'model-a' ? 'Model A' : 'Model B', provider: 'test', group: 'custom' }], current: id, thinking: 'low', availableThinking: ['low'] }
+        }
+        if (method === 'session.branches') return { branches: [] }
+        if (method === 'file.list') return { entries: [], truncated: false }
+        return {}
+      },
+    } as unknown as HostConnection
+    render(<Workbench connections={[{ hostId: 'h1', conn: raceConn }]} />)
+    fireEvent.click(await screen.findByText('Session A'))
+    await waitFor(() => expect(openAStarted).toHaveBeenCalled())
+    fireEvent.click(screen.getByText('Session B'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Model: Model B/ })).toBeTruthy())
+
+    await act(async () => {
+      resolveOpenA({ result: snapshot(sessionA).result, current: false })
+      await Promise.resolve()
+    })
+    expect(screen.getByRole('button', { name: /Model: Model B/ })).toBeTruthy()
   })
 
   it('keeps the host picker reachable when the rail collapses and in the mobile drawer', () => {
