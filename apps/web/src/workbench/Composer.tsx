@@ -410,7 +410,6 @@ export function Composer({
   onSetModel,
   onSetThinking,
   actions,
-  landing = false,
 }: {
   sessionKey: string
   running: boolean
@@ -425,8 +424,6 @@ export function Composer({
   onSetModel(modelId: string): Promise<void>
   onSetThinking(level: string): Promise<void>
   actions: ComposerActions
-  /** Landing mode: no session open yet — the first message creates it (LiX-style empty state). */
-  landing?: boolean
 }) {
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'prompt' | 'steer' | 'followUp'>('prompt')
@@ -481,8 +478,7 @@ export function Composer({
         if (!file) {
           setAttaching(false)
           return
-        }
-        void prepareAttachment(file)
+        }        void prepareAttachment(file)
           .then((att) => actions.onAttach(att))
           .then((uploaded) => {
             // The host saves the bytes locally and returns the host-local path. Add the @file
@@ -496,6 +492,9 @@ export function Composer({
           .catch((e) => setError(e instanceof AttachmentTooLargeError ? 'Tệp vượt 10 MiB — giới hạn prompt-only' : e.message))
           .finally(() => setAttaching(false))
       }
+      // Cancelling the native picker fires only 'cancel' (no change event) — without this
+      // reset the attach button stays disabled for the rest of the session (owner UAT R3).
+      input.oncancel = () => setAttaching(false)
       input.click()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -509,7 +508,7 @@ export function Composer({
   const nearWindowLimit = pct >= 80
 
   return (
-    <section className={`composer ${landing ? 'composer-landing' : ''}`.trim()} aria-label="Composer">
+    <section className="composer" aria-label="Composer">
       {slashMatches.length > 0 && (
         <ul className="slash-popover" role="listbox" aria-label="Slash commands">
           {slashMatches.map((c) => (
@@ -544,9 +543,7 @@ export function Composer({
               void send()
             }
           }}
-          placeholder={landing
-            ? 'Tin nhắn đầu tiên trở thành tiêu đề phiên…'
-            : running ? 'Đang chạy — gửi steer/follow-up…' : 'Gõ tin nhắn, / lệnh, @file…'}
+          placeholder={running ? 'Đang chạy — gửi steer/follow-up…' : 'Gõ tin nhắn, / lệnh, @file…'}
           aria-label="Tin nhắn"
         />
         <div className="composer-footer">

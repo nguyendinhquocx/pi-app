@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HostConnection } from '../transport/host-connection'
-import { Workbench, INSPECTOR_MAX, LAYOUT_KEY, MIN_CENTER_WIDTH, RAIL_MIN, RAIL_MAX, RESIZE_GUTTER, loadLayout, resolveWorkbenchWidths } from './Workbench'
+import { Workbench, INSPECTOR_MAX, LAST_HOST_KEY, LAYOUT_KEY, MIN_CENTER_WIDTH, RAIL_MIN, RAIL_MAX, RESIZE_GUTTER, loadLayout, resolveWorkbenchWidths } from './Workbench'
 import { emptyTimeline } from './timeline-store'
 import { useWorkbench } from './workbench-store'
 
@@ -107,6 +107,36 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
     expect(main.style.getPropertyValue('--inspector-w')).toBe(`${resolved.inspectorWidth}px`)
     const gutters = window.innerWidth >= 1025 ? (2 * RESIZE_GUTTER) : 0
     expect(resolved.railWidth + resolved.inspectorWidth + MIN_CENTER_WIDTH + gutters).toBeLessThanOrEqual(window.innerWidth)
+  })
+
+  it('UAT R3: the Inspector is resizable up to half the viewport, center floor intact', () => {
+    // Terminal-first usage: stored width beyond the legacy cap now reaches half the viewport.
+    for (const width of [1025, 1280, 1440]) {
+      const resolved = resolveWorkbenchWidths({ railOpen: false, railWidth: 280, inspectorOpen: true, inspectorWidth: 1000 }, width)
+      expect(resolved.inspectorWidth).toBe(Math.floor(width / 2))
+    }
+    const withRail = resolveWorkbenchWidths({ railOpen: true, railWidth: 280, inspectorOpen: true, inspectorWidth: 1000 }, 1025)
+    expect(withRail.inspectorWidth).toBeLessThanOrEqual(Math.floor(1025 / 2))
+    expect(withRail.railWidth + withRail.inspectorWidth + MIN_CENTER_WIDTH + 2 * RESIZE_GUTTER).toBeLessThanOrEqual(1025)
+  })
+
+  it('UAT R3: the new-session view keeps the Inspector toggle and composer at the bottom, no landing copy', () => {
+    seedStore(null)
+    render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }]} />)
+    expect(screen.getByRole('button', { name: 'Mở Inspector' })).toBeTruthy()
+    expect(screen.queryByText('Phiên mới')).toBeNull()
+    expect(screen.queryByText('Chưa có nội dung — gửi tin nhắn đầu tiên.')).toBeNull()
+    expect(screen.getByLabelText('Tin nhắn')).toBeTruthy()
+    const empty = document.querySelector('.empty-session') as HTMLElement | null
+    expect(empty).not.toBeNull()
+  })
+
+  it('UAT R3: reload restores the last used host instead of the first connection', async () => {
+    seedStore(null)
+    useWorkbench.setState({ activeHostId: null })
+    localStorage.setItem(LAST_HOST_KEY, 'h2')
+    render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }, { hostId: 'h2', conn: fakeConn }]} />)
+    await waitFor(() => expect(useWorkbench.getState().activeHostId).toBe('h2'))
   })
 
   it('resolves each breakpoint without forcing the mobile main pane to 360px', () => {

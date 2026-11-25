@@ -10,15 +10,21 @@ const terminalState = vi.hoisted(() => ({
   onResize: null as null | ((size: { cols: number; rows: number }) => void),
   disposed: false,
   lastOptions: null as Record<string, unknown> | null,
+  termOptions: null as Record<string, unknown> | null,
 }))
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80
     rows = 24
+    options: Record<string, unknown>
     loadAddon() {}
     open() {}
-    constructor(options?: Record<string, unknown>) { terminalState.lastOptions = options ?? null }
+    constructor(options?: Record<string, unknown>) {
+      terminalState.lastOptions = options ?? null
+      this.options = { ...(options ?? {}) }
+      terminalState.termOptions = this.options
+    }
     write(text: string) { terminalState.writes.push(text) }
     onData(callback: (data: string) => void) { terminalState.onData = callback; return { dispose() {} } }
     onResize(callback: (size: { cols: number; rows: number }) => void) { terminalState.onResize = callback; return { dispose() {} } }
@@ -34,7 +40,9 @@ afterEach(() => {
   terminalState.onResize = null
   terminalState.disposed = false
   terminalState.lastOptions = null
+  terminalState.termOptions = null
   document.documentElement.classList.remove('dark')
+  localStorage.removeItem('lix-web-ui')
 })
 
 describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
@@ -92,5 +100,31 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
     const dark = render(<TerminalPane sessionKey="s" conn={conn} />)
     await waitFor(() => expect((terminalState.lastOptions?.theme as { background: string }).background).toBe('#1f1f1f'))
     dark.unmount()
+  })
+
+  it('UAT R3: the topbar theme toggle repaints the live terminal without reopening the PTY', async () => {
+    const open = vi.fn(async () => ({ terminalId: 't-flip', profile: 'bash' }))
+    const conn = { online: true, request: open as unknown, subscribeEvents: () => () => {} } as unknown as HostConnection
+
+    document.documentElement.classList.remove('dark')
+    const view = render(<TerminalPane sessionKey="s" conn={conn} />)
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1))
+    expect((terminalState.lastOptions?.theme as { background: string }).background).toBe('#ffffff')
+
+    // Owner flips the app to dark while the PTY stays open: palette must follow in place.
+    document.documentElement.classList.add('dark')
+    await waitFor(() => expect((terminalState.termOptions?.theme as { background?: string }).background).toBe('#1f1f1f'))
+    document.documentElement.classList.remove('dark')
+    await waitFor(() => expect((terminalState.termOptions?.theme as { background?: string }).background).toBe('#ffffff'))
+    expect(open).toHaveBeenCalledTimes(1)
+    view.unmount()
+  })
+
+  it('UAT R3: a stored dark preference wins over the default light palette', async () => {
+    localStorage.setItem('lix-web-ui', JSON.stringify({ state: { theme: 'dark' } }))
+    const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't-dark', profile: 'bash' })), subscribeEvents: () => () => {} } as unknown as HostConnection
+    const view = render(<TerminalPane sessionKey="s" conn={conn} />)
+    await waitFor(() => expect((terminalState.lastOptions?.theme as { background: string }).background).toBe('#1f1f1f'))
+    view.unmount()
   })
 })

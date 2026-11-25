@@ -149,6 +149,51 @@ try {
   await capture(pickerPage, 'thinking-picker', overflows)
   await pickerPage.close()
 
+  // UAT R3: new-session view — composer sits at the bottom, Inspector toggle visible, no landing copy.
+  for (const [width, touch] of [[1280, false], [375, true]]) {
+    const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: touch, isMobile: touch })
+    await page.goto(`http://127.0.0.1:${PORT}/dev/workbench-preview.html`, { waitUntil: 'networkidle' })
+    if (touch) {
+      await page.getByRole('button', { name: 'Mở danh sách phiên' }).click()
+      await page.keyboard.press('Escape')
+    }
+    await page.evaluate(() => {
+      const store = window.__wbStore
+      const hostId = store.getState().activeHostId
+      const slice = store.getState().slices[hostId]
+      store.setState({ slices: { ...store.getState().slices, [hostId]: { ...slice, selectedSessionKey: null } } })
+    })
+    await page.locator('.empty-session').waitFor({ state: 'visible' })
+    const emptyCopy = await page.locator('.workbench-center').evaluate((el) => el.textContent)
+    if (emptyCopy.includes('Phiên mới') || emptyCopy.includes('Chưa có nội dung')) throw new Error(`new-session view still shows landing copy: ${emptyCopy.slice(0, 80)}`)
+    if (!(await page.getByRole('button', { name: 'Mở Inspector' }).isVisible())) throw new Error('new-session view hides the Inspector toggle')
+    await capture(page, `empty-session-${width}`, overflows)
+    await page.close()
+  }
+
+  // UAT R3: dark theme terminal + Inspector draggable to half the viewport.
+  {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    await openWorkbenchSession(page, 1280)
+    await page.getByRole('button', { name: 'Giao diện tối' }).click()
+    await page.locator('html.dark').waitFor({ state: 'attached' })
+    await openInspector(page)
+    const termBg = await page.evaluate(() => getComputedStyle(document.querySelector('.terminal-host .xterm-scrollable-element')).backgroundColor)
+    if (termBg !== 'rgb(31, 31, 31)') throw new Error(`dark terminal background wrong: ${termBg}`)
+    await capture(page, 'terminal-dark-1280', overflows)
+    await page.getByRole('button', { name: 'Đóng Inspector' }).click()
+    await page.getByRole('button', { name: 'Thu gọn danh sách phiên' }).click()
+    await page.getByRole('button', { name: 'Mở Inspector' }).click()
+    const sep = page.getByRole('separator', { name: 'Độ rộng Inspector' })
+    await sep.focus()
+    await sep.press('End')
+    await page.waitForFunction(() => document.querySelector('.workbench-main')?.style.getPropertyValue('--inspector-w') === `${Math.floor(innerWidth / 2)}px`, undefined, { timeout: 3000 })
+    const widthValue = await page.evaluate(() => document.querySelector('.workbench-main')?.style.getPropertyValue('--inspector-w'))
+    if (widthValue !== '640px') throw new Error(`inspector did not reach half viewport: ${widthValue}`)
+    await capture(page, 'inspector-half-1280', overflows)
+    await page.close()
+  }
+
   for (const width of [1280, 375]) {
     const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: width === 375, isMobile: width === 375 })
     await page.goto(`http://127.0.0.1:${PORT}/dev/host-manager-preview.html`, { waitUntil: 'networkidle' })

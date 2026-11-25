@@ -181,10 +181,21 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
     }
   }, [connections])
 
-  // Auto-select the first connected host when none is active.
+  // Auto-select the last used host (device-local) when none is active; fall back to the first
+  // connected host. Owner UAT R3: reloading li.quoc.app must stay on the host you last used.
   useEffect(() => {
-    if (!activeHostId && connections.length > 0) setActiveHost(connections[0].hostId)
+    if (activeHostId || connections.length === 0) return
+    let saved: string | null = null
+    try { saved = localStorage.getItem(LAST_HOST_KEY) } catch { /* private mode */ }
+    const restored = saved && connections.some((c) => c.hostId === saved) ? saved : connections[0].hostId
+    setActiveHost(restored)
   }, [activeHostId, connections, setActiveHost])
+
+  // Persist every host change so the next load restores it.
+  useEffect(() => {
+    if (!activeHostId) return
+    try { localStorage.setItem(LAST_HOST_KEY, activeHostId) } catch { /* private mode */ }
+  }, [activeHostId])
 
   const refreshSessionContext = useCallback(
     async (conn: HostConnection, hostId: string, sk: string, generation: number) => {
@@ -389,7 +400,9 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   )
 
   const inspectorProps = {
-    sessionKey: sessionKey ?? '',
+    // Terminal chỉ cần một sessionKey hợp lệ để host resolve project (PTY là host-level);
+    // ở phiên mới mới ta mượn session đầu trong slice để terminal mở được ngay (owner UAT R3).
+    sessionKey: sessionKey ?? slice?.sessions[0]?.sessionKey ?? '',
     tab: inspectorTab,
     onTab: setInspectorTab,
     reviewDiff,
@@ -519,22 +532,20 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
         >
           {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
         </button>
-        {sessionKey && (
-          <button
-            ref={inspectorToggleRef}
-            className="inspector-toggle"
-            aria-label={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
-            aria-controls="workbench-inspector"
-            aria-expanded={layout.inspectorOpen}
-            title={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
-            onClick={() => {
-              setMobileSessionListOpen(false)
-              setLayout((l) => ({ ...l, inspectorOpen: !l.inspectorOpen }))
-            }}
-          >
-            {layout.inspectorOpen ? <PanelRightClose size={18} aria-hidden="true" /> : <PanelRightOpen size={18} aria-hidden="true" />}
-          </button>
-        )}
+        <button
+          ref={inspectorToggleRef}
+          className="inspector-toggle"
+          aria-label={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
+          aria-controls="workbench-inspector"
+          aria-expanded={layout.inspectorOpen}
+          title={layout.inspectorOpen ? 'Đóng Inspector' : 'Mở Inspector'}
+          onClick={() => {
+            setMobileSessionListOpen(false)
+            setLayout((l) => ({ ...l, inspectorOpen: !l.inspectorOpen }))
+          }}
+        >
+          {layout.inspectorOpen ? <PanelRightClose size={18} aria-hidden="true" /> : <PanelRightOpen size={18} aria-hidden="true" />}
+        </button>
       </div>
       {notice && <div className={`banner ${notice.level}`} role="status">{notice.text}</div>}
       {slice?.state === 'connecting' || slice?.state === 'handshaking' ? <div className="banner" role="status">Đang kết nối tới host…</div> : null}
@@ -572,9 +583,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
         )}
         <div className="workbench-center">
           {!sessionKey && (
-            <div className="empty-landing">
-              <h2>Phiên mới</h2>
-              <p>Tin nhắn đầu tiên trở thành tiêu đề phiên.</p>
+            <div className="empty-session">
               <Composer
                 sessionKey={''}
                 running={false}
@@ -589,7 +598,6 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
                 onSetModel={async () => {}}
                 onSetThinking={async () => {}}
                 actions={composerActions}
-                landing
               />
             </div>
           )}
@@ -662,7 +670,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
             </>
           )}
         </div>
-        {sessionKey && layout.inspectorOpen && (
+        {layout.inspectorOpen && (
           <>
             <ResizeSeparator
               className="inspector-sep"
@@ -690,11 +698,15 @@ function webMessageId(): string {
 export type WorkbenchLayout = { railOpen: boolean; railWidth: number; inspectorOpen: boolean; inspectorWidth: number }
 
 export const LAYOUT_KEY = 'li-web-layout'
+export const LAST_HOST_KEY = 'li-web-last-host'
 export const RAIL_MIN = 240
 /** Roomy cap: the effective ceiling stays min(half viewport, viewport − 360px center floor). */
 export const RAIL_MAX = 1600
 export const INSPECTOR_MIN = 280
+/** Legacy default width; the live ceiling is half the viewport (owner UAT R3: terminal-first usage). */
 export const INSPECTOR_MAX = 380
+/** Sanity cap for stored widths; resolveWorkbenchWidths applies the real per-viewport ceiling. */
+export const INSPECTOR_STORE_CAP = 4096
 export const MIN_CENTER_WIDTH = 360
 export const RESIZE_GUTTER = 8
 export const MOBILE_BREAKPOINT = 768
@@ -711,7 +723,7 @@ export type ResolvedWorkbenchWidths = { railWidth: number; railMax: number; insp
 export function resolveWorkbenchWidths(layout: WorkbenchLayout, viewportWidth: number): ResolvedWorkbenchWidths {
   const width = Math.max(320, Math.floor(viewportWidth))
   let railWidth = clampWidth(layout.railWidth, RAIL_MIN, RAIL_MAX)
-  let inspectorWidth = clampWidth(layout.inspectorWidth, INSPECTOR_MIN, INSPECTOR_MAX)
+  let inspectorWidth = clampWidth(layout.inspectorWidth, INSPECTOR_MIN, INSPECTOR_STORE_CAP)
 
   // At 769–999px Inspector overlays the main pane when the rail is open; it only reserves
   // a grid column in the right-only layout. At 1000px it can become the third track.
@@ -748,10 +760,13 @@ export function resolveWorkbenchWidths(layout: WorkbenchLayout, viewportWidth: n
   ))
   railWidth = clampWidth(railWidth, RAIL_MIN, railMax)
 
+  // Owner UAT R3: the Inspector must be draggable to half the viewport (terminal-first usage),
+  // bounded by the 360px center floor and gutters — same contract as the session rail.
+  const inspectorViewportCap = Math.floor(width / 2)
   const inspectorMax = width >= TABLET_WIDE_BREAKPOINT && layout.inspectorOpen
-    ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, width - MIN_CENTER_WIDTH - (layout.railOpen ? railWidth : 0) - railGutter - inspectorGutter))
+    ? Math.max(INSPECTOR_MIN, Math.min(inspectorViewportCap, width - MIN_CENTER_WIDTH - (layout.railOpen ? railWidth : 0) - railGutter - inspectorGutter))
     : width > MOBILE_BREAKPOINT
-      ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, Math.floor(width * 0.44)))
+      ? Math.max(INSPECTOR_MIN, Math.min(Math.floor(width * 0.44), width - MIN_CENTER_WIDTH))
       : INSPECTOR_MAX
   inspectorWidth = clampWidth(inspectorWidth, INSPECTOR_MIN, inspectorMax)
 
@@ -768,7 +783,7 @@ export function loadLayout(): WorkbenchLayout {
       railOpen: parsed.railOpen ?? DEFAULT_LAYOUT.railOpen,
       railWidth: clampWidth(parsed.railWidth ?? DEFAULT_LAYOUT.railWidth, RAIL_MIN, RAIL_MAX),
       inspectorOpen: parsed.inspectorOpen ?? DEFAULT_LAYOUT.inspectorOpen,
-      inspectorWidth: clampWidth(parsed.inspectorWidth ?? DEFAULT_LAYOUT.inspectorWidth, INSPECTOR_MIN, INSPECTOR_MAX),
+      inspectorWidth: clampWidth(parsed.inspectorWidth ?? DEFAULT_LAYOUT.inspectorWidth, INSPECTOR_MIN, INSPECTOR_STORE_CAP),
     }
   } catch {
     return DEFAULT_LAYOUT

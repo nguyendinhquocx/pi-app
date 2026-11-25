@@ -63,6 +63,20 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     click.mockRestore()
   })
 
+  it('UAT R3: cancelling the native file picker re-enables the attach button immediately', async () => {
+    // Real browsers fire only 'cancel' when the user dismisses the picker; before the fix the
+    // attach button stayed disabled forever (attaching never reset).
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      this.dispatchEvent(new Event('cancel'))
+    })
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={[]} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
+    const attach = screen.getByRole('button', { name: /Đính kèm tệp/ })
+    fireEvent.click(attach)
+    await waitFor(() => expect((attach as HTMLButtonElement).disabled).toBe(false))
+    expect((screen.getByRole('button', { name: /Đính kèm tệp/ }) as HTMLButtonElement).disabled).toBe(false)
+    click.mockRestore()
+  })
+
   it('slash commands list from command.list (local filter, no server resolve — matrix row 12)', () => {
     render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={commands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
     const input = screen.getByLabelText('Tin nhắn')

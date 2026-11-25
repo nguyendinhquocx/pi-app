@@ -195,3 +195,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     />
   </>,
 )
+
+// Fixture-only QA hook: capture scripts clear the selection to exercise the new-session view.
+;(window as unknown as { __wbStore?: typeof useWorkbench }).__wbStore = useWorkbench

@@ -270,7 +270,6 @@ export function Timeline({ timeline, sessionKey, actions, onLoadOlder }: {
           </section>
         )}
         {endOfHistory && <div className="older-end" aria-hidden="true">Đầu phiên</div>}
-        {timeline.turns.length === 0 && <div className="empty">Chưa có nội dung — gửi tin nhắn đầu tiên.</div>}
         {timeline.turns.map((turn: Turn) => (
           <TurnView key={turn.id} turn={turn} sessionKey={sessionKey} actions={actions} />
         ))}

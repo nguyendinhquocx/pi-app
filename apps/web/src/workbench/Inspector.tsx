@@ -32,7 +32,22 @@ export const TERMINAL_THEMES = {
 } as const
 
 function appThemeIsDark(): boolean {
-  return typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  return resolveTerminalTheme() === 'dark'
+}
+
+/**
+ * Theme source of truth: the device-local `lix-web-ui` preference (same key the anti-FOUC
+ * bootstrap reads), falling back to the `dark` class, then the OS preference. Owner UAT R3:
+ * the terminal must match the app theme — dark app ⇒ dark terminal, light app ⇒ light terminal.
+ */
+export function resolveTerminalTheme(): 'light' | 'dark' {
+  try {
+    const raw = localStorage.getItem('lix-web-ui')
+    const theme = raw ? ((JSON.parse(raw).state ?? {}) as { theme?: unknown }).theme : null
+    if (theme === 'light' || theme === 'dark') return theme
+  } catch { /* first run */ }
+  if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) return 'dark'
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 export type InspectorProps = {
@@ -74,12 +89,18 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
     const earlyOutput = new Map<string, string[]>()
     let eventCleanup = () => {}
     let resizeSubscription: { dispose(): void } | null = null
+    let themeObserver: MutationObserver | null = null
 
     void (async () => {
       try {
         setStatus('opening')
         const [{ Terminal }, { FitAddon }] = await Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')])
-        const term = new Terminal({ convertEol: true, cursorBlink: false, allowProposedApi: false, theme: appThemeIsDark() ? TERMINAL_THEMES.dark : TERMINAL_THEMES.light })
+        const term = new Terminal({ convertEol: true, cursorBlink: false, allowProposedApi: false, theme: TERMINAL_THEMES[resolveTerminalTheme()] })
+        // Follow live theme flips (topbar toggle): repaint the palette without re-opening the PTY.
+        themeObserver = typeof MutationObserver !== 'undefined'
+          ? new MutationObserver(() => { term.options.theme = TERMINAL_THEMES[resolveTerminalTheme()] })
+          : null
+        themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
         const fit = new FitAddon()
         term.loadAddon(fit)
         if (disposed || !hostRef.current) return
@@ -126,6 +147,7 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
 
     return () => {
       disposed = true
+      themeObserver?.disconnect()
       eventCleanup()
       resizeSubscription?.dispose()
       if (terminalId && conn.online) void conn.request('terminal.close', { terminalId }).catch(() => undefined)
