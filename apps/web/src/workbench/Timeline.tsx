@@ -274,7 +274,9 @@ export function Timeline({ timeline, sessionKey, actions, onLoadOlder }: {
           <TurnView key={turn.id} turn={turn} sessionKey={sessionKey} actions={actions} />
         ))}
         {isRunning && (
-          <div className="stream-indicator" role="status">Đang chạy…</div>
+          <div className="stream-indicator" role="status">
+            <span className="pulse-dot" aria-hidden="true" /> Đang chạy…
+          </div>
         )}
       </div>
       {showJump && (

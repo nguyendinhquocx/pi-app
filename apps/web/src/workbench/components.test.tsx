@@ -169,6 +169,22 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     expect(screen.queryByRole('menu', { name: 'Chế độ gửi' })).toBeNull()
     expect(document.activeElement).toBe(trigger)
   })
+
+  it('Telegram-style quick typing: typing outside inputs focuses the prompt textarea', () => {
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={[]} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
+    const textarea = screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement
+    textarea.blur()
+    expect(document.activeElement).not.toBe(textarea)
+
+    // Press a printable key on window -> focus shifts to textarea
+    fireEvent.keyDown(window, { key: 'h' })
+    expect(document.activeElement).toBe(textarea)
+
+    // Pressing with modifier keys (e.g. Ctrl+C) must not steal focus
+    textarea.blur()
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+    expect(document.activeElement).not.toBe(textarea)
+  })
 })
 
 describe('SessionRail (spec T4: search, context menu rename/delete/clone, agents grouping)', () => {

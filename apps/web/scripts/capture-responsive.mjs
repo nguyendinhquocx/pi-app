@@ -190,6 +190,8 @@ try {
     await page.waitForFunction(() => document.querySelector('.workbench-main')?.style.getPropertyValue('--inspector-w') === `${Math.floor(innerWidth / 2)}px`, undefined, { timeout: 3000 })
     const widthValue = await page.evaluate(() => document.querySelector('.workbench-main')?.style.getPropertyValue('--inspector-w'))
     if (widthValue !== '640px') throw new Error(`inspector did not reach half viewport: ${widthValue}`)
+    const renderedWidth = await page.evaluate(() => Math.round(document.querySelector('.inspector')?.getBoundingClientRect().width ?? 0))
+    if (renderedWidth !== 640) throw new Error(`rendered inspector width is not 640px: ${renderedWidth}`)
     await capture(page, 'inspector-half-1280', overflows)
     await page.close()
   }

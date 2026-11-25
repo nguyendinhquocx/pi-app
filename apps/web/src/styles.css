@@ -318,15 +318,15 @@ video.qr-preview {
 @media (min-width: 1000px) and (max-width: 1024px) {
   .workbench-main.rail-open { grid-template-columns: minmax(240px, min(var(--rail-w, 280px), 50vw, calc(100% - 360px))) minmax(360px, 1fr); }
   .workbench-main.rail-open.inspector-open {
-    grid-template-columns: minmax(240px, min(var(--rail-w, 280px), 50vw, calc(100% - 360px - var(--inspector-w, 310px)))) minmax(360px, 1fr) minmax(280px, min(var(--inspector-w, 310px), 380px));
+    grid-template-columns: minmax(240px, min(var(--rail-w, 280px), 50vw, calc(100% - 360px - var(--inspector-w, 310px)))) minmax(360px, 1fr) minmax(280px, var(--inspector-w, 310px));
   }
-  .workbench-main.rail-closed.inspector-open { grid-template-columns: minmax(360px, 1fr) minmax(280px, min(var(--inspector-w, 310px), 380px)); }
+  .workbench-main.rail-closed.inspector-open { grid-template-columns: minmax(360px, 1fr) minmax(280px, var(--inspector-w, 310px)); }
   .workbench-main.rail-open.inspector-open .inspector, .workbench-main.rail-closed.inspector-open .inspector { position: static; width: auto; border-radius: 0; box-shadow: none; border-left: 0; }
 }
 @media (min-width: 1025px) {
   .workbench-main.rail-open { grid-template-columns: minmax(240px, min(var(--rail-w, 280px), 50vw, calc(100% - 368px))) 8px minmax(360px, 1fr); }
-  .workbench-main.rail-open.inspector-open { grid-template-columns: minmax(240px, min(var(--rail-w, 280px), 50vw, calc(100% - 376px - var(--inspector-w, 310px)))) 8px minmax(360px, 1fr) 8px minmax(280px, min(var(--inspector-w, 310px), 380px)); }
-  .workbench-main.rail-closed.inspector-open { grid-template-columns: minmax(360px, 1fr) 8px minmax(280px, min(var(--inspector-w, 310px), 380px)); }
+  .workbench-main.rail-open.inspector-open { grid-template-columns: minmax(240px, min(var(--rail-w, 280px), 50vw, calc(100% - 376px - var(--inspector-w, 310px)))) 8px minmax(360px, 1fr) 8px minmax(280px, var(--inspector-w, 310px)); }
+  .workbench-main.rail-closed.inspector-open { grid-template-columns: minmax(360px, 1fr) 8px minmax(280px, var(--inspector-w, 310px)); }
   .workbench-main.rail-open .rail-sep, .workbench-main.inspector-open .inspector-sep { display: block; }
   .workbench-main.inspector-open .inspector { position: static; width: auto; border-radius: 0; box-shadow: none; }
   .workbench-main.rail-closed.inspector-open .inspector { grid-column: 3; }
@@ -433,7 +433,17 @@ button.tool-head:hover { background: transparent; }
 @media (pointer: coarse) {
   .turn-actions-row { opacity: 1; pointer-events: auto; }
 }
-.stream-indicator { color: var(--text-secondary); font-size: 12px; padding: 6px 0; }
+.stream-indicator {
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 0 6px 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .older-state { align-self: center; display: flex; gap: 8px; align-items: center; color: var(--text-secondary); font-size: 12px; padding: 4px 0; }
 .older-state.error { color: var(--text-secondary); }
 .older-end { align-self: center; color: var(--text-secondary); font-size: 11px; letter-spacing: 0.02em; }

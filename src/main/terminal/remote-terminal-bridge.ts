@@ -27,7 +27,13 @@ class RemoteTerminalBridge {
 
   open(projectId: string, opts: { cols: number; rows: number }, handlers: { data(id: string, data: string): void; exit(id: string, code: number): void }): string {
     if (this.entries.size >= MAX_REMOTE_TERMINALS) throw new Error('terminal_limit_reached')
-    const profile = terminalProfiles()[0]
+    const all = terminalProfiles()
+    // On Windows, interactive remote terminals must prefer PowerShell (pwsh -> powershell)
+    // so user aliases/profile scripts load and ConPTY runs interactive TUI apps (pi/li)
+    // smoothly without the MSYS2/Git-Bash buffer-lag and signal-exit crashes (owner UAT).
+    const profile = process.platform === 'win32'
+      ? (all.find((p) => p.kind === 'pwsh') ?? all.find((p) => p.kind === 'powershell') ?? all[0])
+      : all[0]
     if (!profile) throw new Error('no_shell_profile')
     const remoteId = `rt${++this.seq}`
     // One PtyManager per terminal: its sink translates the internal id to the remote id

@@ -433,6 +433,41 @@ export function Composer({
   const queuedMessages = [...queue.steering, ...queue.followUp]
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
+  // Telegram-style quick typing (owner UAT): if focus is anywhere on the screen (except inputs,
+  // modals, or the terminal pane), pressing any printable key automatically focuses the prompt
+  // textarea so the user can start typing immediately without having to click it first.
+  useEffect(() => {
+    const onGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key.length !== 1) return
+
+      const active = document.activeElement as HTMLElement | null
+      if (active) {
+        const tag = active.tagName.toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+        if (active.isContentEditable) return
+        // Never hijack keystrokes meant for the terminal
+        if (active.closest('.terminal-pane') || active.closest('.xterm') || active.classList.contains('xterm-helper-textarea')) return
+        // Never hijack keystrokes inside dialogs/modals
+        if (active.closest('[role="dialog"]') || active.closest('.dialog-overlay') || active.closest('.host-dialog')) return
+        // Space on a button clicks the button (accessibility convention)
+        if ((tag === 'button' || active.getAttribute('role') === 'button') && e.key === ' ') return
+      }
+
+      if (document.querySelector('[role="dialog"], .dialog-overlay, .host-dialog')) return
+
+      const el = inputRef.current
+      if (!el || document.activeElement === el) return
+
+      el.focus()
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+    }
+
+    window.addEventListener('keydown', onGlobalKeyDown)
+    return () => window.removeEventListener('keydown', onGlobalKeyDown)
+  }, [])
+
   const send = async (): Promise<void> => {
     const trimmed = text.trim()
     if (!trimmed) return
