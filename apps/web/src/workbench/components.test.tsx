@@ -170,7 +170,7 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it('Telegram-style quick typing: typing outside inputs focuses the prompt textarea', () => {
+  it('Telegram-style quick typing: focuses the prompt and inserts the first key', () => {
     render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={[]} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
     const textarea = screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement
     textarea.blur()
@@ -179,8 +179,9 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     // Press a printable key on window -> focus shifts to textarea
     fireEvent.keyDown(window, { key: 'h' })
     expect(document.activeElement).toBe(textarea)
+    expect(textarea.value).toBe('h')
 
-    // Pressing with modifier keys (e.g. Ctrl+C) must not steal focus
+    // Pressing with modifier keys (e.g. Ctrl+C) must not steal focus or enter text
     textarea.blur()
     fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
     expect(document.activeElement).not.toBe(textarea)
