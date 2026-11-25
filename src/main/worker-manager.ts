@@ -53,6 +53,9 @@ import { isWorkerOwnerConflict, throwIfWorkerReplyError, workerOwnerConflictFrom
 
 interface InitResult extends WorkerInitResult {}
 
+/** RPC types that start/queue agent work — they count as fresh interaction for idle-TTL pruning. */
+const TURN_INITIATING_REQUEST_TYPES = new Set(['prompt', 'steer', 'followUp'])
+
 export class WorkerManager {
   private mainWindow: BrowserWindow | null = null
   /** Key: session abs path or `ws:${cwd}` */
@@ -454,7 +457,16 @@ export class WorkerManager {
       data && typeof data === 'object' && 'sessionFile' in data
         ? (data as { sessionFile?: string }).sessionFile
         : undefined
-    return this.resolveSlotForRpc(sessionFile).then((slot) => this.requestOnSlot(slot, type, data))
+    return this.resolveSlotForRpc(sessionFile).then((slot) => {
+      if (TURN_INITIATING_REQUEST_TYPES.has(type)) {
+        // Web/remote sends never set foreground (remote-host send deliberately skips it),
+        // so the idle-TTL pruner would dispose a Web session's worker after the idle
+        // timeout and force a full worker boot (measured 16–30s) on the next send.
+        // Treat a turn-initiating RPC as fresh interaction instead.
+        slot.lastIdleAt = Date.now()
+      }
+      return this.requestOnSlot(slot, type, data)
+    })
   }
 
   async getBackgroundRuntimeState(poolKeyOrCwd: string): Promise<WorkerState | null> {
