@@ -62,6 +62,7 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
         bus.listener = listener
         return () => { unsubscribed = true }
       },
+      subscribeState: () => () => {},
     } as unknown as HostConnection
 
     const view = render(<TerminalPane sessionKey="proj/s.jsonl" conn={conn} />)
@@ -87,7 +88,7 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
   })
 
   it('terminal theme follows the app theme: white/black in light, dark surface in dark', async () => {
-    const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't', profile: 'bash' })), subscribeEvents: () => () => {} } as unknown as HostConnection
+    const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't', profile: 'bash' })), subscribeEvents: () => () => {}, subscribeState: () => () => {} } as unknown as HostConnection
 
     document.documentElement.classList.remove('dark')
     const light = render(<TerminalPane sessionKey="s" conn={conn} />)
@@ -104,7 +105,7 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
 
   it('UAT R3: the topbar theme toggle repaints the live terminal without reopening the PTY', async () => {
     const open = vi.fn(async () => ({ terminalId: 't-flip', profile: 'bash' }))
-    const conn = { online: true, request: open as unknown, subscribeEvents: () => () => {} } as unknown as HostConnection
+    const conn = { online: true, request: open as unknown, subscribeEvents: () => () => {}, subscribeState: () => () => {} } as unknown as HostConnection
 
     document.documentElement.classList.remove('dark')
     const view = render(<TerminalPane sessionKey="s" conn={conn} />)
@@ -122,9 +123,45 @@ describe('TerminalPane wire integration (T4: remote PTY + OSC 52 off)', () => {
 
   it('UAT R3: a stored dark preference wins over the default light palette', async () => {
     localStorage.setItem('lix-web-ui', JSON.stringify({ state: { theme: 'dark' } }))
-    const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't-dark', profile: 'bash' })), subscribeEvents: () => () => {} } as unknown as HostConnection
+    const conn = { online: true, request: vi.fn(async () => ({ terminalId: 't-dark', profile: 'bash' })), subscribeEvents: () => () => {}, subscribeState: () => () => {} } as unknown as HostConnection
     const view = render(<TerminalPane sessionKey="s" conn={conn} />)
     await waitFor(() => expect((terminalState.lastOptions?.theme as { background: string }).background).toBe('#1f1f1f'))
+    view.unmount()
+  })
+
+  it('UAT R4: an offline connection waits for online instead of opening a dead terminal', async () => {
+    const stateBus: { listener: ((state: string) => void) | null } = { listener: null }
+    const open = vi.fn(async () => ({ terminalId: 't-wait', profile: 'bash' }))
+    let isOnline = false
+    const conn = {
+      get online() { return isOnline },
+      state: 'reconnecting',
+      request: open as unknown,
+      subscribeEvents: () => () => {},
+      subscribeState: (cb: (state: string) => void) => { stateBus.listener = cb; cb('reconnecting'); return () => { stateBus.listener = null } },
+    } as unknown as HostConnection
+    const view = render(<TerminalPane sessionKey="s" conn={conn} />)
+    await waitFor(() => expect(view.container.querySelector('[data-status="waiting"]')).toBeTruthy())
+    expect(open).not.toHaveBeenCalled()
+    isOnline = true
+    stateBus.listener?.('online')
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(view.container.querySelector('[data-status="open"]')).toBeTruthy())
+    view.unmount()
+  })
+
+  it('UAT R4: no sessionKey (borrowed or selected) keeps the PTY closed with a hint', async () => {
+    const open = vi.fn(async () => ({ terminalId: 't-none', profile: 'bash' }))
+    const conn = {
+      online: true,
+      state: 'online',
+      request: open as unknown,
+      subscribeEvents: () => () => {},
+      subscribeState: () => () => {},
+    } as unknown as HostConnection
+    const view = render(<TerminalPane sessionKey="" conn={conn} />)
+    expect(open).not.toHaveBeenCalled()
+    expect(view.container.textContent).toContain('Cần một phiên đã có để mở terminal.')
     view.unmount()
   })
 })

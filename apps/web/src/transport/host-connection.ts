@@ -88,7 +88,14 @@ type WatchedSession = { sessionKey: string; cursor?: { epoch: string; seq: numbe
 const PING_INTERVAL = 30_000
 const REQUEST_TIMEOUT = 20_000
 // Cold worker initialization is bounded at 60s on LiX; leave 30s for transport/dispatch overhead.
+// session.create also spawns a worker: same ceiling + headroom (GLM R4: 60s left no margin).
 const TURN_SEND_TIMEOUT = 90_000
+const SESSION_CREATE_TIMEOUT = 90_000
+/** Per-method timeout overrides; anything else uses the generic request timeout. */
+const METHOD_TIMEOUTS: Partial<Record<string, number>> = {
+  'turn.send': TURN_SEND_TIMEOUT,
+  'session.create': SESSION_CREATE_TIMEOUT,
+}
 
 export class HostConnection {
   readonly hostId: string
@@ -117,6 +124,7 @@ export class HostConnection {
   private lastError: string | null = null
   private events: HostConnectionEvents
   private readonly eventSubscribers = new Set<(event: RemoteEvent, payload: EventPayload<RemoteEvent>) => void>()
+  private readonly stateSubscribers = new Set<(state: ConnState, detail?: string) => void>()
   private pendingPairToken?: string
 
   constructor(options: HostConnectionOptions) {
@@ -181,6 +189,7 @@ export class HostConnection {
     this.watched.clear()
     this.openRequests.clear()
     this.eventSubscribers.clear()
+    this.stateSubscribers.clear()
   }
 
   /** Subscribe to host events without replacing the workbench's store listener (e.g. PTY output). */
@@ -189,12 +198,21 @@ export class HostConnection {
     return () => this.eventSubscribers.delete(listener)
   }
 
+  /** Connection-state signal for consumers that must wait for 'online' (remote terminal lane). */
+  subscribeState(listener: (state: ConnState, detail?: string) => void): () => void {
+    this.stateSubscribers.add(listener)
+    listener(this.state)
+    return () => this.stateSubscribers.delete(listener)
+  }
+
   async request<M extends RemoteMethod>(method: M, params: MethodParams<M>): Promise<MethodResult<M>> {
     if (!this.online || !this.channel) throw new DisconnectedError()
     const schema = REMOTE_METHODS[method]
     const id = `w${++this.reqId}`
     const frame = makeReq(id, method, schema.params.parse(params))
-    const timeoutMs = method === 'turn.send' ? this.opts.turnSendTimeoutMs : this.opts.requestTimeoutMs
+    // A per-connection turnSendTimeoutMs override wins for turn.send (option stays live);
+    // otherwise the per-method map applies, falling back to the generic request timeout.
+    const timeoutMs = (method === 'turn.send' ? this.opts.turnSendTimeoutMs : METHOD_TIMEOUTS[method]) ?? this.opts.requestTimeoutMs
     const promise = new Promise<Frame>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
@@ -307,11 +325,14 @@ export class HostConnection {
   }
 
   private setState(s: ConnState, detail?: string): void {
+    const notify = (): void => { for (const cb of this.stateSubscribers) cb(s, detail) }
     if (this.state !== s) {
       this.state = s
       this.events.onState?.(s, detail)
+      notify()
     } else if (detail) {
       this.events.onState?.(s, detail)
+      notify()
     }
   }
 

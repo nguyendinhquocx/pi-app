@@ -4,6 +4,9 @@ import { REMOTE_METHODS, type RemoteMethod, type MethodParams, type MethodResult
 import type { HostConnection, ConnState } from '../transport/host-connection'
 import { DisconnectedError, RpcRejectedError } from '../transport/host-connection'
 import { addUi, removeUi, prependOlder, applyAll, type SessionTimeline } from './timeline-store'
+
+/** Device-local memory of the deliberately chosen host (auto-selection never writes it). */
+export const LAST_HOST_KEY = 'li-web-last-host'
 import type { OpenResult } from '@shared/remote'
 import type { BackoffOptions } from '../transport/reconnect'
 import type { DeviceKeyRecord } from '../transport/device-keys'
@@ -51,6 +54,8 @@ export type WorkbenchActions = {
   applyPatch(hostId: string, sessionKey: string, patches: Parameters<typeof applyAll>[1]): boolean
   prependOlderTurns(hostId: string, sessionKey: string, older: Parameters<typeof prependOlder>[1], hasOlder: boolean): void
   setActiveHost(hostId: string | null): void
+  /** Deliberate user selection from the host picker: also persists the device-local memory. */
+  chooseHost(hostId: string | null): void
   setNotice(level: 'info' | 'warning' | 'error' | null, text?: string): void
   resetHost(hostId: string): void
 }
@@ -171,6 +176,13 @@ export const useWorkbench = create<WorkbenchStore>((set, get) => ({
   setActiveHost(hostId) {
     if (hostId) get().ensureSlice(hostId)
     set({ activeHostId: hostId })
+  },
+  // Deliberate user choice (host picker): remember device-local so the next reload restores
+  // it. Auto-selection paths call setActiveHost instead and must never overwrite the memory.
+  chooseHost(hostId) {
+    if (!hostId) return
+    get().setActiveHost(hostId)
+    try { localStorage.setItem(LAST_HOST_KEY, hostId) } catch { /* private mode */ }
   },
   setNotice(level, text) {
     set({ notice: level ? { level, text: text ?? '' } : null })

@@ -106,6 +106,10 @@ const fakeConnection = {
     terminalListeners.add(listener)
     return () => { terminalListeners.delete(listener) }
   },
+  subscribeState(listener: (state: string) => void) {
+    listener('online')
+    return () => {}
+  },
   openSession: async () => ({
     kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
     state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },

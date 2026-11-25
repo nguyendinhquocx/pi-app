@@ -411,7 +411,8 @@ export function HostManager({ keyStore, socketFactory, initialDialogOpen = false
                 role="menuitemradio"
                 aria-checked={host.hostId === activeHostId}
                 onClick={() => {
-                  setActiveHost(host.hostId)
+                  // Deliberate selection: persists li-web-last-host (auto-selection must not).
+                  useWorkbench.getState().chooseHost(host.hostId)
                   void connectHost(host.hostId)
                   setHostPickerOpen(false)
                   hostPickerTriggerRef.current?.focus()

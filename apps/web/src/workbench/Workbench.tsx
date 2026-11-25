@@ -60,6 +60,9 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
   const [commands, setCommands] = useState<CommandInfo[]>([])
   const [models, setModels] = useState<{ id: string; name: string; provider?: string; group?: string }[]>([])
   const [sessionMeta, setSessionMeta] = useState<{ model: string | null; thinking: string | null; thinkingLevels: string[]; context: ContextStats | null; usage: SessionUsage | null }>({ model: null, thinking: null, thinkingLevels: [], context: null, usage: null })
+  // Model picked on the new-session view (host/project-level choice); applied to the freshly
+  // created session before its first turn (owner UAT R4: the picker was empty there).
+  const [newSessionModel, setNewSessionModel] = useState<string | null>(null)
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false)
   const [layout, setLayout] = useState<WorkbenchLayout>(loadLayout)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1280 : window.innerWidth)
@@ -99,6 +102,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
     // These details belong to one host/session; never let a fast host switch flash stale
     // model, usage, branch, review or command data from the previous namespace.
     setSessionMeta({ model: null, thinking: null, thinkingLevels: [], context: null, usage: null })
+    setNewSessionModel(null)
     setBranches([])
     setCommands([])
     setModels([])
@@ -181,21 +185,46 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
     }
   }, [connections])
 
-  // Auto-select the last used host (device-local) when none is active; fall back to the first
-  // connected host. Owner UAT R3: reloading li.quoc.app must stay on the host you last used.
+  // Host restore (owner UAT R3/R4): the saved host wins as soon as its connection object
+  // exists — hosts connect asynchronously, so a fast first host must never win by race.
+  // A deliberate user choice is never yanked; only an auto fallback is replaced.
+  // activeHostId stays in deps so forgetting the active host re-triggers the fallback.
+  const autoFallbackRef = useRef<string | null>(null)
   useEffect(() => {
-    if (activeHostId || connections.length === 0) return
+    if (connections.length === 0) return
     let saved: string | null = null
     try { saved = localStorage.getItem(LAST_HOST_KEY) } catch { /* private mode */ }
-    const restored = saved && connections.some((c) => c.hostId === saved) ? saved : connections[0].hostId
-    setActiveHost(restored)
+    const savedMatch = saved ? connections.find((c) => c.hostId === saved) : undefined
+    const current = useWorkbench.getState().activeHostId
+    if (savedMatch) {
+      if (!current || current === autoFallbackRef.current) setActiveHost(savedMatch.hostId)
+      return
+    }
+    if (!current) {
+      autoFallbackRef.current = connections[0].hostId
+      setActiveHost(connections[0].hostId)
+    }
   }, [activeHostId, connections, setActiveHost])
 
-  // Persist every host change so the next load restores it.
+  // Model picker on the new-session view: model.list needs a sessionKey, so borrow the first
+  // one (same trick as the terminal) — the catalog is host/project-level in practice.
+  // slice?.sessions identity in deps: the watch-list lands asynchronously after mount.
+  // Stale-response guards mirror refreshSessionContext: a host switch (which does not bump
+  // the session generation) must still discard an in-flight foreign catalog (GLM/Luna/Gemini R4).
   useEffect(() => {
-    if (!activeHostId) return
-    try { localStorage.setItem(LAST_HOST_KEY, activeHostId) } catch { /* private mode */ }
-  }, [activeHostId])
+    if (sessionKey || !active || models.length > 0) return
+    const borrowed = slice?.sessions[0]?.sessionKey
+    if (!borrowed) return
+    const requestHostId = active.hostId
+    const generation = sessionContextGeneration.current
+    void rpc(active.conn, 'model.list', { sessionKey: borrowed }).then((r) => {
+      if (generation !== sessionContextGeneration.current) return
+      const current = useWorkbench.getState()
+      if (current.activeHostId !== requestHostId) return
+      if (current.slices[requestHostId]?.selectedSessionKey) return
+      setModels(r.models.map((m) => ({ id: m.id, name: m.name ?? m.id, provider: m.provider, group: m.group })))
+    }).catch(() => undefined)
+  }, [sessionKey, active, models.length, slice?.sessions])
 
   const refreshSessionContext = useCallback(
     async (conn: HostConnection, hostId: string, sk: string, generation: number) => {
@@ -356,6 +385,14 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           const projectId = slice?.selectedProjectId ?? projects.projects[0]?.id
           if (!projectId) throw new Error('Host chưa có project khả dụng để tạo phiên.')
           const created = await rpc(active.conn, 'session.create', { projectId })
+          if (newSessionModel) {
+            // Apply the picked model BEFORE openSession refreshes context, otherwise the UI
+            // flashes the host default model (Gemini R4). model.set only needs the session
+            // to exist in the host registry — no session.open required.
+            await rpc(active.conn, 'model.set', { sessionKey: created.sessionKey, modelId: newSessionModel })
+            setSessionMeta((m) => ({ ...m, model: newSessionModel }))
+            setNewSessionModel(null)
+          }
           await refreshSessions(active.conn)
           await openSession(active.conn, active.hostId, created.sessionKey)
           await rpc(active.conn, 'turn.send', { sessionKey: created.sessionKey, text, mode: 'prompt', clientMessageId })
@@ -396,7 +433,7 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
         })
       },
     }),
-    [active, sessionKey, openSession, refreshSessions, slice?.selectedProjectId],
+    [active, sessionKey, openSession, refreshSessions, slice?.selectedProjectId, newSessionModel],
   )
 
   const inspectorProps = {
@@ -591,11 +628,11 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
                 commands={[]}
                 context={null}
                 usage={null}
-                model={null}
+                model={newSessionModel}
                 thinking={null}
                 thinkingLevels={[]}
-                models={[]}
-                onSetModel={async () => {}}
+                models={models}
+                onSetModel={async (modelId) => setNewSessionModel(modelId)}
                 onSetThinking={async () => {}}
                 actions={composerActions}
               />
@@ -698,7 +735,8 @@ function webMessageId(): string {
 export type WorkbenchLayout = { railOpen: boolean; railWidth: number; inspectorOpen: boolean; inspectorWidth: number }
 
 export const LAYOUT_KEY = 'li-web-layout'
-export const LAST_HOST_KEY = 'li-web-last-host'
+export { LAST_HOST_KEY } from './workbench-store'
+import { LAST_HOST_KEY } from './workbench-store'
 export const RAIL_MIN = 240
 /** Roomy cap: the effective ceiling stays min(half viewport, viewport − 360px center floor). */
 export const RAIL_MAX = 1600

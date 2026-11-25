@@ -80,9 +80,31 @@ export type InspectorProps = {
 export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: InspectorProps['conn'] }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [status, setStatus] = useState<'closed' | 'opening' | 'open' | 'exited'>('closed')
+  // The remote lane must wait for the connection to come online: opening a PTY while the
+  // socket is still reconnecting used to leave a dead pane until the tab was re-mounted.
+  const [online, setOnline] = useState(Boolean(conn?.online))
+  useEffect(() => {
+    if (!conn) {
+      setOnline(false)
+      return
+    }
+    return conn.subscribeState((s) => setOnline(s === 'online'))
+  }, [conn])
   // xterm is loaded lazily: the TerminalView mounts only when the tab opens.
   useEffect(() => {
-    if (!conn) return
+    if (!conn || !online) return
+    if (!sessionKey) {
+      // The host schema requires a real sessionKey (min 1) to resolve the project.
+      setStatus('closed')
+      return
+    }
+    // A stale error text from a previous attempt must never survive under a fresh xterm.
+    if (hostRef.current) hostRef.current.textContent = ''
+    if (!conn.online) {
+      // Closure `online` may lag one commit behind a conn switch — never fire on a dead socket.
+      setStatus('closed')
+      return
+    }
     let disposed = false
     let termHandle: { write(s: string): void; dispose(): void } | null = null
     let terminalId: string | null = null
@@ -125,7 +147,12 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
         })
 
         const opened = await conn.request('terminal.open', { sessionKey, cols: term.cols, rows: term.rows })
-        if (disposed) return
+        if (disposed) {
+          // The pane unmounted while the RPC was in flight: the host already spawned the PTY,
+          // so its id must be closed instead of dropped (Gemini R4 orphan fix).
+          if (opened?.terminalId && conn.online) void conn.request('terminal.close', { terminalId: opened.terminalId }).catch(() => undefined)
+          return
+        }
         terminalId = opened.terminalId
         setStatus('open')
         for (const chunk of earlyOutput.get(terminalId) ?? []) write(chunk)
@@ -153,11 +180,13 @@ export function TerminalPane({ sessionKey, conn }: { sessionKey: string; conn: I
       if (terminalId && conn.online) void conn.request('terminal.close', { terminalId }).catch(() => undefined)
       termHandle?.dispose()
     }
-  }, [conn, sessionKey])
+  }, [conn, online, sessionKey])
 
   return (
     <div className="terminal-pane">
-      <div ref={hostRef} className="terminal-host" data-status={status} />
+      <div ref={hostRef} className="terminal-host" data-status={online ? status : 'waiting'} />
+      {!online && <p className="notice">Đang chờ kết nối host…</p>}
+      {online && !sessionKey && <p className="notice">Cần một phiên đã có để mở terminal.</p>}
       {status === 'exited' && <p className="notice">Terminal đã kết thúc.</p>}
     </div>
   )

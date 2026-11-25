@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HostConnection } from '../transport/host-connection'
 import { Workbench, INSPECTOR_MAX, LAST_HOST_KEY, LAYOUT_KEY, MIN_CENTER_WIDTH, RAIL_MIN, RAIL_MAX, RESIZE_GUTTER, loadLayout, resolveWorkbenchWidths } from './Workbench'
@@ -39,6 +39,7 @@ const fakeConn = {
   stop() {},
   dispose() {},
   subscribeEvents() { return () => {} },
+  subscribeState() { return () => {} },
   request: async (method: string) => {
     if (method === 'terminal.open') return { terminalId: 'layout-test-terminal' }
     if (method === 'session.watchList') return { sessions: [] }
@@ -137,6 +138,65 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
     localStorage.setItem(LAST_HOST_KEY, 'h2')
     render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }, { hostId: 'h2', conn: fakeConn }]} />)
     await waitFor(() => expect(useWorkbench.getState().activeHostId).toBe('h2'))
+  })
+
+  it('UAT R4: a saved host whose connection appears later wins over the auto first-host fallback', async () => {
+    seedStore(null)
+    useWorkbench.setState({ activeHostId: null })
+    localStorage.setItem(LAST_HOST_KEY, 'laptop')
+    const view = render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }]} />)
+    await waitFor(() => expect(useWorkbench.getState().activeHostId).toBe('h1'))
+    // Auto fallback must not clobber the saved host memory.
+    expect(localStorage.getItem(LAST_HOST_KEY)).toBe('laptop')
+    view.rerender(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }, { hostId: 'laptop', conn: fakeConn }]} />)
+    await waitFor(() => expect(useWorkbench.getState().activeHostId).toBe('laptop'))
+  })
+
+  it('UAT R4: chooseHost persists a deliberate pick; auto fallback never writes the memory', async () => {
+    seedStore(null)
+    useWorkbench.setState({ activeHostId: null })
+    render(<Workbench connections={[{ hostId: 'h1', conn: fakeConn }, { hostId: 'h2', conn: fakeConn }]} />)
+    await waitFor(() => expect(useWorkbench.getState().activeHostId).toBe('h1'))
+    expect(localStorage.getItem(LAST_HOST_KEY)).toBeNull()
+    useWorkbench.getState().chooseHost('h2')
+    expect(useWorkbench.getState().activeHostId).toBe('h2')
+    expect(localStorage.getItem(LAST_HOST_KEY)).toBe('h2')
+  })
+
+  it('UAT R4: the new-session model picker lists host models (borrowed key) and remembers the pick', async () => {
+    seedStore(null)
+    useWorkbench.setState({
+      activeHostId: 'h1',
+      slices: {
+        h1: {
+          state: 'online', detail: null, role: 'operator', ownerProtocol: 1,
+          projects: [], selectedProjectId: null,
+          sessions: [{ sessionKey: 'proj/a.jsonl', projectId: 'p1', title: 'A', status: 'idle' as const, updatedAt: 1 }],
+          selectedSessionKey: null,
+          timelines: {},
+        },
+      },
+    })
+    const modelConn = {
+      ...fakeConn,
+      request: async (method: string) => {
+        if (method === 'session.watchList') return { sessions: [{ sessionKey: 'proj/a.jsonl', projectId: 'p1', title: 'A', status: 'idle', updatedAt: 1 }] }
+        if (method === 'model.list') return { models: [{ id: 'model-x', name: 'Model X', provider: 'test', group: 'custom' }], current: null, thinking: null, availableThinking: [] }
+        if (method === 'session.stats') return {}
+        if (method === 'command.list') return { commands: [] }
+        if (method === 'session.branches') return { branches: [] }
+        return {}
+      },
+    } as unknown as HostConnection
+    render(<Workbench connections={[{ hostId: 'h1', conn: modelConn }]} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Model:/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /Model:/ }))
+    const search = await screen.findByLabelText('Tìm model')
+    fireEvent.change(search, { target: { value: 'Model X' } })
+    const option = await screen.findByRole('option', { name: /Model X/ })
+    fireEvent.click(option)
+    // Selection shows on the trigger (applied to the session created by the first message).
+    await waitFor(() => expect(screen.getByRole('button', { name: /Model: Model X/ })).toBeTruthy())
   })
 
   it('resolves each breakpoint without forcing the mobile main pane to 360px', () => {
@@ -278,6 +338,56 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
       await Promise.resolve()
     })
     expect(screen.getByRole('button', { name: /Model: Model B/ })).toBeTruthy()
+  })
+
+  it('UAT R4: first send from the new-session view applies the picked model before turn.send', async () => {
+    seedStore(null)
+    useWorkbench.setState({
+      activeHostId: 'h1',
+      slices: {
+        h1: {
+          state: 'online', detail: null, role: 'operator', ownerProtocol: 1,
+          projects: [{ id: 'p1', name: 'Project' }], selectedProjectId: 'p1',
+          sessions: [{ sessionKey: 'proj/a.jsonl', projectId: 'p1', title: 'A', status: 'idle' as const, updatedAt: 1 }],
+          selectedSessionKey: null,
+          timelines: {},
+        },
+      },
+    })
+    const calls: string[] = []
+    const sendConn = {
+      ...fakeConn,
+      request: async (method: string, params: Record<string, unknown> = {}) => {
+        calls.push(method)
+        if (method === 'session.watchList') return { sessions: [{ sessionKey: 'proj/a.jsonl', projectId: 'p1', title: 'A', status: 'idle', updatedAt: 1 }] }
+        if (method === 'project.list') return { projects: [{ id: 'p1', name: 'Project' }] }
+        if (method === 'session.create') return { sessionKey: 'proj/new.jsonl' }
+        if (method === 'model.list') return { models: [{ id: 'model-x', name: 'Model X', provider: 'test', group: 'custom' }], current: null, thinking: null, availableThinking: [] }
+        if (method === 'model.set') return {}
+        if (method === 'turn.send') return {}
+        if (method === 'session.stats') return {}
+        if (method === 'command.list') return { commands: [] }
+        if (method === 'session.branches') return { branches: [] }
+        return {}
+      },
+    } as unknown as HostConnection
+    render(<Workbench connections={[{ hostId: 'h1', conn: sendConn }]} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Model:/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /Model:/ }))
+    fireEvent.change(await screen.findByLabelText('Tìm model'), { target: { value: 'Model X' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Model X/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Model: Model X/ })).toBeTruthy())
+
+    fireEvent.change(screen.getByLabelText('Tin nhắn'), { target: { value: 'hello first' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi' }))
+    await waitFor(() => expect(calls).toContain('turn.send'))
+    const createAt = calls.indexOf('session.create')
+    const setAt = calls.indexOf('model.set')
+    const sendAt = calls.indexOf('turn.send')
+    expect(createAt).toBeGreaterThanOrEqual(0)
+    expect(setAt).toBeGreaterThan(createAt)
+    expect(sendAt).toBeGreaterThan(setAt)
+    expect(useWorkbench.getState().slices.h1.selectedSessionKey).toBe('proj/new.jsonl')
   })
 
   it('keeps the host picker reachable when the rail collapses and in the mobile drawer', () => {

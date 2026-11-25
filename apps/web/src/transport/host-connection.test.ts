@@ -187,6 +187,25 @@ describe('HostConnection (spec T3)', () => {
     conn.stop()
   })
 
+  it('gives session.create its own 90s window (busy laptop hosts exceed 20s — owner UAT R4)', async () => {
+    const { conn } = await onlineConn({
+      'session.stats': () => new Promise<never>(() => {}),
+      'session.create': () => new Promise<never>(() => {}),
+    })
+    const ordinary = conn.request('session.stats', { sessionKey: 'proj/s1.jsonl' }).then(() => null, (error: Error) => error)
+    const create = conn.request('session.create', { projectId: 'p1' }).then(() => null, (error: Error) => error)
+
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(await ordinary).toMatchObject({ message: 'session.stats timed out' })
+    expect(await Promise.race([create, Promise.resolve('still-pending')])).toBe('still-pending')
+
+    await vi.advanceTimersByTimeAsync(69_999)
+    expect(await Promise.race([create, Promise.resolve('still-pending')])).toBe('still-pending')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await create).toMatchObject({ message: 'session.create timed out' })
+    conn.stop()
+  })
+
   it('pending request fails on socket drop; reconnect resumes watched sessions from the cursor', async () => {
     const opens: unknown[] = []
     const { conn, sim } = await onlineConn({
