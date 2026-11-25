@@ -45,7 +45,7 @@ async function openInspector(page) {
 
 async function capture(page, name, overflows) {
   const measurements = await page.evaluate(() => {
-    const selectors = ['html', 'body', '#root', '.li-web-root', '.workbench-main', '.session-rail.mobile-visible', '.workbench-center', '.timeline', '.composer', '#workbench-inspector', '.host-menu', '.host-dialog']
+    const selectors = ['html', 'body', '#root', '.li-web-root', '.workbench-main', '.session-rail.mobile-visible', '.workbench-center', '.timeline', '.composer', '#workbench-inspector', '.extension-dialogs', '.ask-user', '.host-menu', '.host-dialog']
     return selectors.flatMap((selector) => {
       const element = document.querySelector(selector)
       if (!element || element.clientWidth === 0) return []
@@ -193,6 +193,35 @@ try {
     const renderedWidth = await page.evaluate(() => Math.round(document.querySelector('.inspector')?.getBoundingClientRect().width ?? 0))
     if (renderedWidth !== 640) throw new Error(`rendered inspector width is not 640px: ${renderedWidth}`)
     await capture(page, 'inspector-half-1280', overflows)
+    await page.close()
+  }
+
+  for (const width of [1280, 375, 320]) {
+    const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: width <= 375, isMobile: width <= 375 })
+    await page.goto(`http://127.0.0.1:${PORT}/dev/workbench-preview.html?fixture=ask-user`, { waitUntil: 'networkidle' })
+    await page.locator('.ask-user').waitFor({ state: 'visible' })
+    if (await page.locator('.ask-question').count() !== 3) throw new Error('Ask User preview did not render all three questions')
+    await capture(page, `ask-user-${width}`, overflows)
+    const submit = page.locator('.ask-user-submit')
+    await submit.scrollIntoViewIfNeeded()
+    if (!(await submit.isVisible())) throw new Error(`Ask User submit is not reachable at ${width}px`)
+    await capture(page, `ask-user-submit-${width}`, overflows)
+    if (width === 1280) {
+      await page.locator('.ask-user').evaluate((card) => { card.scrollTop = 0 })
+      await page.locator('.ask-choice-input').first().check()
+      if (!(await page.locator('.ask-option.selected').count())) throw new Error('Ask User selected state is missing')
+      await capture(page, 'ask-user-selected-1280', overflows)
+      await page.keyboard.press('Tab')
+      const focusVisible = await page.evaluate(() => {
+        const active = document.activeElement
+        return !!active && active.matches('.ask-custom-answer input') && getComputedStyle(active).outlineWidth === '2px'
+      })
+      if (!focusVisible) throw new Error('Ask User custom-answer keyboard focus cue is missing')
+      await capture(page, 'ask-user-keyboard-focus-1280', overflows)
+      await page.getByRole('button', { name: 'Giao diện tối' }).click()
+      await page.locator('html.dark').waitFor({ state: 'attached' })
+      await capture(page, 'ask-user-dark-1280', overflows)
+    }
     await page.close()
   }
 

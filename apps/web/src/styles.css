@@ -546,8 +546,49 @@ button.tool-head:hover { background: transparent; }
 .fallback-head { display: flex; gap: 10px; align-items: baseline; }
 .fallback-notice { color: var(--text-secondary); font-size: 12px; }
 .fallback-raw pre { font-family: var(--font-mono); font-size: 11px; background: var(--bg-2); padding: 8px; border-radius: 6px; overflow-x: auto; max-height: 180px; }
-.ask-user fieldset { border: 1px solid var(--border-light); border-radius: 8px; }
-.ask-user label { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.ask-user {
+  display: block;
+  max-height: min(80dvh, 960px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-color: var(--border-light);
+  border-radius: 12px;
+  padding: 14px;
+}
+.ask-user-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.ask-user-head h3 { margin: 0; font-size: 13px; line-height: 20px; font-weight: 600; }
+.ask-user-head > span { flex: none; color: var(--text-secondary); font-size: 11px; }
+.ask-user-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ask-user-questions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.ask-question { min-width: 0; margin: 0; padding: 12px; border: 0; border-radius: 10px; background: var(--bg-1); }
+.ask-question > legend.sr-only { padding: 0; }
+.ask-question-heading { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-width: 0; margin: 0 0 10px; padding: 0; }
+.ask-question-number { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--bg-2); color: var(--text-secondary); font-size: 11px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ask-question-copy { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.ask-question-title { color: var(--text-primary); font-size: 13px; line-height: 19px; font-weight: 600; overflow-wrap: anywhere; }
+.ask-question-category { color: var(--text-secondary); font-size: 10px; line-height: 15px; }
+.ask-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+.ask-option { display: flex; align-items: flex-start; gap: 10px; min-width: 0; min-height: 44px; padding: 9px 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-base); cursor: pointer; transition: background var(--motion-fast) var(--motion-ease); }
+@media (hover: hover) and (pointer: fine) { .ask-option:hover { background: var(--bg-hover); } }
+.ask-option.selected { background: var(--bg-active); }
+.ask-choice-input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--brand); cursor: pointer; }
+.ask-choice-input:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.ask-option-copy { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.ask-option-label { color: var(--text-primary); font-size: 12px; line-height: 18px; font-weight: 500; overflow-wrap: anywhere; }
+.ask-option.selected .ask-option-label { font-weight: 600; }
+.ask-option-description, .ask-option-preview { color: var(--text-secondary); font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+.ask-custom-answer { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin-top: 8px; color: var(--text-secondary); font-size: 11px; line-height: 16px; }
+.ask-custom-answer input { width: 100%; min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--border-base); border-radius: 8px; background: var(--bg-base); color: var(--text-primary); font: inherit; font-size: 12px; }
+.ask-custom-answer input:focus { border-color: var(--brand); }
+.ask-user-footer { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.ask-user-error { margin: 0; color: var(--status-error); font-size: 12px; line-height: 18px; }
+.ask-user-submit { width: 100%; min-width: 0; }
+@media (min-width: 600px) {
+  .ask-user { padding: 16px; }
+  .ask-user-footer { flex-direction: row; align-items: center; justify-content: flex-end; }
+  .ask-user-submit { width: auto; min-width: 160px; }
+}
+@media (min-width: 760px) { .ask-options { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 .free-input { display: flex; gap: 6px; }
 .free-input input { flex: 1; }
 

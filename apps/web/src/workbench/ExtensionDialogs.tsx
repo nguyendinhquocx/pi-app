@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { UiRequest, UiResponse } from '@shared/remote'
 import { resolveAdapter, fallbackRawPayload, FALLBACK_NOTICE } from '../extensions/adapter-registry'
 import type { WebUiRequest } from '../transport/web-ui-request'
@@ -50,7 +50,9 @@ function DialogCard({ request, actions }: { request: WebUiRequest; actions: Dial
     </div>
   )
   if (request.method === 'input' || request.method === 'editor') return <InputDialog request={request} onRespond={respond} onCancel={cancel} />
-  if (request.method === 'custom' && request.kind === 'ask_user_question') return <AskUserQuestions request={request} onRespond={respond} />
+  if (request.method === 'custom' && request.kind === 'ask_user_question') {
+    return <AskUserQuestions request={request} onRespond={(response) => actions.onRespond(request.id, response)} />
+  }
   if (request.method === 'custom' && request.kind === 'image_review') return <ImageReview request={request} onRespond={respond} onCancel={cancel} />
   return null
 }
@@ -76,9 +78,11 @@ type QuestionnaireAnswer =
   | { questionIndex: number; question: string; kind: 'multi'; answer: null; selected: string[] }
   | { questionIndex: number; question: string; kind: 'option'; answer: string | null }
 
-function AskUserQuestions({ request, onRespond }: { request: AskQuestionRequest; onRespond(response: Omit<UiResponse, 'id'>): void }) {
+function AskUserQuestions({ request, onRespond }: { request: AskQuestionRequest; onRespond(response: Omit<UiResponse, 'id'>): Promise<void> }) {
   const [selected, setSelected] = useState<Record<number, string[]>>({})
   const [custom, setCustom] = useState<Record<number, string>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const answers: QuestionnaireAnswer[] = request.questions.map((question, questionIndex) => {
     const customAnswer = (custom[questionIndex] ?? '').trim()
     if (customAnswer) return { questionIndex, question: question.question, kind: 'custom', answer: customAnswer }
@@ -95,47 +99,91 @@ function AskUserQuestions({ request, onRespond }: { request: AskQuestionRequest;
     return { questionIndex, question: question.question, kind: 'option', answer: chosen[0] ?? null }
   })
 
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onRespond({ result: { cancelled: false, answers } })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
-    <div className="ext-dialog ask-user">
-      {request.questions.map((question, index) => (
-        <fieldset key={index}>
-          <legend>{question.question}{question.header ? ` — ${question.header}` : ''}</legend>
-          <ul role={question.multiSelect ? 'group' : 'radiogroup'}>
-            {question.options.map((option) => (
-              <li key={option.label}>
-                <label>
-                  <input
-                    type={question.multiSelect ? 'checkbox' : 'radio'}
-                    name={`question-${request.id}-${index}`}
-                    checked={(selected[index] ?? []).includes(option.label)}
-                    onChange={() => {
-                      setCustom((value) => ({ ...value, [index]: '' }))
-                      setSelected((value) => {
-                        const current = value[index] ?? []
-                        const next = question.multiSelect
-                          ? current.includes(option.label) ? current.filter((item) => item !== option.label) : [...current, option.label]
-                          : [option.label]
-                        return { ...value, [index]: next }
-                      })
-                    }}
-                  />
-                  <span>{option.label}</span>
-                  {option.description && <span className="muted">{option.description}</span>}
-                  {option.preview && <span className="muted">{option.preview}</span>}
-                </label>
-              </li>
-            ))}
-          </ul>
-          <input
-            aria-label={`Câu trả lời khác ${index + 1}`}
-            value={custom[index] ?? ''}
-            placeholder="Câu trả lời khác…"
-            onChange={(event) => setCustom((value) => ({ ...value, [index]: event.target.value }))}
-          />
-        </fieldset>
-      ))}
-      <button className="primary" onClick={() => onRespond({ result: { cancelled: false, answers } })}>Trả lời</button>
-    </div>
+    <section className="ext-dialog ask-user" aria-label="Câu hỏi cần trả lời">
+      <header className="ask-user-head">
+        <h3>Câu hỏi</h3>
+        <span>{request.questions.length} câu</span>
+      </header>
+      <form className="ask-user-form" onSubmit={(event) => void submit(event)} aria-busy={submitting}>
+        <div className="ask-user-questions">
+          {request.questions.map((question, index) => (
+            <fieldset className="ask-question" key={index}>
+              <legend className="ask-question-heading">
+                <span className="ask-question-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                <span className="ask-question-copy">
+                  <span className="ask-question-title">{question.question}</span>
+                  {question.header && <span className="ask-question-category">{question.header}</span>}
+                </span>
+              </legend>
+              <div className="ask-options">
+                {question.options.map((option) => {
+                  const checked = (selected[index] ?? []).includes(option.label)
+                  return (
+                    <label className={`ask-option${checked ? ' selected' : ''}`} key={option.label}>
+                      <input
+                        className="ask-choice-input"
+                        type={question.multiSelect ? 'checkbox' : 'radio'}
+                        name={`question-${request.id}-${index}`}
+                        checked={checked}
+                        onChange={() => {
+                          setCustom((value) => ({ ...value, [index]: '' }))
+                          setSelected((value) => {
+                            const current = value[index] ?? []
+                            const next = question.multiSelect
+                              ? current.includes(option.label) ? current.filter((item) => item !== option.label) : [...current, option.label]
+                              : [option.label]
+                            return { ...value, [index]: next }
+                          })
+                        }}
+                      />
+                      <span className="ask-option-copy">
+                        <span className="ask-option-label">{option.label}</span>
+                        {option.description && <span className="ask-option-description">{option.description}</span>}
+                        {option.preview && <span className="ask-option-preview">{option.preview}</span>}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              <label className="ask-custom-answer">
+                <span>Hoặc câu trả lời khác</span>
+                <input
+                  aria-label={`Câu trả lời khác ${index + 1}`}
+                  value={custom[index] ?? ''}
+                  placeholder="Viết câu trả lời…"
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setCustom((current) => ({ ...current, [index]: value }))
+                    if (value.trim()) setSelected((current) => ({ ...current, [index]: [] }))
+                  }}
+                />
+              </label>
+            </fieldset>
+          ))}
+        </div>
+        <div className="ask-user-footer">
+          {error && <p className="ask-user-error" role="alert">{error}</p>}
+          <button className="primary ask-user-submit" type="submit" disabled={submitting} aria-busy={submitting}>
+            {submitting ? 'Đang gửi…' : 'Gửi câu trả lời'}
+          </button>
+        </div>
+      </form>
+    </section>
   )
 }
 

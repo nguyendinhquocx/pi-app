@@ -7,6 +7,15 @@ import * as PiSettings from './handlers/worker-handlers-pi-settings.js'
 import { handleSetCapabilities } from './worker-capabilities.js'
 import { handleReloadModelRouters } from './worker-model-routers.js'
 import { handleBrowserToolResponse } from './worker-browser-tools.js'
+import { st } from './worker-runtime.js'
+
+const SESSION_MUTATIONS_BLOCKED_DURING_DELETE = new Set([
+  'prompt', 'abort', 'steer', 'followUp', 'clearQueue',
+  'setModel', 'setThinkingLevel', 'setCapabilities',
+  'newSession', 'loadSession', 'sessionRenameFile', 'sessionDeleteFile',
+  'navigateTree', 'fork', 'clone', 'compact', 'runExtensionCommand',
+  'extension-ui-response', 'extension-ui-cancel',
+])
 
 const dispatch: Record<string, (msg: WorkerIncomingMessage, reply: WorkerReply) => Promise<void>> = {
   'init': Turn.handleInit,
@@ -66,6 +75,10 @@ export async function handleWorkerPortMessage(
 ): Promise<void> {
   try {
     const type = msg.type
+    if (st.sessionDeleteInProgress && type && SESSION_MUTATIONS_BLOCKED_DURING_DELETE.has(type)) {
+      reply({ type: 'error', error: 'SESSION_DELETE_IN_PROGRESS' })
+      return
+    }
     const handler = type ? dispatch[type] : undefined
     if (!handler) {
       reply({ type: 'error', error: `Unknown message type: ${String(type)}` })

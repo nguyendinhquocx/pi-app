@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import type { Turn } from '@shared/remote'
 import type { HostConnection } from '../transport/host-connection'
+import type { WebUiRequest } from '../transport/web-ui-request'
 import { useWorkbench } from '../workbench/workbench-store'
 import { Workbench } from '../workbench/Workbench'
 import './workbench-preview.css'
@@ -43,6 +44,45 @@ function FixtureHostPicker() {
 const hostId = 'laptop-demo'
 const sessionKey = 'D:/demo/project/.pi/agent/sessions/2026-11-18-demo.jsonl'
 const MODEL = 'zai/glm-5.3-flash'
+const SHOW_ASK_USER_FIXTURE = new URLSearchParams(window.location.search).get('fixture') === 'ask-user'
+const DEMO_PENDING_UI: WebUiRequest[] = SHOW_ASK_USER_FIXTURE ? [{
+  id: 'demo-ask-user',
+  sessionKey,
+  method: 'custom',
+  kind: 'ask_user_question',
+  questions: [
+    {
+      header: 'Tương lai',
+      question: 'Nếu được biết chắc một sự thật về tương lai nhưng không thể thay đổi nó, mày muốn biết gì?',
+      options: [
+        { label: 'Sự nghiệp', description: 'Công việc và con đường mình sẽ đi' },
+        { label: 'Tình cảm', description: 'Ai sẽ ở lại bên mình' },
+        { label: 'Sức khỏe', description: 'Mình sẽ sống khỏe đến đâu' },
+        { label: 'Điều bất ngờ', description: 'Một sự thật mình chưa từng nghĩ tới' },
+      ],
+    },
+    {
+      header: 'Bản thân',
+      question: 'Khoảnh khắc nào khiến mày cảm thấy mình đang sống đúng với con người mình nhất?',
+      options: [
+        { label: 'Tự do khám phá', description: 'Được thử cái mới, không bị bó buộc' },
+        { label: 'Tạo ra thứ gì đó', description: 'Làm sản phẩm, viết, xây dựng, sáng tạo' },
+        { label: 'Giúp được ai đó', description: 'Thấy việc mình làm có ích thật' },
+        { label: 'Một mình yên ổn', description: 'Không phải diễn hay chạy theo ai' },
+      ],
+    },
+    {
+      header: 'Một năm',
+      question: 'Nếu có một năm nghỉ ngơi, chi phí đã lo hết, mày sẽ dành năm đó thế nào?',
+      options: [
+        { label: 'Đi thật xa', description: 'Du lịch, sống ở nơi mới' },
+        { label: 'Học thứ khó', description: 'Dồn sức vào một kỹ năng hoặc dự án' },
+        { label: 'Ở gần người thân', description: 'Dành thời gian cho những người quan trọng' },
+        { label: 'Chưa biết nữa', description: 'Có lẽ câu trả lời sẽ làm tao bất ngờ' },
+      ],
+    },
+  ],
+}] : []
 
 const MODELS = [
   { id: 'openai-codex/gpt-6-luna', name: 'GPT-6 Luna', provider: 'openai-codex', group: 'custom' },
@@ -113,14 +153,14 @@ const fakeConnection = {
   openSession: async () => ({
     kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
     state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
-    pendingUi: [], hasOlder: true,
+    pendingUi: DEMO_PENDING_UI, hasOlder: true,
   }),
   openSessionTracked: async () => ({
     current: true,
     result: {
       kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
       state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
-      pendingUi: [], hasOlder: true,
+      pendingUi: DEMO_PENDING_UI, hasOlder: true,
     },
   }),
   start() {},
@@ -180,7 +220,7 @@ useWorkbench.setState({
         [sessionKey]: {
           seq: 120,
           state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: ['Demo steer waiting for the next turn'], followUp: [] }, todo: { title: 'Parser edge case', items: [{ id: '1', text: 'Add regression test', status: 'completed' }, { id: '2', text: 'Verify escaped paths', status: 'in_progress' }, { id: '3', text: 'Update docs', status: 'pending' }] } },
-          pendingUi: [], hasOlder: true,
+          pendingUi: DEMO_PENDING_UI, hasOlder: true,
           turns: DEMO_TURNS,
         },
       },

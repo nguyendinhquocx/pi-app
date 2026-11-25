@@ -13,6 +13,7 @@ import type { WorkerIncomingMessage } from '../worker-port-types.js'
 import type { WorkerReply } from '../worker-handler-types.js'
 import {
   st,
+  disposeRuntimeOrSession,
   initSession,
   switchOrLoadSession,
   runtimeNewSession,
@@ -260,37 +261,76 @@ export async function handleSessionrenamefile(msg: WorkerIncomingMessage, reply:
 
 
 export async function handleSessiondeletefile(msg: WorkerIncomingMessage, reply: WorkerReply): Promise<void> {
+  const file = msg.sessionFile as string
+  if (!file) {
+    reply({ type: 'sessionDeleteFile-done', ok: false, error: 'missing file' })
+    return
+  }
+  if (st.sessionDeleteInProgress) {
+    reply({ type: 'sessionDeleteFile-done', ok: false, error: 'SESSION_DELETE_IN_PROGRESS' })
+    return
+  }
+
+  const deletedLive = !!st.session && sessionFilePathsEqual(st.session.sessionFile, file)
+  if (deletedLive && isSessionBusy()) {
+    reply({ type: 'sessionDeleteFile-done', ok: false, error: 'SESSION_BUSY' })
+    return
+  }
+
+  const currentCwd = st.currentCwd
+  st.sessionDeleteInProgress = true
+  try {
+    const fs = await import('node:fs')
+    // On Windows, the live runtime can still own the JSONL file. Dispose it before unlinking
+    // so the host releases its own handle; active turns were refused above rather than killed.
+    if (deletedLive) await disposeRuntimeOrSession()
+    if (fs.existsSync(file)) await fs.promises.unlink(file)
+
+    // Deletion is committed once unlink succeeds. Rebuild a blank worker session afterward;
+    // rebuild failure must not claim that the file deletion failed.
+    if (deletedLive) {
+      try {
+        await initSession(currentCwd)
+      } catch (rebuildError: unknown) {
+        console.warn('[Worker] sessionDeleteFile: rebuild after delete failed', errorMessage(rebuildError))
+      }
+    }
+
+    // Main re-keys its pool slot from the session this worker actually holds now.
+    const liveFile = st.session?.sessionFile
+    const replacement = deletedLive && liveFile && !sessionFilePathsEqual(liveFile, file) ? liveFile : null
+    reply({
+      type: 'sessionDeleteFile-done',
+      ok: true,
+      sessionFile: replacement,
+      sessionId: replacement ? st.currentSessionId : undefined,
+    })
+  } catch (e: unknown) {
+    // If unlink failed after we released the live runtime, restore the original session when
+    // possible. If it is still externally locked, leave a fresh unbound worker rather than a
+    // slot whose runtime was disposed; main will re-key it from the replacement path.
+    if (deletedLive && !st.session) {
+      try {
+        await switchOrLoadSession(file)
+      } catch (restoreError: unknown) {
+        console.warn('[Worker] sessionDeleteFile: restore after unlink failure failed', errorMessage(restoreError))
         try {
-          const file = msg.sessionFile as string
-          if (!file) {
-            reply({ type: 'sessionDeleteFile-done', ok: false, error: 'missing file' })
-            return
-          }
-          const fs = await import('node:fs')
-          // 先删文件：让删除动作立即生效（不阻塞在 runtime 重建上）
-          if (fs.existsSync(file)) await fs.promises.unlink(file)
-          // 提交点：文件已删除，删除本身已成功。之后 runtime 重建是收尾动作，
-          // 失败不得把已成功的删除报告为失败（否则 renderer 误报且标题缓存不清）
-          const deletedLive = !!st.session && sessionFilePathsEqual(st.session.sessionFile, file)
-          try {
-            if (deletedLive) await initSession(st.currentCwd)
-          } catch (rebuildError: unknown) {
-            console.warn('[Worker] sessionDeleteFile: rebuild after delete failed', errorMessage(rebuildError))
-          }
-          // Main re-keys its pool slot from the session this worker actually holds now;
-          // a rebuild failure (still on the deleted file) or no session means unbound.
-          const liveFile = st.session?.sessionFile
-          const replacement = deletedLive && liveFile && !sessionFilePathsEqual(liveFile, file) ? liveFile : null
-          reply({
-            type: 'sessionDeleteFile-done',
-            ok: true,
-            sessionFile: replacement,
-            sessionId: replacement ? st.currentSessionId : undefined,
-          })
-        } catch (e: unknown) {
-          reply({ type: 'sessionDeleteFile-done', ok: false, error: errorMessage(e) })
+          await initSession(currentCwd)
+        } catch (rebuildError: unknown) {
+          console.warn('[Worker] sessionDeleteFile: fallback runtime rebuild failed', errorMessage(rebuildError))
         }
-        return
+      }
+    }
+    const liveFile = st.session?.sessionFile ?? null
+    reply({
+      type: 'sessionDeleteFile-done',
+      ok: false,
+      error: errorMessage(e),
+      ...(deletedLive ? { sessionFile: liveFile, sessionId: liveFile ? st.currentSessionId : undefined } : {}),
+    })
+  } finally {
+    st.sessionDeleteInProgress = false
+  }
 }
 
 

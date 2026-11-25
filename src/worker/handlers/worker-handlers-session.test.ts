@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import * as fs from 'node:fs'
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { WorkerModelRuntime } from '../worker-runtime'
-import { handleCompact, handleNewsession, handleSetmodel, handleSetthinkinglevel } from './worker-handlers-session'
+import * as workerRuntime from '../worker-runtime'
+import { handleCompact, handleNewsession, handleSetmodel, handleSetthinkinglevel, handleSessiondeletefile } from './worker-handlers-session'
 import { st } from '../worker-runtime'
+import { handleWorkerPortMessage } from '../worker-port-handlers'
 
 const originalState = { ...st }
 
@@ -102,6 +108,115 @@ describe('handleNewsession', () => {
 
     expect(newSession).not.toHaveBeenCalled()
     expect(reply).toHaveBeenCalledWith({ type: 'error', error: 'SESSION_BUSY' })
+  })
+})
+
+describe('handleSessiondeletefile', () => {
+  it('disposes the idle live runtime before unlinking, then creates a blank replacement session', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'li-session-delete-'))
+    const file = join(dir, 'idle-session.jsonl')
+    const replacement = join(dir, 'replacement-session.jsonl')
+    await writeFile(file, '{"type":"session","id":"idle"}\\n', 'utf8')
+    const order: string[] = []
+    st.currentCwd = dir
+    st.currentSessionId = 'idle'
+    st.promptSent = true
+    st.agentTurnActive = false
+    st.session = { sessionId: 'idle', sessionFile: file, isStreaming: false } as AgentSession
+    st.runtime = { setRebindSession: vi.fn(), setBeforeSessionInvalidate: vi.fn(), dispose: vi.fn() } as never
+
+    const dispose = vi.spyOn(workerRuntime, 'disposeRuntimeOrSession').mockImplementation(async () => {
+      order.push('dispose')
+      st.runtime = null
+      st.session = null
+    })
+    const init = vi.spyOn(workerRuntime, 'initSession').mockImplementation(async (cwd) => {
+      order.push('init')
+      st.currentCwd = cwd
+      st.currentSessionId = 'replacement'
+      st.session = { sessionId: 'replacement', sessionFile: replacement, isStreaming: false } as AgentSession
+    })
+    const realUnlink = fs.promises.unlink.bind(fs.promises)
+    const unlink = vi.spyOn(fs.promises, 'unlink').mockImplementation(async (path) => {
+      order.push('unlink')
+      expect(st.session).toBeNull()
+      await realUnlink(path)
+    })
+    const reply = vi.fn()
+
+    try {
+      const deleting = handleSessiondeletefile({ sessionFile: file } as never, reply)
+      const promptReply = vi.fn()
+      await handleWorkerPortMessage({ type: 'prompt', text: 'do not start during unlink' } as never, promptReply)
+      expect(promptReply).toHaveBeenCalledWith({ type: 'error', error: 'SESSION_DELETE_IN_PROGRESS' })
+      await deleting
+      expect(st.sessionDeleteInProgress).toBe(false)
+      expect(order).toEqual(['dispose', 'unlink', 'init'])
+      expect(reply).toHaveBeenCalledWith({
+        type: 'sessionDeleteFile-done', ok: true, sessionFile: replacement, sessionId: 'replacement',
+      })
+      await expect(fs.promises.stat(file)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      unlink.mockRestore()
+      init.mockRestore()
+      dispose.mockRestore()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('restores the live session if an external lock still blocks unlink after runtime disposal', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'li-session-delete-locked-'))
+    const file = join(dir, 'still-locked.jsonl')
+    await writeFile(file, '{"type":"session","id":"locked"}\\n', 'utf8')
+    const order: string[] = []
+    st.currentCwd = dir
+    st.agentTurnActive = false
+    st.session = { sessionId: 'locked', sessionFile: file, isStreaming: false } as AgentSession
+    st.runtime = { setRebindSession: vi.fn(), setBeforeSessionInvalidate: vi.fn(), dispose: vi.fn() } as never
+
+    const dispose = vi.spyOn(workerRuntime, 'disposeRuntimeOrSession').mockImplementation(async () => {
+      order.push('dispose')
+      st.runtime = null
+      st.session = null
+    })
+    const restore = vi.spyOn(workerRuntime, 'switchOrLoadSession').mockImplementation(async (sessionFile) => {
+      order.push('restore')
+      st.runtime = {} as never
+      st.session = { sessionId: 'locked', sessionFile, isStreaming: false } as AgentSession
+    })
+    const unlink = vi.spyOn(fs.promises, 'unlink').mockImplementation(async () => {
+      order.push('unlink')
+      throw Object.assign(new Error(`EBUSY: locked ${file}`), { code: 'EBUSY' })
+    })
+    const reply = vi.fn()
+
+    try {
+      await handleSessiondeletefile({ sessionFile: file } as never, reply)
+      expect(order).toEqual(['dispose', 'unlink', 'restore'])
+      expect(st.session?.sessionFile).toBe(file)
+      expect(reply).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'sessionDeleteFile-done', ok: false, sessionFile: file,
+      }))
+      expect(st.sessionDeleteInProgress).toBe(false)
+    } finally {
+      unlink.mockRestore()
+      restore.mockRestore()
+      dispose.mockRestore()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses to delete a live session while its turn is active', async () => {
+    st.agentTurnActive = true
+    st.session = { sessionId: 'busy', sessionFile: '/sessions/busy.jsonl', isStreaming: false } as AgentSession
+    const dispose = vi.spyOn(workerRuntime, 'disposeRuntimeOrSession')
+    const reply = vi.fn()
+
+    await handleSessiondeletefile({ sessionFile: '/sessions/busy.jsonl' } as never, reply)
+
+    expect(dispose).not.toHaveBeenCalled()
+    expect(reply).toHaveBeenCalledWith({ type: 'sessionDeleteFile-done', ok: false, error: 'SESSION_BUSY' })
+    dispose.mockRestore()
   })
 })
 

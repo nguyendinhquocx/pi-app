@@ -994,24 +994,27 @@ export class WorkerManager {
     // Offline file: no live AgentSession owns it, so never start one just to unlink.
     if (!slot || slot.stopping) return deleteOfflineSessionFile(sessionFile)
     const r = await this.requestOnSlot(slot, 'sessionDeleteFile', { sessionFile })
-    if (r.ok && this.pool.get(sk) === slot && !slot.stopping) {
+    const workerChangedSession = Object.prototype.hasOwnProperty.call(r, 'sessionFile')
+    if ((r.ok || workerChangedSession) && this.pool.get(sk) === slot && !slot.stopping) {
       const wasForeground = this.foregroundPoolKey === sk
       const replacement = typeof r.sessionFile === 'string' ? normalizeSessionKey(r.sessionFile) : ''
       let nextKey: string
       if (replacement && replacement !== sk) {
         nextKey = await remapSessionWorkerSlot(this.pool, sk, replacement)
-      } else {
+      } else if (r.ok || r.sessionFile === null) {
         // Worker reports no live replacement: keep the process as an unbound workspace slot.
         this.pool.delete(sk)
         slot.sessionFile = null
         slot.poolKey = nextWorkspacePoolKey(this.pool, slot.cwd)
         this.pool.set(slot.poolKey, slot)
         nextKey = slot.poolKey
+      } else {
+        nextKey = sk // The original session was restored after the failed unlink.
       }
       if (wasForeground) this.foregroundPoolKey = nextKey
     }
     if (r.ok) clearSessionLeafOverride(sessionFile)
-    return { ok: !!r.ok, error: r.error as string | undefined }
+    return { ok: !!r.ok, error: r.error ? formatSessionDeleteError(r.error) : undefined }
   }
   async getSessionTree(sessionFile?: string): Promise<{ nodes: WorkerSessionTreeNode[]; leafId: string | null; error?: string }> {
     const r = await this.request('getSessionTree', sessionFile ? { sessionFile } : {})
@@ -1122,12 +1125,27 @@ export class WorkerManager {
   }
 }
 
+function formatSessionDeleteError(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  if (code === 'SESSION_BUSY' || message === 'SESSION_BUSY') {
+    return 'Phiên đang chạy. Dừng lượt trước khi xoá phiên.'
+  }
+  if (code === 'SESSION_DELETE_IN_PROGRESS' || message === 'SESSION_DELETE_IN_PROGRESS') {
+    return 'Đang xoá phiên này. Chờ một chút rồi thử lại.'
+  }
+  if (code === 'EBUSY' || code === 'EPERM' || /^(?:EBUSY|EPERM|EACCES):/i.test(message)) {
+    return 'Không xoá được vì file phiên đang được LiX/Pi hoặc Windows sử dụng. Đóng phiên trong cửa sổ khác rồi thử lại.'
+  }
+  return message || 'Không thể xoá phiên.'
+}
+
 async function deleteOfflineSessionFile(sessionFile: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await unlink(sessionFilePathForFs(sessionFile))
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      return { ok: false, error: formatSessionDeleteError(error) }
     }
   }
   clearSessionLeafOverride(sessionFile)

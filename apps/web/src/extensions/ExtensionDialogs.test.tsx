@@ -67,10 +67,14 @@ describe('ExtensionDialogs (spec T4)', () => {
       ],
     } as unknown as import('@shared/remote').UiRequest
     render(<ExtensionDialogs requests={[request]} sessionKey="proj/s.jsonl" actions={{ onRespond, onCancel: vi.fn(async () => undefined) }} />)
+    expect(screen.getByRole('heading', { name: 'Câu hỏi' })).toBeTruthy()
+    expect(screen.getByText('2 câu')).toBeTruthy()
+    expect(document.querySelectorAll('.ask-question')).toHaveLength(2)
     fireEvent.click(screen.getByLabelText('SQLite'))
+    expect(screen.getByLabelText('SQLite').closest('.ask-option')?.classList.contains('selected')).toBe(true)
     fireEvent.click(screen.getByLabelText('Auth'))
     fireEvent.click(screen.getByLabelText('Search'))
-    fireEvent.click(screen.getByRole('button', { name: 'Trả lời' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi câu trả lời' }))
 
     await waitFor(() => expect(onRespond).toHaveBeenCalled())
     const response = onRespond.mock.calls[0][1]
@@ -85,5 +89,43 @@ describe('ExtensionDialogs (spec T4)', () => {
         ],
       },
     })
+  })
+
+  it('custom answers replace the selected option and use the existing result envelope', async () => {
+    const onRespond = vi.fn(async (_id: string, _response: Omit<UiResponse, 'id'>) => undefined)
+    const request = {
+      id: 'u-custom', sessionKey: 'proj/s.jsonl', method: 'custom', kind: 'ask_user_question',
+      questions: [{ header: 'Scope', question: 'Which area?', options: [{ label: 'Web' }, { label: 'Desktop' }] }],
+    } as unknown as import('@shared/remote').UiRequest
+    render(<ExtensionDialogs requests={[request]} sessionKey="proj/s.jsonl" actions={{ onRespond, onCancel: vi.fn(async () => undefined) }} />)
+
+    fireEvent.click(screen.getByLabelText('Web'))
+    fireEvent.change(screen.getByLabelText('Câu trả lời khác 1'), { target: { value: 'Android' } })
+    expect(screen.getByLabelText('Web').closest('.ask-option')?.classList.contains('selected')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi câu trả lời' }))
+
+    await waitFor(() => expect(onRespond).toHaveBeenCalled())
+    expect(onRespond.mock.calls[0][1]).toEqual({
+      result: { cancelled: false, answers: [{ questionIndex: 0, question: 'Which area?', kind: 'custom', answer: 'Android' }] },
+    })
+  })
+
+  it('prevents duplicate Ask User submissions while the host is responding', async () => {
+    let resolveResponse!: () => void
+    const onRespond = vi.fn(() => new Promise<void>((resolve) => { resolveResponse = resolve }))
+    const request = {
+      id: 'u-pending', sessionKey: 'proj/s.jsonl', method: 'custom', kind: 'ask_user_question',
+      questions: [{ question: 'Ready?', options: [{ label: 'Yes' }] }],
+    } as unknown as import('@shared/remote').UiRequest
+    render(<ExtensionDialogs requests={[request]} sessionKey="proj/s.jsonl" actions={{ onRespond, onCancel: vi.fn(async () => undefined) }} />)
+
+    const submit = screen.getByRole('button', { name: 'Gửi câu trả lời' }) as HTMLButtonElement
+    fireEvent.click(submit)
+    await waitFor(() => expect(submit.disabled).toBe(true))
+    expect(submit.textContent).toBe('Đang gửi…')
+    fireEvent.click(submit)
+    expect(onRespond).toHaveBeenCalledTimes(1)
+    resolveResponse()
+    await waitFor(() => expect(submit.disabled).toBe(false))
   })
 })

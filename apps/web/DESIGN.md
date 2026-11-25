@@ -45,6 +45,7 @@ Nền trắng là mặt chính; fill nhạt chỉ dùng cho user bubble, hover v
 | Host dialog | Hai tab “Đã ghép nối”/“Ghép nối mới”; phân biệt chưa ghép host với đã ghép nhưng mất kết nối. Forget có xác nhận; token pair chỉ giữ trong memory. | `HostManager.tsx`, `.host-dialog` |
 | SessionRail | Desktop collapse/resize; ≤768px thành drawer + scrim, Escape/scrim đóng và focus quay về toggle. Running session có chấm xanh; ô search không có icon trang trí. | `SessionRail.tsx`, `.session-rail`, `.live-dot` |
 | Timeline | Prompt bubble lệch phải, assistant/tool output trái; giữ `turn.page`, anchor ≤8px, follow-live và “Về cuối”. Trong lượt chạy chỉ lộ tool rows thật + một activity cue; settled mới hiện transcript đầy đủ. Copy prompt/answer nằm ngoài bubble/dưới answer tương ứng; tool failure chỉ có dot nhỏ, chi tiết mở chủ động. Reset/gap resync giữ nội dung hiện tại, buffer patch mới và thay snapshot không làm trắng màn. | `Timeline.tsx`, `.timeline` |
+| Extension dialogs | Ask User dùng nhóm lựa chọn dạng card gọn, category và số thứ tự; custom answer riêng; selected/focus rõ, submit có pending/error, responsive một cột mobile và hai cột khi đủ rộng. | `ExtensionDialogs.tsx`, `.ask-user` |
 | Composer | Shell gọn; model searchable theo id/name/provider, thinking và Gửi/Steer/Follow-up dùng menu; attach vẫn prompt-only ≤10 MiB. Context chỉ báo từ 80%. | `Composer.tsx`, `.composer-shell` |
 | Inspector | Mặc định đóng; chỉ hiện Terminal + menu export gọn. Max width = một nửa viewport (≥1000px), center giữ ≥360px; theme terminal theo theme app (localStorage → class → OS) và repaint live khi toggle. Không có tab strip/divider/khung PTY thừa. | `Inspector.tsx`, `.inspector` |
 | Phiên mới | Composer nằm đáy như session thường; không landing copy; Inspector toggle luôn hiển thị; tin nhắn đầu vẫn tạo session. Host cuối dùng được nhớ device-local (`li-web-last-host`) và restore khi tải lại. | `Workbench.tsx`, `.empty-session` |
@@ -59,7 +60,7 @@ Nền trắng là mặt chính; fill nhạt chỉ dùng cho user bubble, hover v
 - ≥1025px: ba pane có separator kéo được; center vẫn ≥360px. Width solver shrink Inspector trước, rồi rail.
 - Drawer/Inspector modal trap Tab, Escape đóng, focus trở lại toggle. Inspector docked không mang `aria-modal`; menu export hỗ trợ Arrow/Home/End/Escape.
 - Scrollbar chrome ẩn ở page và nested panes nhưng `overflow` vẫn cuộn. Copy actions chỉ lộ khi đúng message hover/focus (touch giữ action khả dụng, đặt ngoài bubble để không kéo chiều cao tin nhắn).
-- Captures synthetic không overflow ngang tại 320/375/414/768/769/999/1000/1024/1025/1280/1440; 1024px chụp đủ 4 tổ hợp rail/Inspector. Có drawer, host picker, Terminal/export menu, message copy hover, model/thinking menus và host/pair dialogs.
+- Captures synthetic không overflow ngang tại 320/375/414/768/769/999/1000/1024/1025/1280/1440; 1024px chụp đủ 4 tổ hợp rail/Inspector. Có drawer, host picker, Terminal/export menu, Ask User ở 320/375/1280 light+dark, message copy hover, model/thinking menus và host/pair dialogs.
 
 ## 5. Theme và giới hạn sản phẩm
 

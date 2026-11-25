@@ -58,6 +58,8 @@ export type WorkerMutableState = {
   promptPreflightActive: boolean
   /** Stop arrived while prompt() was still in preflight — there was no agent run to abort yet. */
   abortAfterPreflight: boolean
+  /** Session deletion holds the worker admission gate while releasing its runtime file handles. */
+  sessionDeleteInProgress: boolean
   promptSent: boolean
 }
 
@@ -80,6 +82,7 @@ export const st: WorkerMutableState = {
   agentTurnActive: false,
   promptPreflightActive: false,
   abortAfterPreflight: false,
+  sessionDeleteInProgress: false,
   promptSent: false,
 }
 
@@ -256,7 +259,7 @@ function wireRuntimeCallbacks(runtime: AgentSessionRuntime): void {
   })
 }
 
-async function disposeRuntimeOrSession(): Promise<void> {
+export async function disposeRuntimeOrSession(): Promise<void> {
   detachSessionSubscription()
   st.agentTurnActive = false
   st.promptPreflightActive = false

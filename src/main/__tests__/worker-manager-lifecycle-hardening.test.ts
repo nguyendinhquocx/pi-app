@@ -352,6 +352,34 @@ describe('R4 deleting sessions keeps pool identity truthful', () => {
     expect(state.foregroundPoolKey).toBe(a.poolKey)
   })
 
+  it('should_sanitize_windows_lock_error_and_rekey_a_recovered_live_worker', async () => {
+    const privatePath = String.raw`C:\Users\quocn\.pi\agent\sessions\haha.jsonl`
+    const replacementPath = '/sessions/replacement.jsonl'
+    const a = makeSlot('/sessions/a.jsonl', (message, reply) => {
+      if (message.type === 'sessionDeleteFile') {
+        reply({
+          requestId: message.requestId,
+          type: 'sessionDeleteFile-done',
+          ok: false,
+          error: `EBUSY: resource busy or locked, unlink '${privatePath}'`,
+          sessionFile: replacementPath,
+          sessionId: 'replacement',
+        })
+      }
+    })
+    const { manager, state } = setup(a)
+
+    const result = await manager.deleteSessionFile(a.sessionFile!)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Không xoá được vì file phiên đang được LiX/Pi hoặc Windows sử dụng. Đóng phiên trong cửa sổ khác rồi thử lại.',
+    })
+    expect(result.error).not.toContain('C:\\Users')
+    expect(state.pool.has(key('/sessions/a.jsonl'))).toBe(false)
+    expect(state.pool.get(key(replacementPath))).toBe(a)
+  })
+
   const dirs: string[] = []
   afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })))
   const tempDir = () => {
