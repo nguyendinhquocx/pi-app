@@ -11,3 +11,4 @@
 | SPEC-2026-11-16-li-web | Li Web — workbench trình duyệt cho LiX | archived | 2026-11-26T10:11:15+07:00 | packages/shared/remote; src/main/remote; apps/web; src/worker | [SPEC.md](./SPEC-2026-11-16-li-web/SPEC.md) |
 | SPEC-2026-11-23-li-web-demo-integration | Li Web — tích hợp Workbench design demo vào product | archived | 2026-11-26T10:11:11+07:00 | apps/web; apps/web/src/workbench; apps/web/src/extensions | [SPEC.md](./SPEC-2026-11-23-li-web-demo-integration/SPEC.md) |
 | SPEC-2026-11-23-li-web-workbench-ux | Li Web — workbench tối giản và duyệt hội thoại dài | archived | 2026-11-26T10:11:12+07:00 | apps/web/src/workbench | [SPEC.md](./SPEC-2026-11-23-li-web-workbench-ux/SPEC.md) |
+| SPEC-2026-11-26-li-tui-pair-panel | Li TUI Pair Panel — lấy mã pair laptop/ProDesk từ Li TUI | archived | 2026-11-26T23:37:21+07:00 | src/main/remote/**; src/main/remote-host-electron.ts | [SPEC.md](./SPEC-2026-11-26-li-tui-pair-panel/SPEC.md) |
