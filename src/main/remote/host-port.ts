@@ -143,6 +143,13 @@ export interface RemoteHostPort {
   hostStatus(): { appVersion: string; platform: string; sdkVersion: string; sdkPath?: string; ownerProtocol?: number }
   /** Tailscale Serve hostname the owner configured (read-only; activation is a separate release gate), or null. */
   serveConfig?(): string | null
+  /**
+   * Bearer token for the local admin control plane (`/admin/v1/*` in `gateway.ts`). Implementations
+   * keep it in a 0600 file next to the host key (userData); the gateway only ever sees the token
+   * through this accessor, never a filesystem path. Optional: adapters without it keep admin routes
+   * fail-closed (403).
+   */
+  adminToken?(): string
   /** Open a host PTY in `projectId`; output/exit arrive through `handlers` (remote gateway lane only). */
   terminalOpen(projectId: string, opts: { cols: number; rows: number }, handlers: { data(id: string, data: string): void; exit(id: string, code: number): void }): string
   terminalWrite(id: string, data: string): void

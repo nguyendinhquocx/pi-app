@@ -5,7 +5,7 @@ import { WebSocketServer } from 'ws'
 import { normalizeSessionFileKey } from '@shared/session-file-key'
 import { base64UrlEncode, encodePairLink, encodeWebPairLink, isPrivateHost, type Role } from '@shared/remote'
 import { AssetStore } from './assets'
-import { AuthStore, type DeviceRecord } from './auth-store'
+import { AuthStore, sameSecret, type DeviceRecord } from './auth-store'
 import { RemoteConnection } from './connection'
 import type { RemoteHostPort, RemoteTapSink } from './host-port'
 import { RemoteRpc } from './rpc'
@@ -54,6 +54,22 @@ export function hostHeaderAllowed(host: string | undefined): boolean {
   if (!hostname) return false
   return isPrivateHost(hostname)
 }
+
+/**
+ * Admin-plane peer rule (spec Li TUI pair panel T1): the three loopback forms a loopback peer can
+ * present. Exported pure for tests — a real socket cannot present `::ffff:192.168.1.22`, so the
+ * mapped-non-loopback denial is asserted on this helper while the handler uses it for real.
+ * Deliberately NOT the broader `isLoopback` above (which also matches other `::ffff:127.*` forms).
+ */
+export function isLoopbackAddress(ip: string): boolean {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+}
+
+/** Admin-plane Host rule: loopback addressing only — NOT `hostHeaderAllowed()`, which accepts
+ *  LAN / `*.ts.net` hosts and rejects `localhost`, both wrong for the admin plane. */
+export const ADMIN_HOST_RE = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?$/i
+const ADMIN_BODY_LIMIT = 16 * 1024
+const ADMIN_ID_RE = /^[A-Za-z0-9_-]+$/
 
 export type GatewayDevice = Omit<DeviceRecord, 'pub'> & { fingerprint: string; online: boolean }
 
@@ -187,6 +203,9 @@ export class RemoteGateway {
   async start(opts: { port?: number; host?: string } = {}): Promise<void> {
     if (this.server) return
     this.auth.hostKey()
+    // Materialize the admin token file at gateway start (re-created if deleted) so the local pair
+    // panel can read it without any admin request ever having been made.
+    this.port.adminToken?.()
     await this.assets.warm()
     const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate: false })
     const server = createServer((req, res) => void this.onHttp(req, res))
@@ -299,6 +318,7 @@ export class RemoteGateway {
 
   private async onHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const path = (req.url ?? '').split('?')[0]
+    if (path.startsWith('/admin/')) return this.onAdmin(req, res, path)
     const m = /^\/assets\/([A-Za-z0-9._-]+)$/.exec(path)
     if (req.method === 'OPTIONS' && m) {
       // Preflight for the browser PWA; allow only the approved origins.
@@ -336,6 +356,148 @@ export class RemoteGateway {
     }
     res.writeHead(404, { 'content-type': 'text/plain' })
     res.end('not found')
+  }
+
+  // ── Admin API v1 (spec Li TUI pair panel T1) ──
+
+  /**
+   * Local control plane for the Li TUI pair panel: status / regenerate / revoke. Every request
+   * passes the same four gates in order — loopback peer, loopback Host header, Bearer admin
+   * token, bounded JSON body — and a failing gate answers 403 without reflecting which one.
+   * Deliberately shares nothing with the WS-lane policies: the Host rule and the peer rule here
+   * are loopback-only (see ADMIN_HOST_RE / isLoopbackAddress), no CORS headers are ever set, and
+   * nothing on this path is logged (tokens and responses carry pair secrets that must never
+   * reach the host log).
+   */
+  private async onAdmin(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    const deny = () => {
+      res.writeHead(403, { 'content-type': 'text/plain' })
+      res.end()
+    }
+    const methodNotAllowed = () => {
+      res.writeHead(405, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'method_not_allowed' }))
+    }
+    // Gate 1 — loopback peer.
+    if (!isLoopbackAddress(req.socket.remoteAddress ?? '')) return deny()
+    // Gate 2 — loopback Host header (DNS-rebinding defense-in-depth). A request must carry exactly
+    // one Host header: Node merges duplicates into the first value, so `Host: localhost` followed by
+    // `Host: evil.com` would pass the regex on `req.headers` — count the raw headers instead
+    // (rawHeaders is a flat [name, value, …] array, hence the 2-step scan).
+    let hostCount = 0
+    for (let i = 0; i < req.rawHeaders.length; i += 2) if (req.rawHeaders[i].toLowerCase() === 'host') hostCount++
+    if (hostCount !== 1 || !ADMIN_HOST_RE.test(req.headers.host ?? '')) return deny()
+    // Gate 3 — Bearer token via constant-time compare; a length-mismatched token must 403, not crash.
+    const bearer = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1]
+    const expected = this.port.adminToken?.()
+    if (!expected || !bearer || !sameSecret(bearer, expected)) return deny()
+    // Gate 4 — bounded body for every POST, before any route-specific parsing.
+    let body: string | null = null
+    if (req.method === 'POST') {
+      body = await this.readBoundedBody(req, ADMIN_BODY_LIMIT)
+      if (body === null) {
+        // Discard the oversized upload and answer 413: destroying the socket would RST away the
+        // response itself. The connection closes normally once the discarded stream drains.
+        req.resume()
+        res.writeHead(413, { 'content-type': 'text/plain' })
+        res.end()
+        return
+      }
+    }
+    if (path === '/admin/v1/status') {
+      if (req.method !== 'GET') return methodNotAllowed()
+      return this.respondJson(res, this.adminPayload())
+    }
+    if (path === '/admin/v1/regenerate') {
+      if (req.method !== 'POST') return methodNotAllowed()
+      // Contract says no body: a non-empty body is a client bug — reject it instead of ignoring it.
+      if (body !== null && body.trim() !== '') {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'unexpected_body' }))
+        return
+      }
+      this.auth.newPairToken() // spends the previous token immediately
+      return this.respondJson(res, this.adminPayload())
+    }
+    if (path === '/admin/v1/revoke') {
+      if (req.method !== 'POST') return methodNotAllowed()
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(body ?? '')
+      } catch {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'invalid_json' }))
+        return
+      }
+      const id = parsed && typeof parsed === 'object' ? (parsed as { id?: unknown }).id : undefined
+      if (typeof id !== 'string' || !ADMIN_ID_RE.test(id)) {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'invalid_id' }))
+        return
+      }
+      const ok = this.revokeDevice(id) // closes live connections with 4006 `revoked`
+      return this.respondJson(res, { ...this.adminPayload(), ok })
+    }
+    res.writeHead(404, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: 'not_found' }))
+  }
+
+  private respondJson(res: ServerResponse, payload: unknown): void {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(payload))
+  }
+
+  /** Resolve with the body up to `limit` bytes, or null once it exceeds the limit. */
+  private readBoundedBody(req: IncomingMessage, limit: number): Promise<string | null> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = []
+      let size = 0
+      let settled = false
+      req.on('data', (c: Buffer) => {
+        if (settled) return
+        size += c.length
+        if (size > limit) {
+          settled = true
+          resolve(null)
+          return
+        }
+        chunks.push(c)
+      })
+      req.on('end', () => {
+        if (settled) return
+        settled = true
+        resolve(Buffer.concat(chunks).toString('utf8'))
+      })
+      req.on('error', () => {
+        if (settled) return
+        settled = true
+        resolve(null)
+      })
+    })
+  }
+
+  /** Status + web pairing + serve hostname payload shared by the admin routes. */
+  private adminPayload(): { v: 1; status: GatewayStatus; webPairing: { link: string; exp: number } | null; serveHostname: string | null } {
+    const pairing = this.auth.currentPairing
+    const link = pairing ? this.webPairLink() : null
+    const status = this.status(this.auth.config.enabled)
+    // Admin responses expose exactly one credential lane: the web pair link above. GatewayStatus
+    // also carries `pairing` — the mobile link with the same one-shot token in a second format —
+    // so it is stripped here: no admin response ever contains a mobile link (spec Task 1).
+    return {
+      v: 1,
+      status: { ...status, pairing: null },
+      webPairing: pairing && link ? { link, exp: pairing.exp } : null,
+      serveHostname: this.adminServeHostname(),
+    }
+  }
+
+  /** The Tailscale Serve hostname the phone actually connects to, parsed from the active `wss://<host>/ws` endpoint. */
+  private adminServeHostname(): string | null {
+    const tailscale = this.endpointInfo().filter((e) => e.kind === 'tailscale')
+    const entry = tailscale.find((e) => e.url.endsWith('/ws')) ?? tailscale[0]
+    const m = /^wss:\/\/([^/]+?)(?::\d+)?(?:\/|$)/.exec(entry?.url ?? '')
+    return m ? m[1] : null
   }
 
   // ── Settings page operations ──

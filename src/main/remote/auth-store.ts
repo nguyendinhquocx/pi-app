@@ -42,7 +42,8 @@ export type PairResult = 'ok' | 'pair_expired' | 'pair_used' | 'unpaired'
 
 const randomId = (prefix: string, bytes = 9) => `${prefix}_${base64UrlEncode(randomBytes(bytes))}`
 
-function sameSecret(a: string, b: string): boolean {
+/** Constant-time compare that tolerates length mismatches (raw `timingSafeEqual` RangeErrors on them). Shared with the admin plane. */
+export function sameSecret(a: string, b: string): boolean {
   const x = Buffer.from(a)
   const y = Buffer.from(b)
   return x.length === y.length && timingSafeEqual(x, y)

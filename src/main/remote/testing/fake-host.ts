@@ -1,7 +1,8 @@
 import type { TreeRow } from '../branches'
+import { randomBytes } from 'node:crypto'
 import type { AppEvent } from '@shared/app-events'
 import type { CapabilityInfo } from '@shared/capabilities'
-import type { CacheWarming, CommandInfo, ContextStats, FileEntry, UiResponse } from '@shared/remote'
+import { base64UrlEncode, type CacheWarming, type CommandInfo, type ContextStats, type FileEntry, type UiResponse } from '@shared/remote'
 import type { ToolCardDef } from '../../../extension-compat/adapter-schema'
 import type { HostSessionRow, HostTimelineItem, RemoteHostPort, RemoteTapSink, SendMode } from '../host-port'
 
@@ -49,6 +50,10 @@ export class FakeHost implements RemoteHostPort {
   sink: RemoteTapSink | null = null
   /** Optional live Tailscale Serve hostname reported by the production host adapter. */
   serveConfig?: () => string | null
+  /** Admin control-plane token (gateway `/admin/v1/*`) — generated once so tests know the exact Bearer value. */
+  readonly adminSecret = base64UrlEncode(randomBytes(32))
+  /** Recorded host log lines (the real adapter only prints; tests assert nothing secret is logged). */
+  readonly logs: Array<{ level: 'info' | 'warn' | 'error'; message: string }> = []
   /** Created sessions whose file pi has not written yet (it does so on the first reply). */
   readonly unwritten = new Set<string>()
   private seq = 0
@@ -549,5 +554,10 @@ export class FakeHost implements RemoteHostPort {
   assetPath(): string | null {
     return null
   }
-  log(): void {}
+  adminToken(): string {
+    return this.adminSecret
+  }
+  log(level: 'info' | 'warn' | 'error', message: string): void {
+    this.logs.push({ level, message })
+  }
 }

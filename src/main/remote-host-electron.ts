@@ -1,9 +1,11 @@
 import { app, safeStorage } from 'electron'
+import { randomBytes } from 'node:crypto'
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { hostname } from 'node:os'
 import type { CacheWarming, UiResponse } from '@shared/remote'
+import { base64UrlEncode } from '@shared/remote'
 import { normalizeSessionFileKey } from '@shared/session-file-key'
 import { normalizeCapabilities } from '@shared/capabilities'
 import { wslPathToWindows } from '@shared/wsl-path'
@@ -65,6 +67,8 @@ function modelGroup(auth?: { source?: string; type?: string }): 'custom' | 'apiK
 }
 const HOST_KEY_FILE = 'remote-host.key'
 const HOST_KEY_FILE_MARK = 'file:remote-host.key'
+/** Admin control-plane token (gateway `/admin/v1/*`), a 0600 file next to the host key. */
+const ADMIN_TOKEN_FILE = 'admin-token'
 
 function safeStorageAvailable(): boolean {
   try {
@@ -499,6 +503,27 @@ export function createElectronRemoteHost(serveConfig: () => string | null = () =
       } catch {
         return null
       }
+    },
+
+    // Admin control-plane token (spec Li TUI pair panel T1): 32 random bytes base64url in a 0600
+    // file next to the host key, created on first use and re-created if the file was deleted —
+    // the local pair panel (Li TUI) reads this file directly; requests carry it as Bearer.
+    adminToken: () => {
+      const file = join(app.getPath('userData'), ADMIN_TOKEN_FILE)
+      try {
+        const stored = readFileSync(file, 'utf8').trim()
+        if (stored) {
+          // Idempotent: a pre-existing file with a wrong/legacy mode is hardened on every read.
+          chmodSync(file, 0o600)
+          return stored
+        }
+      } catch {
+        /* missing or unreadable → re-create below */
+      }
+      const token = base64UrlEncode(randomBytes(32))
+      writeFileSync(file, token, { mode: 0o600 })
+      chmodSync(file, 0o600)
+      return token
     },
 
     log(level, message) {
