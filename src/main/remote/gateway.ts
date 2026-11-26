@@ -208,7 +208,19 @@ export class RemoteGateway {
     this.port.adminToken?.()
     await this.assets.warm()
     const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate: false })
-    const server = createServer((req, res) => void this.onHttp(req, res))
+    const server = createServer((req, res) => {
+      // Keep unexpected HTTP-handler rejections inside the request boundary. Do not echo/log the
+      // exception: filesystem errors can contain the userData/admin-token path.
+      void this.onHttp(req, res).catch(() => {
+        if (res.destroyed || res.writableEnded) return
+        if (res.headersSent) {
+          res.destroy()
+          return
+        }
+        res.writeHead(500, { 'content-type': 'text/plain' })
+        res.end('internal server error')
+      })
+    })
     server.on('upgrade', (req, socket, head) => this.onUpgrade(wss, req, socket, head))
     await new Promise<void>((resolve, reject) => {
       const onError = (e: NodeJS.ErrnoException) => {

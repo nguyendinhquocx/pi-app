@@ -511,12 +511,10 @@ export function createElectronRemoteHost(serveConfig: () => string | null = () =
     adminToken: () => {
       const file = join(app.getPath('userData'), ADMIN_TOKEN_FILE)
       try {
+        // Harden an existing/legacy token file before reading its secret bytes.
+        chmodSync(file, 0o600)
         const stored = readFileSync(file, 'utf8').trim()
-        if (stored) {
-          // Idempotent: a pre-existing file with a wrong/legacy mode is hardened on every read.
-          chmodSync(file, 0o600)
-          return stored
-        }
+        if (stored) return stored
       } catch {
         /* missing or unreadable → re-create below */
       }

@@ -239,6 +239,15 @@ describe('admin api v1', () => {
     expect(logged).not.toContain('pt_')
   })
 
+  it('admin_http_boundary_returns_generic_500_without_echoing_or_logging_filesystem_paths', async () => {
+    host.adminToken = () => { throw new Error('C:\\\\Users\\\\owner\\\\PI-Desktop\\\\admin-token denied') }
+    const r = await adminOk('/admin/v1/status')
+    expect(r.status).toBe(500)
+    expect(r.text).toBe('internal server error')
+    expect(r.text).not.toContain('admin-token')
+    expect(host.logs.map((l) => l.message).join('\\n')).not.toContain('admin-token')
+  })
+
   it('admin_rejects_duplicate_host_headers_even_when_the_first_is_loopback', async () => {
     // Node merges duplicate Host headers into the first value for `req.headers`, so the regex gate
     // alone would see `localhost` and pass — the gate must count raw headers and deny instead.
