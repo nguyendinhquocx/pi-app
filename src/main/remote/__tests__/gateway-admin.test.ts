@@ -107,6 +107,19 @@ async function reconnect(c: NodeRemoteClient): Promise<NodeRemoteClient> {
 }
 
 describe('admin api v1', () => {
+  it('sanitizes admin-token filesystem errors during startup', async () => {
+    const brokenHost = new FakeHost()
+    brokenHost.adminToken = () => {
+      throw new Error('EACCES: open C:\\Users\\quocn\\AppData\\Roaming\\PI-Desktop\\admin-token')
+    }
+    const brokenGateway = new RemoteGateway(brokenHost)
+    const error = await brokenGateway.start().then(() => '', (e: Error) => e.message)
+    expect(error).toBe('admin_token_unavailable')
+    expect(error).not.toContain('C:\\Users\\quocn')
+    expect(brokenHost.logs.map((entry) => entry.message).join('\n')).not.toContain('C:\\Users\\quocn\\AppData')
+    brokenHost.dispose()
+  })
+
   it('admin_allows_ipv4_mapped_loopback_and_denies_mapped_non_loopback', async () => {
     // Pure helper first: a real socket cannot present a mapped non-loopback address, so the denial
     // is asserted on the exact helper the handler runs.

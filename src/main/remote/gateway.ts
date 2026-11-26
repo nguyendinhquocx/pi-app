@@ -204,8 +204,13 @@ export class RemoteGateway {
     if (this.server) return
     this.auth.hostKey()
     // Materialize the admin token file at gateway start (re-created if deleted) so the local pair
-    // panel can read it without any admin request ever having been made.
-    this.port.adminToken?.()
+    // panel can read it without any admin request ever having been made. Hide filesystem details:
+    // startup errors are logged by the service boundary, and fs messages may include userData paths.
+    try {
+      this.port.adminToken?.()
+    } catch {
+      throw new Error('admin_token_unavailable')
+    }
     await this.assets.warm()
     const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate: false })
     const server = createServer((req, res) => {
