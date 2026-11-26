@@ -41,6 +41,8 @@ export type WorkbenchActions = {
   setProjects(hostId: string, projects: ProjectInfo[]): void
   selectProject(hostId: string, projectId: string | null): void
   setSessions(hostId: string, sessions: SessionSummary[], removed?: string[]): void
+  /** Incremental `sessions.update` delta: upsert dirty rows, apply removals, keep the rest (F2 fix). */
+  mergeSessionDeltas(hostId: string, sessions: SessionSummary[], removed?: string[]): void
   selectSession(hostId: string, sessionKey: string | null): void
   setTimeline(hostId: string, sessionKey: string, timeline: SessionTimeline): void
   appendUi(hostId: string, sessionKey: string, req: Parameters<typeof addUi>[1]): void
@@ -105,6 +107,24 @@ export const useWorkbench = create<WorkbenchStore>((set, get) => ({
         if (timelines[key] && key !== slice.selectedSessionKey) delete timelines[key]
       }
       return { slices: { ...s.slices, [hostId]: { ...slice, sessions, timelines } } }
+    })
+  },
+  mergeSessionDeltas(hostId, sessions, removed) {
+    get().ensureSlice(hostId)
+    set((s) => {
+      const slice = s.slices[hostId]
+      const byKey = new Map(slice.sessions.map((row) => [row.sessionKey, row]))
+      // Upsert only the dirty rows the host flushed (F2: `sessions.update` is incremental,
+      // NOT a snapshot — replacing the list here collapsed the rail to the delta).
+      for (const row of sessions ?? []) byKey.set(row.sessionKey, row)
+      const removedSet = new Set(removed ?? [])
+      for (const key of removedSet) byKey.delete(key)
+      const nextSessions = [...byKey.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+      const timelines = { ...slice.timelines }
+      for (const key of removedSet) {
+        if (timelines[key] && key !== slice.selectedSessionKey) delete timelines[key]
+      }
+      return { slices: { ...s.slices, [hostId]: { ...slice, sessions: nextSessions, timelines } } }
     })
   },
   selectSession(hostId, sessionKey) {
@@ -247,7 +267,7 @@ export function connectStore(conn: HostConnection, hostId: string, store: { getS
     onEvent: (event, payload) => {
       if (event === 'sessions.update') {
         const p = payload as EventPayload<'sessions.update'>
-        store.getState().setSessions(H, p.sessions, p.removed)
+        store.getState().mergeSessionDeltas(H, p.sessions, p.removed)
         return
       }
       if (event === 'ui.request') {
