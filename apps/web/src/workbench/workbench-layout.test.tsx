@@ -455,4 +455,36 @@ describe('Workbench layout (spec T2: rails collapse/resize/persist)', () => {
     expect(useWorkbench.getState().slices.h1.selectedSessionKey).toBe('proj/s1.jsonl')
     expect(document.querySelector('.workbench-main')?.className).toContain('inspector-open')
   })
+
+  it('SPEC-2026-11-27: command.list slash-prefixed names are normalized once at the Workbench boundary', async () => {
+    setViewport(1280)
+    seedStore(null)
+    const normConn = {
+      ...fakeConn,
+      request: async (method: string, params: Record<string, unknown> = {}) => {
+        if (method === 'project.list') return { projects: [{ id: 'p1', name: 'Project' }] }
+        if (method === 'session.watchList') return { sessions: [{ sessionKey: 'proj/a.jsonl', projectId: 'p1', title: 'Session A', status: 'idle', updatedAt: 1 }] }
+        if (method === 'session.stats') return { context: { tokens: 1, window: 100, messages: 1, breakdown: [] }, usage: null }
+        if (method === 'command.list') {
+          return { commands: [
+            { name: '/kaneo-card', description: 'Bind Kaneo card', category: 'extension' },
+            { name: 'review', category: 'skill' },
+          ] }
+        }
+        if (method === 'model.list') return { models: [{ id: 'm1', name: 'Model A', provider: 'test', group: 'custom' }], current: 'm1', thinking: null, availableThinking: [] }
+        if (method === 'session.branches') return { branches: [] }
+        return {}
+      },
+    } as unknown as HostConnection
+    render(<Workbench connections={[{ hostId: 'h1', conn: normConn }]} />)
+    fireEvent.click(await screen.findByText('Session A'))
+    const input = await screen.findByLabelText('Tin nhắn')
+    fireEvent.change(input, { target: { value: '/kaneo' } })
+    const listbox = await screen.findByRole('listbox', { name: 'Slash commands' })
+    expect(listbox.textContent).toContain('/kaneo-card')
+    expect(listbox.textContent).not.toContain('//')
+    // Slashless names from the same catalog still match (passthrough normalization).
+    fireEvent.change(input, { target: { value: '/rev' } })
+    expect(screen.getByRole('listbox', { name: 'Slash commands' }).textContent).toContain('/review')
+  })
 })

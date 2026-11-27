@@ -252,7 +252,10 @@ export function Workbench({ connections, hostPicker }: { connections: WorkbenchC
           thinking: modelsResult.thinking ?? m.thinking,
           thinkingLevels: modelsResult.availableThinking,
         }))
-        setCommands(cmds.commands)
+        // Host catalogs may return slash-prefixed names (`/kaneo-card`); the Web composer owns
+        // the single displayed slash, so strip leading slashes once at this boundary
+        // (SPEC-2026-11-27-li-kaneo-card-command).
+        setCommands(cmds.commands.map((c) => ({ ...c, name: c.name.replace(/^\/+/, '') })))
         setModels(modelsResult.models.map((m) => ({ id: m.id, name: m.name ?? m.id, provider: m.provider, group: m.group })))
         setBranches(branchesResult.branches)
       } catch {

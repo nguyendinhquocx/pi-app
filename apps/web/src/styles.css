@@ -509,6 +509,7 @@ button.tool-head:hover { background: transparent; }
 .composer-queue ul { list-style: none; margin: 4px 0; padding: 0; max-height: 120px; overflow-y: auto; font-size: 11px; }
 .slash-popover, .mention-popover { position: absolute; bottom: 100%; left: 16px; right: 16px; background: var(--bg-base); border: 1px solid var(--border-base); border-radius: 8px; list-style: none; margin: 0 0 6px; padding: 4px; z-index: 20; max-height: 260px; overflow-y: auto; }
 .slash-popover button, .mention-popover button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; }
+.slash-popover button[aria-selected='true'] { background: var(--bg-active); }
 
 .inspector { border-left: 0; background: var(--bg-base); flex-direction: column; min-height: 0; min-width: 0; }
 .inspector-head { min-height: 47px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 13px; }

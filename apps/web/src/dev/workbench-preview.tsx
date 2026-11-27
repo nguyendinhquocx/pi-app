@@ -174,7 +174,7 @@ const fakeConnection = {
     if (method === 'project.list') return { projects: [{ id: 'D:/demo/project', name: 'demo project' }] }
     if (method === 'file.list') return { entries: [{ path: 'src', name: 'src', dir: true }, { path: 'src/parser.ts', name: 'parser.ts', dir: false }, { path: 'README.md', name: 'README.md', dir: false }], truncated: false }
     if (method === 'session.stats') return { context: { tokens: 170000, window: 200000, messages: 218, breakdown: [{ role: 'user', tokens: 400 }, { role: 'assistant', tokens: 1280 }, { role: 'tool', tokens: 1740 }] }, usage: { input: 2000, output: 900, cacheRead: 0, cacheWrite: 0, cost: 0.0241, calls: 7 } }
-    if (method === 'command.list') return { commands: [{ name: 'review', category: 'skill', description: 'Review the current changes' }] }
+    if (method === 'command.list') return { commands: [{ name: 'review', category: 'skill', description: 'Review the current changes' }, { name: '/kaneo-card', category: 'extension', description: 'Bind Kaneo card (slash-prefixed host catalog fixture, SPEC-2026-11-27)' }] }
     if (method === 'model.list') return { models: MODELS, current: MODEL, thinking: 'medium', availableThinking: ['off', 'low', 'medium', 'high'] }
     if (method === 'session.branches') return { branches: [{ leafId: 'main', title: 'Current branch', turns: 4, current: true }, { leafId: 'experiment', title: 'Try stricter parser', turns: 2, current: false }] }
     if (method === 'terminal.open') {

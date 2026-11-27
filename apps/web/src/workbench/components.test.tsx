@@ -87,6 +87,50 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     expect(listbox.textContent).toContain('skill')
   })
 
+  const kaneoCommands: CommandInfo[] = [
+    { name: 'kaneo-card', category: 'extension', description: 'Bind Kaneo card' },
+    { name: 'compact', category: 'prompt' },
+  ]
+
+  it('SPEC-2026-11-27: slash picker shows one slash for kaneo-card and closes once args are typed', () => {
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={kaneoCommands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
+    const input = screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: '/kaneo' } })
+    const listbox = screen.getByRole('listbox', { name: 'Slash commands' })
+    expect(listbox.textContent).toContain('/kaneo-card')
+    expect(listbox.textContent).not.toContain('//')
+    // Args typed → token complete → picker closes, Enter sends instead of re-selecting.
+    fireEvent.change(input, { target: { value: '/kaneo-card task-1' } })
+    expect(screen.queryByRole('listbox', { name: 'Slash commands' })).toBeNull()
+  })
+
+  it('SPEC-2026-11-27: Arrow moves selection, Enter inserts without sending, Escape dismisses keeping draft', async () => {
+    const actions = { ...baseActions, onSend: vi.fn(async () => undefined) }
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={kaneoCommands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={actions} />)
+    const input = screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: '/' } })
+    expect(screen.getByRole('option', { name: /kaneo-card/ }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(screen.getByRole('option', { name: /compact/ }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(screen.getByRole('option', { name: /kaneo-card/ }).getAttribute('aria-selected')).toBe('true')
+    // Enter over an open picker inserts the command; it must not send.
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(input.value).toBe('/kaneo-card ')
+    expect(actions.onSend).not.toHaveBeenCalled()
+    // With args typed the picker is closed, so Enter sends the full draft.
+    fireEvent.change(input, { target: { value: '/kaneo-card task-1' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(actions.onSend).toHaveBeenCalledWith('/kaneo-card task-1', 'prompt', expect.any(String)))
+    // Escape dismisses the picker but keeps the draft; the next Enter sends the draft.
+    fireEvent.change(input, { target: { value: '/kan' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('listbox', { name: 'Slash commands' })).toBeNull()
+    expect(input.value).toBe('/kan')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(actions.onSend).toHaveBeenCalledWith('/kan', 'prompt', expect.any(String)))
+  })
+
   it('@mention triggers file.search and renders entries', async () => {
     render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={[]} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
     const input = screen.getByLabelText('Tin nhắn')

@@ -430,6 +430,8 @@ export function Composer({
   const [error, setError] = useState<string | null>(null)
   const [attaching, setAttaching] = useState(false)
   const [mention, setMention] = useState<{ query: string; results: { path: string }[] } | null>(null)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const queuedMessages = [...queue.steering, ...queue.followUp]
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -451,6 +453,9 @@ export function Composer({
 
   const onTextChange = useCallback((value: string): void => {
     setText(value)
+    // Typing always re-arms the slash picker (new token, selection reset).
+    setSlashIndex(0)
+    setSlashDismissed(false)
     // @mention: last unclosed @token triggers a file search (debounced by the caller's RPC).
     const atMatch = /(?:^|\s)@([\w\-./]*)$/.exec(value)
     if (atMatch) {
@@ -495,7 +500,19 @@ export function Composer({
     return () => window.removeEventListener('keydown', onGlobalKeyDown)
   }, [text, onTextChange])
 
-  const slashMatches = text.startsWith('/') ? commands.filter((c) => c.name.startsWith(text.slice(1).split(' ')[0])).slice(0, 8) : []
+  // The picker only lives while the draft is a single `/<token>` — once args are typed the
+  // token is complete, so the popover closes and Enter sends instead of re-selecting.
+  const slashToken = text.startsWith('/') && !/\s/.test(text) ? text.slice(1) : null
+  const slashMatches = slashToken !== null && !slashDismissed
+    ? commands.filter((c) => c.name.startsWith(slashToken)).slice(0, 8)
+    : []
+  const pickSlash = (index: number): void => {
+    const match = slashMatches[Math.min(index, slashMatches.length - 1)]
+    if (!match) return
+    // The composer owns the single displayed slash; command names arrive slashless.
+    setText(`/${match.name} `)
+    inputRef.current?.focus()
+  }
 
   const pickAttachment = async (): Promise<void> => {
     setAttaching(true)
@@ -541,9 +558,15 @@ export function Composer({
     <section className="composer" aria-label="Composer">
       {slashMatches.length > 0 && (
         <ul className="slash-popover" role="listbox" aria-label="Slash commands">
-          {slashMatches.map((c) => (
+          {slashMatches.map((c, i) => (
             <li key={`${c.category}:${c.name}`}>
-              <button onClick={() => { setText(`/${c.name} `); inputRef.current?.focus() }}>
+              <button
+                role="option"
+                aria-selected={i === slashIndex}
+                className={i === slashIndex ? 'active' : undefined}
+                onMouseEnter={() => setSlashIndex(i)}
+                onClick={() => pickSlash(i)}
+              >
                 <code>/{c.name}</code> <span className="muted">{c.category}</span> {c.description}
               </button>
             </li>
@@ -568,8 +591,16 @@ export function Composer({
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => {
+            if (slashMatches.length > 0) {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % slashMatches.length); return }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return }
+              if (e.key === 'Escape') { e.preventDefault(); setSlashDismissed(true); return }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
+              // Enter over an open picker inserts the command; Enter with the picker
+              // closed (no match, dismissed, or args typed) sends as before.
+              if (slashMatches.length > 0) { pickSlash(slashIndex); return }
               void send()
             }
           }}
