@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ArrowUp, ChevronDown, ChevronRight, Paperclip } from 'lucide-react'
 import type { CommandInfo } from '@shared/remote'
 import type { ContextStats, SessionUsage } from '@shared/remote'
@@ -434,6 +434,8 @@ export function Composer({
   const [slashDismissed, setSlashDismissed] = useState(false)
   const queuedMessages = [...queue.steering, ...queue.followUp]
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const slashListboxId = useId()
+  const slashOptionRefs = useRef(new Map<number, HTMLButtonElement>())
 
   const send = async (): Promise<void> => {
     const trimmed = text.trim()
@@ -506,13 +508,25 @@ export function Composer({
   const slashMatches = slashToken !== null && !slashDismissed
     ? commands.filter((c) => c.name.startsWith(slashToken)).slice(0, 8)
     : []
+  const slashAutocompleteActive = !running && slashToken !== null
+  const slashPickerOpen = slashAutocompleteActive && slashMatches.length > 0
+  const activeSlashIndex = Math.min(slashIndex, Math.max(0, slashMatches.length - 1))
+  const activeSlashName = slashMatches[activeSlashIndex]?.name
+  const activeSlashOptionId = `${slashListboxId}-option-${activeSlashIndex}`
   const pickSlash = (index: number): void => {
-    const match = slashMatches[Math.min(index, slashMatches.length - 1)]
+    const match = slashMatches[Math.max(0, Math.min(index, slashMatches.length - 1))]
     if (!match) return
     // The composer owns the single displayed slash; command names arrive slashless.
     setText(`/${match.name} `)
     inputRef.current?.focus()
   }
+
+  useEffect(() => {
+    if (!slashPickerOpen) return
+    // Keep the aria-activedescendant visible when keyboard navigation reaches an
+    // option outside the popup's scroll viewport. The optional call keeps jsdom tests safe.
+    slashOptionRefs.current.get(activeSlashIndex)?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeSlashIndex, activeSlashName, slashPickerOpen])
 
   const pickAttachment = async (): Promise<void> => {
     setAttaching(true)
@@ -557,21 +571,27 @@ export function Composer({
   return (
     <section className="composer" aria-label="Composer">
       {slashMatches.length > 0 && (
-        <ul className="slash-popover" role="listbox" aria-label="Slash commands">
+        <div id={slashListboxId} className="slash-popover" role="listbox" aria-label="Slash commands">
           {slashMatches.map((c, i) => (
-            <li key={`${c.category}:${c.name}`}>
-              <button
-                role="option"
-                aria-selected={i === slashIndex}
-                className={i === slashIndex ? 'active' : undefined}
-                onMouseEnter={() => setSlashIndex(i)}
-                onClick={() => pickSlash(i)}
-              >
-                <code>/{c.name}</code> <span className="muted">{c.category}</span> {c.description}
-              </button>
-            </li>
+            <button
+              key={`${c.category}:${c.name}`}
+              id={`${slashListboxId}-option-${i}`}
+              type="button"
+              role="option"
+              aria-selected={i === activeSlashIndex}
+              tabIndex={running ? 0 : -1}
+              ref={(element) => {
+                if (element) slashOptionRefs.current.set(i, element)
+                else slashOptionRefs.current.delete(i)
+              }}
+              onMouseEnter={() => setSlashIndex(i)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => pickSlash(i)}
+            >
+              <code>/{c.name}</code> <span className="muted">{c.category}</span> {c.description}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
       {mention && (
         <ul className="mention-popover" role="listbox" aria-label="File mention">
@@ -591,21 +611,27 @@ export function Composer({
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => {
-            if (slashMatches.length > 0) {
+            if (slashPickerOpen) {
               if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % slashMatches.length); return }
               if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return }
               if (e.key === 'Escape') { e.preventDefault(); setSlashDismissed(true); return }
             }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              // Enter over an open picker inserts the command; Enter with the picker
-              // closed (no match, dismissed, or args typed) sends as before.
-              if (slashMatches.length > 0) { pickSlash(slashIndex); return }
+              // Only idle autocomplete turns Enter into selection. A running session
+              // keeps its existing Enter-to-steer behavior.
+              if (slashPickerOpen) { pickSlash(activeSlashIndex); return }
               void send()
             }
           }}
           placeholder={running ? 'Đang chạy — gửi steer/follow-up…' : 'Gõ tin nhắn, / lệnh, @file…'}
           aria-label="Tin nhắn"
+          role={slashAutocompleteActive ? 'combobox' : undefined}
+          aria-autocomplete={slashAutocompleteActive ? 'list' : undefined}
+          aria-haspopup={slashAutocompleteActive ? 'listbox' : undefined}
+          aria-expanded={slashAutocompleteActive ? slashPickerOpen : undefined}
+          aria-controls={slashPickerOpen ? slashListboxId : undefined}
+          aria-activedescendant={slashPickerOpen ? activeSlashOptionId : undefined}
         />
         <div className="composer-footer">
           <div className="composer-controls">

@@ -90,6 +90,12 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
   const kaneoCommands: CommandInfo[] = [
     { name: 'kaneo-card', category: 'extension', description: 'Bind Kaneo card' },
     { name: 'compact', category: 'prompt' },
+    { name: 'kaneo-card-off', category: 'extension', description: 'Unbind Kaneo card' },
+    { name: 'kaneo-card-show', category: 'extension', description: 'Show Kaneo binding' },
+    { name: 'kaneo-help', category: 'extension', description: 'Kaneo help' },
+    { name: 'kaneo-open', category: 'extension', description: 'Open Kaneo task' },
+    { name: 'kaneo-task', category: 'extension', description: 'Kaneo task command' },
+    { name: 'kaneo-test', category: 'extension', description: 'Synthetic long-list option' },
   ]
 
   it('SPEC-2026-11-27: slash picker shows one slash for kaneo-card and closes once args are typed', () => {
@@ -99,21 +105,35 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     const listbox = screen.getByRole('listbox', { name: 'Slash commands' })
     expect(listbox.textContent).toContain('/kaneo-card')
     expect(listbox.textContent).not.toContain('//')
+    expect(input.getAttribute('role')).toBe('combobox')
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    expect(input.getAttribute('aria-controls')).toBe((listbox as HTMLElement).id)
     // Args typed → token complete → picker closes, Enter sends instead of re-selecting.
     fireEvent.change(input, { target: { value: '/kaneo-card task-1' } })
     expect(screen.queryByRole('listbox', { name: 'Slash commands' })).toBeNull()
+    expect(input.getAttribute('role')).not.toBe('combobox')
   })
 
   it('SPEC-2026-11-27: Arrow moves selection, Enter inserts without sending, Escape dismisses keeping draft', async () => {
     const actions = { ...baseActions, onSend: vi.fn(async () => undefined) }
     render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={kaneoCommands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={actions} />)
     const input = screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement
+    input.focus()
     fireEvent.change(input, { target: { value: '/' } })
-    expect(screen.getByRole('option', { name: /kaneo-card/ }).getAttribute('aria-selected')).toBe('true')
+    const listbox = screen.getByRole('listbox', { name: 'Slash commands' })
+    const firstOption = screen.getByRole('option', { name: /kaneo-card.*Bind Kaneo card/ })
+    expect(firstOption.getAttribute('aria-selected')).toBe('true')
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id)
+    expect(input.getAttribute('aria-activedescendant')).toBe(firstOption.id)
+    expect(firstOption.getAttribute('tabindex')).toBe('-1')
     fireEvent.keyDown(input, { key: 'ArrowDown' })
-    expect(screen.getByRole('option', { name: /compact/ }).getAttribute('aria-selected')).toBe('true')
+    const secondOption = screen.getByRole('option', { name: /compact/ })
+    expect(secondOption.getAttribute('aria-selected')).toBe('true')
+    expect(input.getAttribute('aria-activedescendant')).toBe(secondOption.id)
+    expect(document.activeElement).toBe(input)
     fireEvent.keyDown(input, { key: 'ArrowUp' })
-    expect(screen.getByRole('option', { name: /kaneo-card/ }).getAttribute('aria-selected')).toBe('true')
+    expect(firstOption.getAttribute('aria-selected')).toBe('true')
+    expect(input.getAttribute('aria-activedescendant')).toBe(firstOption.id)
     // Enter over an open picker inserts the command; it must not send.
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(input.value).toBe('/kaneo-card ')
@@ -129,6 +149,49 @@ describe('Composer (spec T4: send modes, slash list, metrics, abort)', () => {
     expect(input.value).toBe('/kan')
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(actions.onSend).toHaveBeenCalledWith('/kan', 'prompt', expect.any(String)))
+  })
+
+  it('SPEC-2026-11-27: Enter while running preserves existing steer behavior instead of selecting a slash command', async () => {
+    const actions = { ...baseActions, onSend: vi.fn(async () => undefined) }
+    render(<Composer sessionKey={sessionKey} running={true} queue={{ steering: [], followUp: [] }} commands={kaneoCommands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={actions} />)
+    const input = screen.getByLabelText('Tin nhắn') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: '/kaneo' } })
+    expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeTruthy()
+    expect(input.getAttribute('role')).not.toBe('combobox')
+    const firstOption = screen.getByRole('option', { name: /kaneo-card.*Bind Kaneo card/ })
+    expect(firstOption.getAttribute('tabindex')).toBe('0')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeTruthy()
+    expect(firstOption.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(actions.onSend).toHaveBeenCalledWith('/kaneo', 'steer', expect.any(String)))
+  })
+
+  it('does not invent `/kaneo-card` when it is absent from the host command catalog', () => {
+    const availableCommands: CommandInfo[] = [{ name: 'review', category: 'skill' }]
+    render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={availableCommands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
+    fireEvent.change(screen.getByLabelText('Tin nhắn'), { target: { value: '/kaneo' } })
+    expect(screen.queryByRole('listbox', { name: 'Slash commands' })).toBeNull()
+  })
+
+  it('SPEC-2026-11-27: active option is announced and scrolled into view in a long result list', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    try {
+      render(<Composer sessionKey={sessionKey} running={false} queue={{ steering: [], followUp: [] }} commands={kaneoCommands} context={null} usage={null} model={null} thinking={null} thinkingLevels={[]} models={[]} onSetModel={vi.fn()} onSetThinking={vi.fn()} actions={baseActions} />)
+      const input = screen.getByLabelText('Tin nhắn')
+      fireEvent.change(input, { target: { value: '/' } })
+      expect(screen.getAllByRole('option')).toHaveLength(8)
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      expect(input.getAttribute('aria-activedescendant')).toBe(screen.getByRole('option', { name: /compact/ }).id)
+    } finally {
+      cleanup()
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
   })
 
   it('@mention triggers file.search and renders entries', async () => {

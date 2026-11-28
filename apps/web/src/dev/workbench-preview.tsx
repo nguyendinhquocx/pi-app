@@ -45,6 +45,8 @@ const hostId = 'laptop-demo'
 const sessionKey = 'D:/demo/project/.pi/agent/sessions/2026-11-18-demo.jsonl'
 const MODEL = 'zai/glm-5.3-flash'
 const SHOW_ASK_USER_FIXTURE = new URLSearchParams(window.location.search).get('fixture') === 'ask-user'
+const SHOW_SLASH_PICKER_FIXTURE = new URLSearchParams(window.location.search).get('fixture') === 'slash-picker'
+const FIXTURE_RUNNING = !SHOW_SLASH_PICKER_FIXTURE
 const DEMO_PENDING_UI: WebUiRequest[] = SHOW_ASK_USER_FIXTURE ? [{
   id: 'demo-ask-user',
   sessionKey,
@@ -152,14 +154,14 @@ const fakeConnection = {
   },
   openSession: async () => ({
     kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
-    state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
+    state: { running: FIXTURE_RUNNING, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
     pendingUi: DEMO_PENDING_UI, hasOlder: true,
   }),
   openSessionTracked: async () => ({
     current: true,
     result: {
       kind: 'snapshot', resync: true, turns: DEMO_TURNS, seq: 120,
-      state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
+      state: { running: FIXTURE_RUNNING, model: MODEL, thinking: 'medium', queue: { steering: [], followUp: [] } },
       pendingUi: DEMO_PENDING_UI, hasOlder: true,
     },
   }),
@@ -168,13 +170,17 @@ const fakeConnection = {
   dispose() {},
   request: async (method: string, params: Record<string, unknown> = {}) => {
     if (method === 'session.watchList') return { sessions: [
-      { sessionKey, projectId: 'D:/demo/project', title: 'Fix parser edge case', status: 'running', updatedAt: 1_763_000_000_000, preview: 'Add URL parsing coverage' },
+      { sessionKey, projectId: 'D:/demo/project', title: 'Fix parser edge case', status: FIXTURE_RUNNING ? 'running' : 'idle', updatedAt: 1_763_000_000_000, preview: 'Add URL parsing coverage' },
       { sessionKey: 'D:/demo/project/.pi/agent/sessions/older-demo.jsonl', projectId: 'D:/demo/project', title: 'Review release checklist', status: 'idle', updatedAt: 1_762_900_000_000 },
     ] }
     if (method === 'project.list') return { projects: [{ id: 'D:/demo/project', name: 'demo project' }] }
     if (method === 'file.list') return { entries: [{ path: 'src', name: 'src', dir: true }, { path: 'src/parser.ts', name: 'parser.ts', dir: false }, { path: 'README.md', name: 'README.md', dir: false }], truncated: false }
     if (method === 'session.stats') return { context: { tokens: 170000, window: 200000, messages: 218, breakdown: [{ role: 'user', tokens: 400 }, { role: 'assistant', tokens: 1280 }, { role: 'tool', tokens: 1740 }] }, usage: { input: 2000, output: 900, cacheRead: 0, cacheWrite: 0, cost: 0.0241, calls: 7 } }
-    if (method === 'command.list') return { commands: [{ name: 'review', category: 'skill', description: 'Review the current changes' }, { name: '/kaneo-card', category: 'extension', description: 'Bind Kaneo card (slash-prefixed host catalog fixture, SPEC-2026-11-27)' }] }
+    if (method === 'command.list') return { commands: [
+      { name: 'review', category: 'skill', description: 'Review the current changes' },
+      { name: '/kaneo-card', category: 'extension', description: 'Bind Kaneo card (slash-prefixed host catalog fixture, SPEC-2026-11-27)' },
+      ...Array.from({ length: 6 }, (_, index) => ({ name: `/kaneo-demo-${index + 1}`, category: 'extension' as const, description: `Synthetic scroll option ${index + 1} (local preview only)` })),
+    ] }
     if (method === 'model.list') return { models: MODELS, current: MODEL, thinking: 'medium', availableThinking: ['off', 'low', 'medium', 'high'] }
     if (method === 'session.branches') return { branches: [{ leafId: 'main', title: 'Current branch', turns: 4, current: true }, { leafId: 'experiment', title: 'Try stricter parser', turns: 2, current: false }] }
     if (method === 'terminal.open') {
@@ -212,14 +218,14 @@ useWorkbench.setState({
       projects: [{ id: 'D:/demo/project', name: 'demo-project' }],
       selectedProjectId: null,
       sessions: [
-        { sessionKey, projectId: 'D:/demo/project', title: 'Fix parser edge case', status: 'running', updatedAt: 1_763_000_000_000, preview: 'Add URL parsing coverage' },
+        { sessionKey, projectId: 'D:/demo/project', title: 'Fix parser edge case', status: FIXTURE_RUNNING ? 'running' : 'idle', updatedAt: 1_763_000_000_000, preview: 'Add URL parsing coverage' },
         { sessionKey: 'D:/demo/project/.pi/agent/sessions/older-demo.jsonl', projectId: 'D:/demo/project', title: 'Review release checklist', status: 'idle', updatedAt: 1_762_900_000_000 },
       ],
       selectedSessionKey: sessionKey,
       timelines: {
         [sessionKey]: {
           seq: 120,
-          state: { running: true, model: MODEL, thinking: 'medium', queue: { steering: ['Demo steer waiting for the next turn'], followUp: [] }, todo: { title: 'Parser edge case', items: [{ id: '1', text: 'Add regression test', status: 'completed' }, { id: '2', text: 'Verify escaped paths', status: 'in_progress' }, { id: '3', text: 'Update docs', status: 'pending' }] } },
+          state: { running: FIXTURE_RUNNING, model: MODEL, thinking: 'medium', queue: { steering: FIXTURE_RUNNING ? ['Demo steer waiting for the next turn'] : [], followUp: [] }, todo: { title: 'Parser edge case', items: [{ id: '1', text: 'Add regression test', status: 'completed' }, { id: '2', text: 'Verify escaped paths', status: 'in_progress' }, { id: '3', text: 'Update docs', status: 'pending' }] } },
           pendingUi: DEMO_PENDING_UI, hasOlder: true,
           turns: DEMO_TURNS,
         },
