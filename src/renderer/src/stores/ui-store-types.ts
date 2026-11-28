@@ -223,7 +223,17 @@ export interface UIState {
   applyRightPanelRuntime: (catalog: RightPanelCatalogItem[], prefs: RightPanelPrefs, order?: string[]) => void
   rewindKey: string
   rewindCheckpoints: Array<{ id: string; trigger: string; description?: string; branch: string; timestamp: number }>
-  rewindTreeNodes: Array<{ id: string; depth: number; label?: string; entryType: string; isLeaf: boolean }>
+  rewindTreeNodes: Array<{
+    id: string
+    parentId?: string | null
+    depth: number
+    label?: string
+    entryType: string
+    isLeaf: boolean
+    role?: string
+    preview?: string
+    timestamp?: string
+  }>
   rewindWorkerBound: boolean
   rewindLoadingCheckpoints: boolean
   rewindLoadingTree: boolean
@@ -270,6 +280,7 @@ export interface UIState {
   sidebarWidth: number
   setSidebarWidth: (w: number) => void
   sidebarCollapsed: boolean
+  setSidebarCollapsed: (collapsed: boolean) => void
   toggleSidebar: () => void
   /** Show the pull-up drawer of running / unread / last-1h sessions at the bottom of the left sidebar. */
   sidebarActiveSessionsDrawer: boolean
@@ -297,8 +308,10 @@ export interface UIState {
   toggleRightPanel: () => void
   revealRightPanel: () => void
   filesPreviewChatExpand: boolean
-  /** Built-in browser fills the chat column (mutually exclusive with filesPreviewChatExpand). */
+  /** Built-in browser fills the chat column (mutually exclusive with filesPreviewChatExpand and canvasChatExpand). */
   browserChatExpand: boolean
+  /** AI Canvas fills the chat column (mutually exclusive with browserChatExpand and filesPreviewChatExpand). */
+  canvasChatExpand: boolean
   /** Non-intrusive Browser Stage layout: closed | split-50 (5:5) | split-70 (3:7) | full. */
   browserStageMode: 'closed' | 'split-50' | 'split-70' | 'full'
   /** Custom split width share for Browser Stage (0.32..0.84, default 0.50). */

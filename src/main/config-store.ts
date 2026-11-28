@@ -143,7 +143,7 @@ const storeOptions: StoreOptions<StoreSchema> & { projectName: string } = {
   projectName: 'pi-desktop',
   defaults: {
     recentProjects: [],
-    recentProjectsFixedOrder: false,
+    recentProjectsFixedOrder: true,
     currentProject: null,
     windowBounds: null,
     theme: 'system',
